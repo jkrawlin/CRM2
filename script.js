@@ -11,9 +11,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   onAuthStateChanged,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInWithRedirect,
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -28,26 +25,43 @@ let currentSearch = '';
 let currentDepartmentFilter = '';
 let unsubscribeEmployees = null;
 let authed = false;
+let authInitialized = false;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
+  // IMPORTANT: Hide app and show login immediately on load
+  const loginPage = document.getElementById('loginPage');
+  const appRoot = document.getElementById('appRoot');
+  if (loginPage) loginPage.style.display = '';
+  if (appRoot) appRoot.style.display = 'none';
+
   initializeTheme();
   setupEventListeners();
   setDefaultJoinDate();
 
   // Auth state listener
   onAuthStateChanged(auth, (user) => {
+    authInitialized = true;
     authed = !!user;
     updateAuthUI(user);
-    // Start/stop Firestore listeners based on auth
-    if (authed) {
-      toggleAuthViews(true);
+
+    // Explicitly toggle views based on authentication
+    if (user) {
+      // User is signed in
+      if (loginPage) loginPage.style.display = 'none';
+      if (appRoot) appRoot.style.display = '';
       loadEmployeesRealtime();
     } else {
-      if (unsubscribeEmployees) unsubscribeEmployees();
+      // User is signed out
+      if (loginPage) loginPage.style.display = '';
+      if (appRoot) appRoot.style.display = 'none';
+
+      // Clean up
+      if (unsubscribeEmployees) {
+        unsubscribeEmployees();
+        unsubscribeEmployees = null;
+      }
       employees = [];
-      toggleAuthViews(false);
-      // Clear UI
       renderEmployeeTable();
       updateStats();
       updateDepartmentFilter();
@@ -107,13 +121,18 @@ async function deleteEmployeeFromDB(employeeId) {
 
 // Setup event listeners
 function setupEventListeners() {
-  document.getElementById('employeeForm').addEventListener('submit', handleFormSubmit);
-  document.getElementById('searchInput').addEventListener('input', handleSearch);
-  document.getElementById('filterDepartment').addEventListener('change', handleSearch);
-  document.getElementById('confirmDelete').addEventListener('click', handleConfirmDelete);
+  const formEl = document.getElementById('employeeForm');
+  if (formEl) formEl.addEventListener('submit', handleFormSubmit);
+  const searchEl = document.getElementById('searchInput');
+  if (searchEl) searchEl.addEventListener('input', handleSearch);
+  const filterEl = document.getElementById('filterDepartment');
+  if (filterEl) filterEl.addEventListener('change', handleSearch);
+  const confirmDeleteEl = document.getElementById('confirmDelete');
+  if (confirmDeleteEl) confirmDeleteEl.addEventListener('click', handleConfirmDelete);
 
   const signOutBtn = document.getElementById('signOutBtn');
-  if (signOutBtn) signOutBtn.addEventListener('click', () => signOut(auth));
+  if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
+
   // Login page controls
   const loginSignInBtn = document.getElementById('loginSignInBtn');
   const loginSignUpBtn = document.getElementById('loginSignUpBtn');
@@ -122,7 +141,18 @@ function setupEventListeners() {
   if (loginSignInBtn) loginSignInBtn.addEventListener('click', emailPasswordSignIn);
   if (loginSignUpBtn) loginSignUpBtn.addEventListener('click', emailPasswordSignUp);
   if (loginResetBtn) loginResetBtn.addEventListener('click', emailPasswordReset);
-  if (loginGoogleBtn) loginGoogleBtn.addEventListener('click', signInWithGoogle);
+  // Remove or hide Google sign-in since it's disabled
+  if (loginGoogleBtn) loginGoogleBtn.style.display = 'none';
+}
+
+async function handleSignOut() {
+  try {
+    await signOut(auth);
+    showToast('Signed out successfully', 'success');
+  } catch (error) {
+    console.error('Sign out error:', error);
+    showToast('Error signing out', 'error');
+  }
 }
 
 function handleSearch(e) {
@@ -162,7 +192,8 @@ async function handleFormSubmit(e) {
 // Delete employee
 window.openDeleteModal = function(id) {
   deleteEmployeeId = id;
-  document.getElementById('deleteModal').classList.add('show');
+  const modal = document.getElementById('deleteModal');
+  if (modal) modal.classList.add('show');
 }
 
 // Confirm delete
@@ -176,17 +207,22 @@ async function handleConfirmDelete() {
 
 // Close modal
 window.closeModal = function() {
-  document.getElementById('deleteModal').classList.remove('show');
+  const modal = document.getElementById('deleteModal');
+  if (modal) modal.classList.remove('show');
   deleteEmployeeId = null;
 }
 
 // Clear form
 window.clearForm = function() {
-  document.getElementById('employeeForm').reset();
-  document.getElementById('joinDate').valueAsDate = new Date();
+  const form = document.getElementById('employeeForm');
+  if (form) form.reset();
+  const joinDateEl = document.getElementById('joinDate');
+  if (joinDateEl) joinDateEl.valueAsDate = new Date();
   document.querySelectorAll('.error').forEach(el => el.classList.remove('error'));
-  document.getElementById('employeeId').value = '';
-  document.getElementById('formTitle').textContent = 'Add New Employee';
+  const idEl = document.getElementById('employeeId');
+  if (idEl) idEl.value = '';
+  const titleEl = document.getElementById('formTitle');
+  if (titleEl) titleEl.textContent = 'Add New Employee';
   const primaryBtn = document.querySelector('.btn-primary');
   if (primaryBtn) primaryBtn.innerHTML = '<i class="fas fa-save"></i> Save Employee';
 }
@@ -224,6 +260,7 @@ window.editEmployee = function(id) {
 function renderEmployeeTable() {
   const tbody = document.getElementById('employeeTableBody');
   const emptyState = document.getElementById('emptyState');
+  if (!tbody || !emptyState) return; // Guard against elements not existing
 
   // Filter
   const filtered = employees.filter(emp => {
@@ -281,24 +318,31 @@ function renderEmployeeTable() {
 
 // Update statistics
 function updateStats() {
-  document.getElementById('totalEmployees').textContent = employees.length;
+  const totalEl = document.getElementById('totalEmployees');
+  const deptEl = document.getElementById('totalDepartments');
+  const avgEl = document.getElementById('avgSalary');
+  if (!totalEl || !deptEl || !avgEl) return; // Guard against elements not existing
+
+  totalEl.textContent = employees.length;
 
   const departments = [...new Set(employees.map(emp => emp.department))];
-  document.getElementById('totalDepartments').textContent = departments.length;
+  deptEl.textContent = departments.length;
 
   const avgSalary = employees.length > 0
     ? employees.reduce((sum, emp) => sum + parseInt(emp.salary || 0, 10), 0) / employees.length
     : 0;
-  document.getElementById('avgSalary').textContent = `$${Math.round(avgSalary).toLocaleString()}`;
+  avgEl.textContent = `$${Math.round(avgSalary).toLocaleString()}`;
 }
 
 // Update department filter
 function updateDepartmentFilter() {
-  const departments = [...new Set(employees.map(emp => emp.department))];
   const filter = document.getElementById('filterDepartment');
+  if (!filter) return; // Guard against element not existing
 
   filter.innerHTML = '<option value="">All Departments</option>' +
-    departments.map(dept => `<option value="${dept}">${dept}</option>`).join('');
+    [...new Set(employees.map(emp => emp.department))]
+      .map(dept => `<option value="${dept}">${dept}</option>`)
+      .join('');
 }
 
 // Form validation
@@ -335,7 +379,8 @@ function showToast(message, type = 'success') {
   toast.className = `toast ${type}`;
 
   const icon = type === 'success' ? 'fa-check-circle' :
-    type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+    type === 'error' ? 'fa-exclamation-circle' : 
+    type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
 
   toast.innerHTML = `
         <i class="fas ${icon}"></i>
@@ -357,18 +402,23 @@ function initializeTheme() {
   updateThemeIcon(savedTheme);
 }
 
-document.getElementById('themeToggle').addEventListener('click', () => {
-  const currentTheme = document.documentElement.getAttribute('data-theme');
-  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+const themeToggle = document.getElementById('themeToggle');
+if (themeToggle) {
+  themeToggle.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
 
-  document.documentElement.setAttribute('data-theme', newTheme);
-  localStorage.setItem('theme', newTheme);
-  updateThemeIcon(newTheme);
-});
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeIcon(newTheme);
+  });
+}
 
 function updateThemeIcon(theme) {
   const icon = document.querySelector('#themeToggle i');
-  icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+  if (icon) {
+    icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+  }
 }
 
 // Format date
@@ -377,9 +427,12 @@ function formatDate(dateString) {
   return new Date(dateString).toLocaleDateString(undefined, options);
 }
 
-// Add pulse animation
-const style = document.createElement('style');
-style.textContent = `
+// Add pulse and fadeOut animations (and badge style) once
+(function injectStyles() {
+  if (document.getElementById('crm-style-inject')) return;
+  const style = document.createElement('style');
+  style.id = 'crm-style-inject';
+  style.textContent = `
     @keyframes pulse {
         0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
         70% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
@@ -395,8 +448,9 @@ style.textContent = `
         border-radius: 4px;
         font-size: 0.85rem;
     }
-`;
-document.head.appendChild(style);
+  `;
+  document.head.appendChild(style);
+})();
 
 // Utilities and helpers
 function setDefaultJoinDate() {
@@ -427,42 +481,19 @@ function updateAuthUI(user) {
   }
 }
 
-async function signInWithGoogle() {
-  try {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-    showToast('Signed in', 'success');
-  } catch (e) {
-    console.error('Sign-in failed', e);
-    const code = e && e.code ? e.code : '';
-    if (code === 'auth/operation-not-allowed') {
-      showToast('Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google', 'error');
-      return;
-    }
-    if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
-      try {
-        const provider = new GoogleAuthProvider();
-        await signInWithRedirect(auth, provider);
-        return;
-      } catch (err) {
-        console.error('Redirect sign-in failed', err);
-      }
-    }
-    showToast('Sign-in failed. Please try again.', 'error');
-  }
-}
-
 // Email/password auth flows (login page)
 async function emailPasswordSignIn() {
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
+  const emailEl = document.getElementById('loginEmail');
+  const passEl = document.getElementById('loginPassword');
+  const email = emailEl ? emailEl.value.trim() : '';
+  const password = passEl ? passEl.value : '';
   if (!email || !password) {
     showToast('Email and password are required', 'warning');
     return;
   }
   try {
     await signInWithEmailAndPassword(auth, email, password);
-    showToast('Signed in', 'success');
+    showToast('Signed in successfully', 'success');
   } catch (e) {
     console.error('Email sign-in failed', e);
     showToast(prettyAuthError(e), 'error');
@@ -470,8 +501,10 @@ async function emailPasswordSignIn() {
 }
 
 async function emailPasswordSignUp() {
-  const email = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
+  const emailEl = document.getElementById('loginEmail');
+  const passEl = document.getElementById('loginPassword');
+  const email = emailEl ? emailEl.value.trim() : '';
+  const password = passEl ? passEl.value : '';
   if (!email || !password) {
     showToast('Email and password are required', 'warning');
     return;
@@ -486,7 +519,8 @@ async function emailPasswordSignUp() {
 }
 
 async function emailPasswordReset() {
-  const email = document.getElementById('loginEmail').value.trim();
+  const emailEl = document.getElementById('loginEmail');
+  const email = emailEl ? emailEl.value.trim() : '';
   if (!email) {
     showToast('Enter your email to reset password', 'warning');
     return;
@@ -510,24 +544,15 @@ function prettyAuthError(e) {
     case 'auth/user-not-found':
       return 'No user found with that email';
     case 'auth/wrong-password':
-      return 'Incorrect password';
+    case 'auth/invalid-credential':
+      return 'Incorrect email or password';
     case 'auth/email-already-in-use':
       return 'Email already in use';
     case 'auth/weak-password':
-      return 'Password is too weak';
+      return 'Password should be at least 6 characters';
+    case 'auth/operation-not-allowed':
+      return 'This sign-in method is not enabled';
     default:
-      return 'Authentication error';
-  }
-}
-
-function toggleAuthViews(isAuthed) {
-  const loginPage = document.getElementById('loginPage');
-  const appRoot = document.getElementById('appRoot');
-  if (isAuthed) {
-    if (loginPage) loginPage.style.display = 'none';
-    if (appRoot) appRoot.style.display = '';
-  } else {
-    if (loginPage) loginPage.style.display = '';
-    if (appRoot) appRoot.style.display = 'none';
+      return 'Authentication error. Please try again.';
   }
 }
