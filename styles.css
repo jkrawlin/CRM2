@@ -38,6 +38,38 @@ body {
     transition: var(--transition);
 }
 
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.login-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    padding: 2rem;
+    width: 100%;
+    max-width: 420px;
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+
+.login-header i {
+    font-size: 2.25rem;
+    color: var(--primary-color);
+}
+
+.login-header .subtitle {
+    color: var(--text-secondary);
+}
+
 /* Header */
 .header {
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
@@ -56,6 +88,12 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+}
+
+.auth-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
 }
 
 .header h1 {
@@ -442,6 +480,10 @@ tbody tr:hover {
     max-width: 400px;
     width: 90%;
     animation: slideUp 0.3s ease;
+}
+
+.modal-content h3 i {
+    color: var(--primary-color);
 }
 
 @keyframes slideUp {

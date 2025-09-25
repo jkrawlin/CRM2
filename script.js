@@ -1,104 +1,265 @@
-let employees = JSON.parse(localStorage.getItem('employees')) || [];
-let editingId = null;
-let deleteId = null;
-let currentSort = { field: null, ascending: true };
+import { db, auth } from './firebase-config.js';
+import {
+  collection,
+  addDoc,
+  doc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  query,
+  orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import {
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-// Initialize on page load
+let employees = [];
+let currentSortColumn = '';
+let currentSortOrder = 'asc';
+let deleteEmployeeId = null;
+let currentSearch = '';
+let currentDepartmentFilter = '';
+let unsubscribeEmployees = null;
+let authed = false;
+
+// Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
-    displayEmployees();
-    updateStats();
-    populateDepartmentFilter();
-    initializeTheme();
-    
-    // Set default join date to today
-    document.getElementById('joinDate').valueAsDate = new Date();
-    
-    // Add event listeners
-    document.getElementById('searchInput').addEventListener('input', filterEmployees);
-    document.getElementById('filterDepartment').addEventListener('change', filterEmployees);
-});
+  initializeTheme();
+  setupEventListeners();
+  setDefaultJoinDate();
 
-// Enhanced form submission with validation
-document.getElementById('employeeForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-        showToast('Please fill all required fields correctly', 'error');
-        return;
-    }
-    
-    const employee = {
-        id: editingId || Date.now().toString(),
-        name: document.getElementById('name').value.trim(),
-        email: document.getElementById('email').value.trim(),
-        position: document.getElementById('position').value.trim(),
-        department: document.getElementById('department').value,
-        salary: document.getElementById('salary').value,
-        joinDate: document.getElementById('joinDate').value
-    };
-    
-    if (editingId) {
-        const index = employees.findIndex(emp => emp.id === editingId);
-        employees[index] = employee;
-        showToast('Employee updated successfully!', 'success');
-        editingId = null;
-        document.getElementById('formTitle').textContent = 'Add New Employee';
+  // Auth state listener
+  onAuthStateChanged(auth, (user) => {
+    authed = !!user;
+    updateAuthUI(user);
+    // Start/stop Firestore listeners based on auth
+    if (authed) {
+      toggleAuthViews(true);
+      loadEmployeesRealtime();
     } else {
-        employees.push(employee);
-        showToast('Employee added successfully!', 'success');
+      if (unsubscribeEmployees) unsubscribeEmployees();
+      employees = [];
+      toggleAuthViews(false);
+      // Clear UI
+      renderEmployeeTable();
+      updateStats();
+      updateDepartmentFilter();
     }
-    
-    saveToLocalStorage();
-    displayEmployees();
-    updateStats();
-    populateDepartmentFilter();
-    clearForm();
-    
-    // Smooth scroll to table
-    document.querySelector('.table-container').scrollIntoView({ behavior: 'smooth' });
+  });
 });
 
-// Form validation
-function validateForm() {
-    let isValid = true;
-    const fields = ['name', 'email', 'position', 'department', 'salary', 'joinDate'];
-    
-    fields.forEach(field => {
-        const input = document.getElementById(field);
-        const value = input.value.trim();
-        
-        if (!value) {
-            input.classList.add('error');
-            isValid = false;
-        } else {
-            input.classList.remove('error');
-        }
-        
-        if (field === 'email' && value) {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(value)) {
-                input.classList.add('error');
-                isValid = false;
-            }
-        }
-    });
-    
-    return isValid;
+// Real-time listener for employees
+function loadEmployeesRealtime() {
+  const q = query(collection(db, "employees"), orderBy("name"));
+  if (unsubscribeEmployees) unsubscribeEmployees();
+  unsubscribeEmployees = onSnapshot(
+    q,
+    (snapshot) => {
+      employees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderEmployeeTable();
+      updateStats();
+      updateDepartmentFilter();
+    },
+    (error) => {
+      console.error("Error loading employees: ", error);
+      showToast('Error loading employees', 'error');
+    }
+  );
 }
 
-// Enhanced display with animations
-function displayEmployees(employeeList = employees) {
-    const tbody = document.getElementById('employeeTableBody');
-    const emptyState = document.getElementById('emptyState');
-    
-    if (employeeList.length === 0) {
-        tbody.innerHTML = '';
-        emptyState.style.display = 'block';
-        return;
+// Add or update employee in Firestore
+async function saveEmployee(employee) {
+  try {
+    if (employee.id) {
+      const employeeRef = doc(db, "employees", employee.id);
+      const { id, ...updateData } = employee;
+      await updateDoc(employeeRef, updateData);
+      showToast('Employee updated successfully', 'success');
+    } else {
+      const { id, ...newEmployee } = employee;
+      await addDoc(collection(db, "employees"), newEmployee);
+      showToast('Employee added successfully', 'success');
     }
-    
-    emptyState.style.display = 'none';
-    tbody.innerHTML = employeeList.map((employee, index) => `
+    clearForm();
+  } catch (error) {
+    console.error("Error saving employee: ", error);
+    showToast('Error saving employee', 'error');
+  }
+}
+
+// Delete employee from Firestore
+async function deleteEmployeeFromDB(employeeId) {
+  try {
+    await deleteDoc(doc(db, "employees", employeeId));
+    showToast('Employee deleted successfully', 'success');
+  } catch (error) {
+    console.error("Error deleting employee: ", error);
+    showToast('Error deleting employee', 'error');
+  }
+}
+
+// Setup event listeners
+function setupEventListeners() {
+  document.getElementById('employeeForm').addEventListener('submit', handleFormSubmit);
+  document.getElementById('searchInput').addEventListener('input', handleSearch);
+  document.getElementById('filterDepartment').addEventListener('change', handleSearch);
+  document.getElementById('confirmDelete').addEventListener('click', handleConfirmDelete);
+
+  const signOutBtn = document.getElementById('signOutBtn');
+  if (signOutBtn) signOutBtn.addEventListener('click', () => signOut(auth));
+  // Login page controls
+  const loginSignInBtn = document.getElementById('loginSignInBtn');
+  const loginSignUpBtn = document.getElementById('loginSignUpBtn');
+  const loginResetBtn = document.getElementById('loginResetBtn');
+  const loginGoogleBtn = document.getElementById('loginGoogleBtn');
+  if (loginSignInBtn) loginSignInBtn.addEventListener('click', emailPasswordSignIn);
+  if (loginSignUpBtn) loginSignUpBtn.addEventListener('click', emailPasswordSignUp);
+  if (loginResetBtn) loginResetBtn.addEventListener('click', emailPasswordReset);
+  if (loginGoogleBtn) loginGoogleBtn.addEventListener('click', signInWithGoogle);
+}
+
+function handleSearch(e) {
+  if (e.target.id === 'searchInput') {
+    currentSearch = e.target.value.toLowerCase();
+  }
+  if (e.target.id === 'filterDepartment') {
+    currentDepartmentFilter = e.target.value;
+  }
+  renderEmployeeTable();
+}
+
+// Handle form submission
+async function handleFormSubmit(e) {
+  e.preventDefault();
+
+  if (!authed) {
+    showToast('Please sign in to add employees', 'warning');
+    return;
+  }
+
+  if (!validateForm()) return;
+
+  const employee = {
+    id: document.getElementById('employeeId').value || null,
+    name: document.getElementById('name').value.trim(),
+    email: document.getElementById('email').value.trim(),
+    position: document.getElementById('position').value.trim(),
+    department: document.getElementById('department').value,
+    salary: parseFloat(document.getElementById('salary').value),
+    joinDate: document.getElementById('joinDate').value
+  };
+
+  await saveEmployee(employee);
+}
+
+// Delete employee
+window.openDeleteModal = function(id) {
+  deleteEmployeeId = id;
+  document.getElementById('deleteModal').classList.add('show');
+}
+
+// Confirm delete
+async function handleConfirmDelete() {
+  if (deleteEmployeeId) {
+    await deleteEmployeeFromDB(deleteEmployeeId);
+    closeModal();
+    deleteEmployeeId = null;
+  }
+}
+
+// Close modal
+window.closeModal = function() {
+  document.getElementById('deleteModal').classList.remove('show');
+  deleteEmployeeId = null;
+}
+
+// Clear form
+window.clearForm = function() {
+  document.getElementById('employeeForm').reset();
+  document.getElementById('joinDate').valueAsDate = new Date();
+  document.querySelectorAll('.error').forEach(el => el.classList.remove('error'));
+  document.getElementById('employeeId').value = '';
+  document.getElementById('formTitle').textContent = 'Add New Employee';
+  const primaryBtn = document.querySelector('.btn-primary');
+  if (primaryBtn) primaryBtn.innerHTML = '<i class="fas fa-save"></i> Save Employee';
+}
+
+// Sort handlers
+window.sortTable = function(column) {
+  if (currentSortColumn === column) {
+    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSortColumn = column;
+    currentSortOrder = 'asc';
+  }
+  renderEmployeeTable();
+}
+
+// Edit employee
+window.editEmployee = function(id) {
+  const employee = employees.find(emp => emp.id === id);
+  if (employee) {
+    document.getElementById('employeeId').value = employee.id;
+    document.getElementById('name').value = employee.name;
+    document.getElementById('email').value = employee.email;
+    document.getElementById('position').value = employee.position;
+    document.getElementById('department').value = employee.department;
+    document.getElementById('salary').value = employee.salary;
+    document.getElementById('joinDate').value = employee.joinDate;
+    document.getElementById('formTitle').textContent = 'Edit Employee';
+    document.querySelector('.btn-primary').innerHTML = '<i class="fas fa-save"></i> Update Employee';
+
+    document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+// Render employee table
+function renderEmployeeTable() {
+  const tbody = document.getElementById('employeeTableBody');
+  const emptyState = document.getElementById('emptyState');
+
+  // Filter
+  const filtered = employees.filter(emp => {
+    const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
+    const text = `${emp.name} ${emp.email} ${emp.position} ${emp.department}`.toLowerCase();
+    const matchesSearch = !currentSearch || text.includes(currentSearch);
+    return matchesDept && matchesSearch;
+  });
+
+  // Sort
+  const sorted = [...filtered];
+  if (currentSortColumn) {
+    sorted.sort((a, b) => {
+      let va = a[currentSortColumn];
+      let vb = b[currentSortColumn];
+      if (currentSortColumn === 'salary') {
+        va = Number(va);
+        vb = Number(vb);
+      } else {
+        va = (va ?? '').toString().toLowerCase();
+        vb = (vb ?? '').toString().toLowerCase();
+      }
+      if (va < vb) return currentSortOrder === 'asc' ? -1 : 1;
+      if (va > vb) return currentSortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = '';
+    emptyState.style.display = 'block';
+    return;
+  }
+
+  emptyState.style.display = 'none';
+  tbody.innerHTML = sorted.map((employee, index) => `
         <tr style="animation: fadeIn 0.3s ease ${index * 0.05}s both">
             <td><strong>${employee.name}</strong></td>
             <td>${employee.email}</td>
@@ -110,7 +271,7 @@ function displayEmployees(employeeList = employees) {
                 <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')">
                     <i class="fas fa-edit"></i> Edit
                 </button>
-                <button class="action-btn delete-btn" onclick="confirmDelete('${employee.id}')">
+                <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')">
                     <i class="fas fa-trash"></i> Delete
                 </button>
             </td>
@@ -118,182 +279,102 @@ function displayEmployees(employeeList = employees) {
     `).join('');
 }
 
-// Filter employees
-function filterEmployees() {
-    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-    const departmentFilter = document.getElementById('filterDepartment').value;
-    
-    let filtered = employees.filter(emp => {
-        const matchesSearch = emp.name.toLowerCase().includes(searchTerm) ||
-                             emp.email.toLowerCase().includes(searchTerm) ||
-                             emp.position.toLowerCase().includes(searchTerm);
-        const matchesDepartment = !departmentFilter || emp.department === departmentFilter;
-        
-        return matchesSearch && matchesDepartment;
-    });
-    
-    displayEmployees(filtered);
-}
-
-// Sort table
-function sortTable(field) {
-    if (currentSort.field === field) {
-        currentSort.ascending = !currentSort.ascending;
-    } else {
-        currentSort.field = field;
-        currentSort.ascending = true;
-    }
-    
-    employees.sort((a, b) => {
-        let aVal = a[field];
-        let bVal = b[field];
-        
-        if (field === 'salary') {
-            aVal = parseInt(aVal);
-            bVal = parseInt(bVal);
-        } else {
-            aVal = aVal.toLowerCase();
-            bVal = bVal.toLowerCase();
-        }
-        
-        if (aVal < bVal) return currentSort.ascending ? -1 : 1;
-        if (aVal > bVal) return currentSort.ascending ? 1 : -1;
-        return 0;
-    });
-    
-    displayEmployees();
-}
-
 // Update statistics
 function updateStats() {
-    document.getElementById('totalEmployees').textContent = employees.length;
-    
-    const departments = [...new Set(employees.map(emp => emp.department))];
-    document.getElementById('totalDepartments').textContent = departments.length;
-    
-    const avgSalary = employees.length > 0 
-        ? employees.reduce((sum, emp) => sum + parseInt(emp.salary), 0) / employees.length
-        : 0;
-    document.getElementById('avgSalary').textContent = `$${Math.round(avgSalary).toLocaleString()}`;
+  document.getElementById('totalEmployees').textContent = employees.length;
+
+  const departments = [...new Set(employees.map(emp => emp.department))];
+  document.getElementById('totalDepartments').textContent = departments.length;
+
+  const avgSalary = employees.length > 0
+    ? employees.reduce((sum, emp) => sum + parseInt(emp.salary || 0, 10), 0) / employees.length
+    : 0;
+  document.getElementById('avgSalary').textContent = `$${Math.round(avgSalary).toLocaleString()}`;
 }
 
-// Populate department filter
-function populateDepartmentFilter() {
-    const departments = [...new Set(employees.map(emp => emp.department))];
-    const filter = document.getElementById('filterDepartment');
-    
-    filter.innerHTML = '<option value="">All Departments</option>' + 
-        departments.map(dept => `<option value="${dept}">${dept}</option>`).join('');
+// Update department filter
+function updateDepartmentFilter() {
+  const departments = [...new Set(employees.map(emp => emp.department))];
+  const filter = document.getElementById('filterDepartment');
+
+  filter.innerHTML = '<option value="">All Departments</option>' +
+    departments.map(dept => `<option value="${dept}">${dept}</option>`).join('');
 }
 
-// Edit employee
-function editEmployee(id) {
-    const employee = employees.find(emp => emp.id === id);
-    if (employee) {
-        document.getElementById('name').value = employee.name;
-        document.getElementById('email').value = employee.email;
-        document.getElementById('position').value = employee.position;
-        document.getElementById('department').value = employee.department;
-        document.getElementById('salary').value = employee.salary;
-        document.getElementById('joinDate').value = employee.joinDate;
-        editingId = id;
-        
-        document.getElementById('formTitle').textContent = 'Edit Employee';
-        document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth' });
-        
-        // Add highlight effect
-        document.querySelector('.form-container').style.animation = 'pulse 0.5s ease';
-        setTimeout(() => {
-            document.querySelector('.form-container').style.animation = '';
-        }, 500);
+// Form validation
+function validateForm() {
+  let isValid = true;
+  const fields = ['name', 'email', 'position', 'department', 'salary', 'joinDate'];
+
+  fields.forEach(field => {
+    const input = document.getElementById(field);
+    const value = input.value.trim();
+
+    if (!value) {
+      input.classList.add('error');
+      isValid = false;
+    } else {
+      input.classList.remove('error');
     }
-}
 
-// Confirm delete with modal
-function confirmDelete(id) {
-    deleteId = id;
-    document.getElementById('deleteModal').classList.add('show');
-}
-
-// Close modal
-function closeModal() {
-    document.getElementById('deleteModal').classList.remove('show');
-    deleteId = null;
-}
-
-// Delete employee
-document.getElementById('confirmDelete').addEventListener('click', () => {
-    if (deleteId) {
-        employees = employees.filter(emp => emp.id !== deleteId);
-        saveToLocalStorage();
-        displayEmployees();
-        updateStats();
-        populateDepartmentFilter();
-        showToast('Employee deleted successfully!', 'success');
-        closeModal();
+    if (field === 'email' && value) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) {
+        input.classList.add('error');
+        isValid = false;
+      }
     }
-});
+  });
 
-// Clear form
-function clearForm() {
-    document.getElementById('employeeForm').reset();
-    document.getElementById('joinDate').valueAsDate = new Date();
-    document.querySelectorAll('.error').forEach(el => el.classList.remove('error'));
-    editingId = null;
-    document.getElementById('formTitle').textContent = 'Add New Employee';
+  return isValid;
 }
 
 // Toast notifications
 function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    
-    const icon = type === 'success' ? 'fa-check-circle' : 
-                 type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
-    
-    toast.innerHTML = `
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+
+  const icon = type === 'success' ? 'fa-check-circle' :
+    type === 'error' ? 'fa-exclamation-circle' : 'fa-info-circle';
+
+  toast.innerHTML = `
         <i class="fas ${icon}"></i>
         <span>${message}</span>
     `;
-    
-    document.getElementById('toastContainer').appendChild(toast);
-    
-    setTimeout(() => {
-        toast.style.animation = 'fadeOut 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 3000);
+
+  document.getElementById('toastContainer').appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.animation = 'fadeOut 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
 // Theme toggle
 function initializeTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateThemeIcon(savedTheme);
+  const savedTheme = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  updateThemeIcon(savedTheme);
 }
 
 document.getElementById('themeToggle').addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    updateThemeIcon(newTheme);
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+  document.documentElement.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+  updateThemeIcon(newTheme);
 });
 
 function updateThemeIcon(theme) {
-    const icon = document.querySelector('#themeToggle i');
-    icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+  const icon = document.querySelector('#themeToggle i');
+  icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
 }
 
 // Format date
 function formatDate(dateString) {
-    const options = { year: 'numeric', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
-}
-
-// Save to localStorage
-function saveToLocalStorage() {
-    localStorage.setItem('employees', JSON.stringify(employees));
+  const options = { year: 'numeric', month: 'short', day: 'numeric' };
+  return new Date(dateString).toLocaleDateString(undefined, options);
 }
 
 // Add pulse animation
@@ -316,3 +397,137 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// Utilities and helpers
+function setDefaultJoinDate() {
+  const el = document.getElementById('joinDate');
+  if (el && !el.value) el.valueAsDate = new Date();
+}
+
+// Auth helpers
+function updateAuthUI(user) {
+  const signOutBtn = document.getElementById('signOutBtn');
+  const userInfo = document.getElementById('userInfo');
+  const userName = document.getElementById('userName');
+  const userPhoto = document.getElementById('userPhoto');
+
+  if (user) {
+    if (signOutBtn) signOutBtn.style.display = 'inline-flex';
+    if (userInfo) userInfo.style.display = 'inline-block';
+    if (userName) userName.textContent = user.displayName || user.email || 'Signed in';
+    if (userPhoto && user.photoURL) {
+      userPhoto.src = user.photoURL;
+      userPhoto.style.display = 'inline-block';
+    } else if (userPhoto) {
+      userPhoto.style.display = 'none';
+    }
+  } else {
+    if (signOutBtn) signOutBtn.style.display = 'none';
+    if (userInfo) userInfo.style.display = 'none';
+  }
+}
+
+async function signInWithGoogle() {
+  try {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
+    showToast('Signed in', 'success');
+  } catch (e) {
+    console.error('Sign-in failed', e);
+    const code = e && e.code ? e.code : '';
+    if (code === 'auth/operation-not-allowed') {
+      showToast('Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google', 'error');
+      return;
+    }
+    if (code === 'auth/popup-blocked' || code === 'auth/popup-closed-by-user') {
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithRedirect(auth, provider);
+        return;
+      } catch (err) {
+        console.error('Redirect sign-in failed', err);
+      }
+    }
+    showToast('Sign-in failed. Please try again.', 'error');
+  }
+}
+
+// Email/password auth flows (login page)
+async function emailPasswordSignIn() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) {
+    showToast('Email and password are required', 'warning');
+    return;
+  }
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    showToast('Signed in', 'success');
+  } catch (e) {
+    console.error('Email sign-in failed', e);
+    showToast(prettyAuthError(e), 'error');
+  }
+}
+
+async function emailPasswordSignUp() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!email || !password) {
+    showToast('Email and password are required', 'warning');
+    return;
+  }
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    showToast('Account created and signed in', 'success');
+  } catch (e) {
+    console.error('Sign-up failed', e);
+    showToast(prettyAuthError(e), 'error');
+  }
+}
+
+async function emailPasswordReset() {
+  const email = document.getElementById('loginEmail').value.trim();
+  if (!email) {
+    showToast('Enter your email to reset password', 'warning');
+    return;
+  }
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showToast('Password reset email sent', 'success');
+  } catch (e) {
+    console.error('Reset failed', e);
+    showToast(prettyAuthError(e), 'error');
+  }
+}
+
+function prettyAuthError(e) {
+  const code = e && e.code ? e.code : '';
+  switch (code) {
+    case 'auth/invalid-email':
+      return 'Invalid email address';
+    case 'auth/user-disabled':
+      return 'This user account is disabled';
+    case 'auth/user-not-found':
+      return 'No user found with that email';
+    case 'auth/wrong-password':
+      return 'Incorrect password';
+    case 'auth/email-already-in-use':
+      return 'Email already in use';
+    case 'auth/weak-password':
+      return 'Password is too weak';
+    default:
+      return 'Authentication error';
+  }
+}
+
+function toggleAuthViews(isAuthed) {
+  const loginPage = document.getElementById('loginPage');
+  const appRoot = document.getElementById('appRoot');
+  if (isAuthed) {
+    if (loginPage) loginPage.style.display = 'none';
+    if (appRoot) appRoot.style.display = '';
+  } else {
+    if (loginPage) loginPage.style.display = '';
+    if (appRoot) appRoot.style.display = 'none';
+  }
+}

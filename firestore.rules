@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isNonEmptyString(v) {
+      return v is string && v.size() > 0 && v.size() <= 200;
+    }
+
+    function isValidEmail(v) {
+      return v is string && v.size() > 3 && v.size() <= 320 && v.matches('^.+@.+\\..+$');
+    }
+
+    function isValidDepartment(v) {
+      return v is string && v.size() > 0 && v.size() <= 100;
+    }
+
+    function isValidSalary(v) {
+      return (v is int || v is float) && v >= 0 && v <= 1000000000; // 0..1B
+    }
+
+    function isValidISODate(v) {
+      // Expecting YYYY-MM-DD string from the UI date input
+      return v is string && v.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function hasOnlyAllowedKeys(d) {
+      // Allow only these keys
+      return d.keys().hasOnly(['name','email','position','department','salary','joinDate']);
+    }
+
+    function validateEmployee(d) {
+      return hasOnlyAllowedKeys(d)
+        && isNonEmptyString(d.name)
+        && isValidEmail(d.email)
+        && isNonEmptyString(d.position)
+        && isValidDepartment(d.department)
+        && isValidSalary(d.salary)
+        && isValidISODate(d.joinDate);
+    }
+
+    match /employees/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateEmployee(request.resource.data);
+      allow update: if isSignedIn() && validateEmployee(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+
+    // Everything else is denied by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

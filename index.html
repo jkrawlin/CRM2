@@ -10,16 +10,55 @@
 <body>
     <div class="toast-container" id="toastContainer"></div>
     
-    <div class="header">
-        <div class="header-content">
-            <h1><i class="fas fa-users"></i> Employee Management System</h1>
-            <button class="theme-toggle" id="themeToggle">
-                <i class="fas fa-moon"></i>
-            </button>
+    <!-- Login Page (shown when not authenticated) -->
+    <div id="loginPage" class="login-page">
+        <div class="login-card">
+            <div class="login-header">
+                <i class="fas fa-users"></i>
+                <h2>Employee Management System</h2>
+                <p class="subtitle">Sign in to continue</p>
+            </div>
+            <div class="form-group">
+                <label for="loginEmail"><i class="fas fa-envelope"></i> Email</label>
+                <input type="email" id="loginEmail" placeholder="you@example.com">
+            </div>
+            <div class="form-group" style="margin-top:1rem;">
+                <label for="loginPassword"><i class="fas fa-key"></i> Password</label>
+                <input type="password" id="loginPassword" placeholder="••••••••">
+            </div>
+            <div class="form-buttons" style="margin-top:1.25rem;">
+                <button class="btn btn-primary" id="loginSignInBtn"><i class="fas fa-sign-in-alt"></i> Sign in</button>
+                <button class="btn btn-secondary" id="loginSignUpBtn"><i class="fas fa-user-plus"></i> Create account</button>
+            </div>
+            <div style="margin-top:0.75rem;">
+                <button class="btn" id="loginResetBtn" style="padding:0; background:transparent; color: var(--primary-color);"><i class="fas fa-unlock-alt"></i> Forgot password?</button>
+            </div>
+            <div style="text-align:center; margin: 1rem 0; color: var(--text-secondary);">— or —</div>
+            <div>
+                <button class="btn btn-secondary" id="loginGoogleBtn" style="width:100%;"><i class="fab fa-google"></i> Continue with Google</button>
+            </div>
         </div>
     </div>
 
-    <div class="container">
+    <!-- App (hidden until authenticated) -->
+    <div id="appRoot" style="display:none;">
+        <div class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-users"></i> Employee Management System</h1>
+                <button class="theme-toggle" id="themeToggle">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <div class="auth-controls">
+                    <div id="userInfo" style="display:none;">
+                        <img id="userPhoto" alt="" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:8px;display:none;" />
+                        <span id="userName"></span>
+                    </div>
+                    <button class="btn btn-secondary" id="signOutBtn" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign out</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
         <div class="stats-container">
             <div class="stat-card">
                 <i class="fas fa-users"></i>
@@ -155,7 +194,8 @@
             </div>
         </div>
     </div>
+    </div> <!-- end appRoot -->
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>
