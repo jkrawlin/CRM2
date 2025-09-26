@@ -305,11 +305,11 @@ function renderEmployeeTable() {
 
   if (sorted.length === 0) {
     tbody.innerHTML = '';
-    emptyState.style.display = 'block';
+    emptyState.classList.remove('hidden');
     return;
   }
 
-  emptyState.style.display = 'none';
+  emptyState.classList.add('hidden');
 
   function deptClass(dept) {
     if (!dept) return '';
@@ -327,16 +327,16 @@ function renderEmployeeTable() {
   }
 
   tbody.innerHTML = sorted.map((employee) => `
-    <tr>
-      <td>${employee.name}</td>
-      <td>${employee.email}</td>
-      <td>${employee.position}</td>
-      <td>
+    <tr class="hover:bg-gray-50">
+      <td class="px-4 py-3 font-semibold text-gray-900">${employee.name}</td>
+      <td class="px-4 py-3">${employee.email}</td>
+      <td class="px-4 py-3">${employee.position}</td>
+      <td class="px-4 py-3">
         <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
       </td>
-      <td>$${parseInt(employee.salary).toLocaleString()}</td>
-      <td>${formatDate(employee.joinDate)}</td>
-      <td>
+      <td class="px-4 py-3 text-right tabular-nums">$${parseInt(employee.salary).toLocaleString()}</td>
+      <td class="px-4 py-3 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
+      <td class="px-4 py-3 text-center">
         <div class="action-buttons">
           <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')"><i class="fas fa-edit"></i></button>
           <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')"><i class="fas fa-trash"></i></button>

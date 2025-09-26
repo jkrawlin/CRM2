@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body { @apply min-h-screen bg-gray-50 text-gray-800; }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-xl shadow-card border border-gray-100; }
+  .btn { @apply inline-flex items-center gap-2 font-semibold rounded-md transition; }
+  .btn-primary { @apply bg-brand text-white hover:bg-brand-dark; }
+  .btn-secondary { @apply bg-white text-gray-700 border border-gray-200 hover:bg-gray-50; }
+  .btn-ghost { @apply bg-transparent text-gray-600 hover:bg-gray-100; }
+  .badge { @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold; }
+  .badge-engineering { @apply bg-indigo-100 text-indigo-700; }
+  .badge-sales { @apply bg-emerald-100 text-emerald-700; }
+  .badge-marketing { @apply bg-amber-100 text-amber-700; }
+  .badge-hr { @apply bg-rose-100 text-rose-700; }
+  .badge-finance { @apply text-white bg-gradient-to-r from-sky-400 to-blue-500; }
+  .badge-operations { @apply text-white bg-gradient-to-r from-violet-400 to-purple-600; }
+
+  /* Compatibility for existing JS-generated classes */
+  .department-badge { @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold capitalize; }
+  .department-badge.engineering { @apply bg-indigo-100 text-indigo-700; }
+  .department-badge.sales { @apply bg-emerald-100 text-emerald-700; }
+  .department-badge.marketing { @apply bg-amber-100 text-amber-700; }
+  .department-badge.hr, .department-badge.human-resources { @apply bg-rose-100 text-rose-700; }
+  .department-badge.finance { @apply text-white bg-gradient-to-r from-sky-400 to-blue-500; }
+  .department-badge.operations { @apply text-white bg-gradient-to-r from-violet-400 to-purple-600; }
+
+  /* Modal */
+  .modal { @apply hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000]; }
+  .modal.show { @apply flex items-center justify-center; }
+  .modal-content { @apply bg-white p-8 rounded-xl shadow-card max-w-2xl w-[95%]; }
+  .modal-header { @apply flex items-center gap-4 mb-6; }
+  .modal-icon { @apply w-12 h-12 rounded-lg flex items-center justify-center text-white bg-gradient-to-br from-brand to-brand/80; }
+  .modal-buttons { @apply flex gap-3 justify-end; }
+
+  /* Toasts */
+  .toast-container { @apply fixed top-24 right-5 z-[2000]; }
+  .toast { @apply bg-white px-4 py-3 rounded-md shadow-card mb-3 flex items-center gap-3 min-w-[320px] border-l-4; }
+  .toast.success { @apply border-emerald-500; }
+  .toast.error { @apply border-rose-500; }
+  .toast.warning { @apply border-amber-500; }
+  .toast-message { @apply flex-1 text-sm font-medium text-gray-800; }
+
+  /* Action buttons in table */
+  .action-buttons { @apply flex items-center justify-center gap-1; }
+  .action-btn { @apply inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-md transition; }
+  .edit-btn { @apply bg-emerald-500 text-white hover:bg-emerald-600; }
+  .delete-btn { @apply bg-rose-500 text-white hover:bg-rose-600; }
+
+  /* Empty state */
+  .empty-state { @apply text-center p-10 text-gray-500; }
+  .empty-state-icon { @apply w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center text-4xl text-gray-300; }
+}

@@ -4,9 +4,17 @@
   "description": "Employee Management System with Firebase",
   "scripts": {
     "deploy": "firebase deploy --only hosting",
-    "serve": "firebase serve"
+    "serve": "firebase serve",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i ./src/styles/tailwind.css -o ./assets/tailwind.css --minify",
+    "dev:css": "tailwindcss -c tailwind.config.cjs -i ./src/styles/tailwind.css -o ./assets/tailwind.css --watch",
+    "build": "npm run build:css"
   },
   "dependencies": {
     "firebase": "^10.7.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.12"
   }
 }
