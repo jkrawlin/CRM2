@@ -320,14 +320,16 @@ function renderEmployeeTable() {
             <td><span class="badge">${employee.department}</span></td>
       <td style="text-align:right;">$${parseInt(employee.salary).toLocaleString()}</td>
             <td>${formatDate(employee.joinDate)}</td>
-            <td>
-                <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')">
-                    <i class="fas fa-trash"></i> Delete
-                </button>
-            </td>
+      <td>
+        <div style="display:flex; gap:.5rem; justify-content:center; white-space:nowrap;">
+          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')">
+            <i class="fas fa-edit"></i>
+          </button>
+          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </td>
         </tr>
     `).join('');
 }

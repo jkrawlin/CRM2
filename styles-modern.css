@@ -338,14 +338,16 @@ body {
     width: 100%;
     border-collapse: collapse;
 }
-.data-table th, .data-table td { padding: 0.875rem 1rem; text-align: left; }
+.data-table th, .data-table td { padding: 0.875rem 1rem; text-align: left; vertical-align: middle; }
 .data-table thead th { background: var(--gray-50); font-weight: 700; color: var(--gray-700); }
 .data-table tbody tr { border-top: 1px solid var(--gray-100); }
 .data-table tbody tr:hover { background: var(--secondary); }
 .data-table td:nth-child(5),
 .data-table th:nth-child(5) { text-align: right; width: 140px; }
 .data-table td:nth-child(6),
-.data-table th:nth-child(6) { white-space: nowrap; width: 140px; }
+.data-table th:nth-child(6) { white-space: nowrap; width: 140px; text-align: left; }
+.data-table td:nth-child(7),
+.data-table th:nth-child(7) { width: 140px; text-align: center; white-space: nowrap; }
 
 /* Empty state */
 .empty-state { text-align: center; padding: var(--spacing-xl); color: var(--gray-500); }

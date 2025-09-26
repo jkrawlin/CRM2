@@ -92,7 +92,16 @@
         <!-- Modern Table -->
         <div class="table-container">
             <div class="table-header"><h3 class="table-title">Employee Directory</h3></div>
-            <table class="data-table">
+                    <table class="data-table">
+                        <colgroup>
+                            <col style="width: 20%" />  <!-- Name -->
+                            <col style="width: 24%" />  <!-- Email -->
+                            <col style="width: 16%" />  <!-- Position -->
+                            <col style="width: 14%" />  <!-- Department -->
+                            <col style="width: 10%" />  <!-- Salary -->
+                            <col style="width: 10%" />  <!-- Join Date -->
+                            <col style="width: 6%" />   <!-- Actions -->
+                        </colgroup>
                 <thead>
                     <tr>
                         <th onclick="sortTable('name')">Name <i class="fas fa-sort"></i></th>
