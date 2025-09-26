@@ -70,7 +70,7 @@
                 <select id="filterDepartment" class="flex-1 border-2 border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500">
                     <option value="">All Departments</option>
                 </select>
-                <button id="openEmployeeModalBtn" class="btn btn-primary"><i class="fas fa-user-plus"></i> Add</button>
+                <button id="openEmployeeModalBtn" class="btn btn-primary btn-lg"><i class="fas fa-user-plus"></i> Add Employee</button>
             </div>
         </div>
 
@@ -150,31 +150,31 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="modal-icon"><i class="fas fa-user-plus"></i></div>
-                <h3 id="formTitle">Add New Employee</h3>
+                <h3 id="formTitle" class="text-xl font-bold text-gray-900">Add New Employee</h3>
             </div>
-            <form id="employeeForm">
+            <form id="employeeForm" class="space-y-4">
                 <input type="hidden" id="employeeId" />
-                <div class="form-row two-col">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-group">
-                        <label for="name"><i class="fas fa-user"></i> Full Name</label>
-                        <input type="text" id="name" required placeholder="John Smith" />
+                        <label for="name" class="label"><i class="fas fa-user text-indigo-500"></i> Full Name</label>
+                        <input type="text" id="name" required placeholder="John Smith" class="input" />
                         <span class="error-message">Please enter a valid name</span>
                     </div>
                     <div class="form-group">
-                        <label for="email"><i class="fas fa-envelope"></i> Email Address</label>
-                        <input type="email" id="email" required placeholder="john@company.com" />
+                        <label for="email" class="label"><i class="fas fa-envelope text-indigo-500"></i> Email Address</label>
+                        <input type="email" id="email" required placeholder="john@company.com" class="input" />
                         <span class="error-message">Please enter a valid email</span>
                     </div>
                 </div>
-                <div class="form-row two-col">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-group">
-                        <label for="position"><i class="fas fa-briefcase"></i> Position</label>
-                        <input type="text" id="position" required placeholder="Software Engineer" />
+                        <label for="position" class="label"><i class="fas fa-briefcase text-indigo-500"></i> Position</label>
+                        <input type="text" id="position" required placeholder="Software Engineer" class="input" />
                         <span class="error-message">Please enter a position</span>
                     </div>
                     <div class="form-group">
-                        <label for="department"><i class="fas fa-building"></i> Department</label>
-                        <select id="department" required>
+                        <label for="department" class="label"><i class="fas fa-building text-indigo-500"></i> Department</label>
+                        <select id="department" required class="select">
                             <option value="">Select Department</option>
                             <option value="Engineering">Engineering</option>
                             <option value="Sales">Sales</option>
@@ -186,21 +186,21 @@
                         <span class="error-message">Please select a department</span>
                     </div>
                 </div>
-                <div class="form-row two-col">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-group">
-                        <label for="salary"><i class="fas fa-dollar-sign"></i> Annual Salary</label>
-                        <input type="number" id="salary" required placeholder="75000" min="0" />
+                        <label for="salary" class="label"><i class="fas fa-dollar-sign text-indigo-500"></i> Annual Salary</label>
+                        <input type="number" id="salary" required placeholder="75000" min="0" class="input" />
                         <span class="error-message">Please enter a valid salary</span>
                     </div>
                     <div class="form-group">
-                        <label for="joinDate"><i class="fas fa-calendar"></i> Join Date</label>
-                        <input type="date" id="joinDate" required />
+                        <label for="joinDate" class="label"><i class="fas fa-calendar text-indigo-500"></i> Join Date</label>
+                        <input type="date" id="joinDate" required class="input" />
                         <span class="error-message">Please select a join date</span>
                     </div>
                 </div>
-                <div class="modal-buttons" style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                <div class="modal-buttons mt-6">
                     <button type="button" class="btn btn-secondary" onclick="closeEmployeeModal()"><i class="fas fa-times"></i> Cancel</button>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Employee</button>
+                    <button type="submit" class="btn btn-primary btn-lg"><i class="fas fa-save"></i> Save Employee</button>
                 </div>
             </form>
         </div>

@@ -8,8 +8,9 @@
 
 @layer components {
   .card { @apply bg-white rounded-xl shadow-card border border-gray-100; }
-  .btn { @apply inline-flex items-center gap-2 font-semibold rounded-md transition; }
-  .btn-primary { @apply bg-brand text-white hover:bg-brand-dark; }
+  .btn { @apply inline-flex items-center gap-2 font-semibold rounded-md transition px-4 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[.98]; }
+  .btn-lg { @apply px-5 py-2.5 text-sm; }
+  .btn-primary { @apply text-white bg-gradient-to-r from-indigo-500 to-indigo-600 hover:to-indigo-700 shadow-md hover:shadow-lg; }
   .btn-secondary { @apply bg-white text-gray-700 border border-gray-200 hover:bg-gray-50; }
   .btn-ghost { @apply bg-transparent text-gray-600 hover:bg-gray-100; }
   .badge { @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold; }
@@ -32,10 +33,16 @@
   /* Modal */
   .modal { @apply hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000]; }
   .modal.show { @apply flex items-center justify-center; }
-  .modal-content { @apply bg-white p-8 rounded-xl shadow-card max-w-2xl w-[95%]; }
+  .modal-content { @apply bg-white p-8 rounded-xl shadow-card max-w-2xl w-[95%] animate-modal-enter; }
   .modal-header { @apply flex items-center gap-4 mb-6; }
   .modal-icon { @apply w-12 h-12 rounded-lg flex items-center justify-center text-white bg-gradient-to-br from-brand to-brand/80; }
   .modal-buttons { @apply flex gap-3 justify-end; }
+
+  /* Form controls */
+  .label { @apply flex items-center gap-2 font-semibold text-sm text-gray-700 mb-1; }
+  .input { @apply w-full border-2 border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500; }
+  .select { @apply w-full border-2 border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 bg-white; }
+  input.error, select.error { @apply border-rose-500 focus:ring-rose-100 focus:border-rose-500; }
 
   /* Toasts */
   .toast-container { @apply fixed top-24 right-5 z-[2000]; }
@@ -54,4 +61,9 @@
   /* Empty state */
   .empty-state { @apply text-center p-10 text-gray-500; }
   .empty-state-icon { @apply w-24 h-24 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center text-4xl text-gray-300; }
+}
+
+@layer utilities {
+  @keyframes modal-enter { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .animate-modal-enter { animation: modal-enter .2s ease; }
 }
