@@ -248,33 +248,37 @@ input:focus, select:focus { box-shadow: 0 0 0 3px rgba(79,70,229,.15); border-co
 /* Customers List */
 .customers-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1rem 1.25rem;
 }
 
 .customer-card {
     background: var(--card-bg);
-    padding: 1.5rem;
+    padding: 1rem 1.25rem;
     border-radius: 0.75rem;
     border: 1px solid var(--border-color);
-    transition: all 0.2s ease;
+    transition: box-shadow var(--transition), transform var(--transition);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.25rem 1rem;
 }
 
 .customer-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
 }
 
 .customer-name {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
+    grid-column: 1 / -1;
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
 }
 
 .customer-info {
     color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    margin: 0;
 }
 
 /* Modal */

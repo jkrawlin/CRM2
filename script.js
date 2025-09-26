@@ -312,13 +312,13 @@ function renderEmployeeTable() {
   }
 
   emptyState.style.display = 'none';
-  tbody.innerHTML = sorted.map((employee, index) => `
-        <tr style="animation: fadeIn 0.3s ease ${index * 0.05}s both">
+  tbody.innerHTML = sorted.map((employee) => `
+    <tr>
             <td><strong>${employee.name}</strong></td>
             <td>${employee.email}</td>
             <td>${employee.position}</td>
             <td><span class="badge">${employee.department}</span></td>
-            <td>$${parseInt(employee.salary).toLocaleString()}</td>
+      <td style="text-align:right;">$${parseInt(employee.salary).toLocaleString()}</td>
             <td>${formatDate(employee.joinDate)}</td>
             <td>
                 <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')">
@@ -480,11 +480,18 @@ function updateAuthUI(user) {
   const userInfo = document.getElementById('userInfo');
   const userName = document.getElementById('userName');
   const userPhoto = document.getElementById('userPhoto');
+  const userAvatar = document.getElementById('userAvatar');
+  const userBadge = document.querySelector('.user-badge');
 
   if (user) {
     if (signOutBtn) signOutBtn.style.display = 'inline-flex';
     if (userInfo) userInfo.style.display = 'inline-block';
     if (userName) userName.textContent = user.displayName || user.email || 'Signed in';
+    if (userAvatar) {
+      const seed = (user.displayName || user.email || 'U').trim();
+      userAvatar.textContent = seed.charAt(0).toUpperCase();
+    }
+    if (userBadge) userBadge.style.visibility = 'visible';
     if (userPhoto && user.photoURL) {
       userPhoto.src = user.photoURL;
       userPhoto.style.display = 'inline-block';
@@ -494,6 +501,7 @@ function updateAuthUI(user) {
   } else {
     if (signOutBtn) signOutBtn.style.display = 'none';
     if (userInfo) userInfo.style.display = 'none';
+    if (userBadge) userBadge.style.visibility = 'hidden';
   }
 }
 
