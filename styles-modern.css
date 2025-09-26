@@ -55,7 +55,7 @@
 
 body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: linear-gradient(180deg, #F8FAFF 0%, #EEF2FF 100%);
+    background: linear-gradient(135deg, var(--gray-50) 0%, #F0F9FF 100%);
     color: var(--gray-800);
     line-height: 1.6;
     min-height: 100vh;
@@ -320,7 +320,13 @@ body {
     transform: scaleX(1);
 }
 
-.table-container { background: white; border-radius: var(--radius-lg); box-shadow: 0 1px 3px rgba(0,0,0,.05); border: 1px solid var(--gray-200); overflow: hidden; }
+.table-container {
+    background: white;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+}
 .table-header {
     padding: var(--spacing-lg) var(--spacing-xl);
     border-bottom: 1px solid var(--gray-200);
@@ -416,21 +422,23 @@ body {
     border: 1px solid var(--gray-100);
 }
 
-.table-header { padding: .25rem var(--spacing-md); border-bottom: 1px solid var(--gray-200); background: #F9FAFB; }
-.table-title { font-size: .875rem; font-weight: 600; color: var(--gray-700); text-transform: uppercase; letter-spacing: .04em; }
+.table-header {
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-bottom: 2px solid var(--gray-100);
+    background: var(--gray-50);
+}
+
 .table-title {
     font-size: 1.125rem;
     font-weight: 700;
     color: var(--gray-900);
 }
 
-.data-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.excel-table thead th { background: #F3F4F6; border-bottom: 1px solid #E5E7EB; }
-.excel-table th, .excel-table td { border-right: 1px solid #E5E7EB; }
-.excel-table th:last-child, .excel-table td:last-child { border-right: none; }
-.excel-table tbody tr { border-bottom: 1px solid #E5E7EB; }
-.excel-table tbody tr:hover { background: #F9FAFB; }
-.excel-table .row-header { width: 40px; text-align: center; color: var(--gray-500); font-weight: 600; }
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
 
 /* Explicit column widths when a colgroup is present */
 .data-table colgroup col:nth-child(1) { width: 18%; }
@@ -443,14 +451,14 @@ body {
 
 .data-table th {
     background: var(--gray-50);
-    padding: .625rem .75rem;
+    padding: var(--spacing-md) var(--spacing-lg);
     text-align: left;
     font-weight: 600;
     font-size: 0.75rem;
     color: var(--gray-600);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    border-bottom: 1px solid var(--gray-200);
+    border-bottom: 2px solid var(--gray-100);
     cursor: pointer;
     user-select: none;
     transition: all var(--transition-base);
@@ -467,7 +475,8 @@ body {
     color: var(--gray-400);
 }
 
-.data-table td { padding: .625rem .75rem; 
+.data-table td {
+    padding: var(--spacing-lg);
     border-bottom: 1px solid var(--gray-100);
     color: var(--gray-700);
     font-size: 0.875rem;
@@ -504,8 +513,12 @@ body {
 .data-table tbody tr:hover td:first-child { padding-left: calc(var(--spacing-lg) + 6px); }
 
 /* Align special columns */
-.excel-table th:nth-child(6), .excel-table td:nth-child(6) { text-align: right; }
-.excel-table th:nth-child(8), .excel-table td:nth-child(8) { text-align: center; }
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) { text-align: right; }
+.data-table th:nth-child(6),
+.data-table td:nth-child(6) { text-align: left; }
+.data-table th:nth-child(7),
+.data-table td:nth-child(7) { text-align: center; }
 
 /* Employee name styling */
 .employee-name {
@@ -524,25 +537,7 @@ body {
 .department-badge.operations { background: rgba(139, 92, 246, 0.1); color: #8B5CF6; }
 
 /* Actions container */
-.action-buttons { display: flex; gap: .25rem; justify-content: center; }
-
-/* Ribbon styling */
-.ribbon { background: white; border: 1px solid var(--gray-200); border-radius: var(--radius-lg); padding: .5rem .75rem; margin-bottom: var(--spacing-md); box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-.ribbon-top { display:flex; justify-content:space-between; align-items:center; margin-bottom:.25rem; }
-.ribbon-tabs { display:flex; gap:.25rem; }
-.ribbon-tab { background:#F3F4F6; border:1px solid #E5E7EB; padding:.35rem .6rem; border-radius:6px; font-weight:600; font-size:.8rem; color:#374151; cursor:pointer; }
-.ribbon-tab.active { background:white; }
-.ribbon-groups { display:flex; gap:1rem; padding-top:.25rem; }
-.ribbon-group { border-right:1px solid #E5E7EB; padding-right:1rem; display:flex; align-items:center; gap:.5rem; }
-.ribbon-group:last-child { border-right:none; }
-.ribbon-group-title { font-size:.7rem; color:#6B7280; text-transform:uppercase; letter-spacing:.04em; margin-right:.5rem; }
-.ribbon-group-body { display:flex; align-items:center; gap:.5rem; }
-.filter-select.small { min-width: 140px; }
-.search-box.small { max-width: 240px; }
-
-/* Status bar */
-.status-bar { display:flex; gap:1rem; background:white; border:1px solid var(--gray-200); border-radius: var(--radius-lg); padding:.4rem .75rem; margin-top:.5rem; font-size:.85rem; color:#374151; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-.status-item strong { color:#111827; }
+.action-buttons { display: flex; gap: 0.375rem; justify-content: center; }
 
 .department-badge.finance {
     background: linear-gradient(135deg, #60A5FA, #3B82F6);
