@@ -276,9 +276,8 @@ window.editEmployee = function(id) {
 function renderEmployeeTable() {
   const tbody = document.getElementById('employeeTableBody');
   const emptyState = document.getElementById('emptyState');
-  if (!tbody || !emptyState) return; // Guard against elements not existing
+  if (!tbody || !emptyState) return;
 
-  // Filter
   const filtered = employees.filter(emp => {
     const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
     const text = `${emp.name} ${emp.email} ${emp.position} ${emp.department}`.toLowerCase();
@@ -286,7 +285,6 @@ function renderEmployeeTable() {
     return matchesDept && matchesSearch;
   });
 
-  // Sort
   const sorted = [...filtered];
   if (currentSortColumn) {
     sorted.sort((a, b) => {
@@ -312,26 +310,40 @@ function renderEmployeeTable() {
   }
 
   emptyState.style.display = 'none';
+
+  function deptClass(dept) {
+    if (!dept) return '';
+    const normalized = dept.toLowerCase().replace(/\s+/g, '-');
+    switch (normalized) {
+      case 'hr':
+      case 'human-resources': return 'human-resources';
+      case 'engineering': return 'engineering';
+      case 'sales': return 'sales';
+      case 'marketing': return 'marketing';
+      case 'finance': return 'finance';
+      case 'operations': return 'operations';
+      default: return 'engineering';
+    }
+  }
+
   tbody.innerHTML = sorted.map((employee) => `
     <tr>
-            <td><strong>${employee.name}</strong></td>
-            <td>${employee.email}</td>
-            <td>${employee.position}</td>
-            <td><span class="badge">${employee.department}</span></td>
-      <td style="text-align:right;">$${parseInt(employee.salary).toLocaleString()}</td>
-            <td>${formatDate(employee.joinDate)}</td>
+      <td>${employee.name}</td>
+      <td>${employee.email}</td>
+      <td>${employee.position}</td>
       <td>
-        <div style="display:flex; gap:.5rem; justify-content:center; white-space:nowrap;">
-          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')">
-            <i class="fas fa-edit"></i>
-          </button>
-          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')">
-            <i class="fas fa-trash"></i>
-          </button>
+        <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
+      </td>
+      <td>$${parseInt(employee.salary).toLocaleString()}</td>
+      <td>${formatDate(employee.joinDate)}</td>
+      <td>
+        <div class="action-buttons">
+          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}')"><i class="fas fa-edit"></i></button>
+          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}')"><i class="fas fa-trash"></i></button>
         </div>
       </td>
-        </tr>
-    `).join('');
+    </tr>
+  `).join('');
 }
 
 // Update statistics

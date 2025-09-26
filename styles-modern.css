@@ -436,9 +436,18 @@ body {
 
 .data-table {
     width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
+    border-collapse: collapse;
+    table-layout: fixed;
 }
+
+/* Explicit column widths when a colgroup is present */
+.data-table colgroup col:nth-child(1) { width: 18%; }
+.data-table colgroup col:nth-child(2) { width: 22%; }
+.data-table colgroup col:nth-child(3) { width: 15%; }
+.data-table colgroup col:nth-child(4) { width: 12%; }
+.data-table colgroup col:nth-child(5) { width: 10%; }
+.data-table colgroup col:nth-child(6) { width: 11%; }
+.data-table colgroup col:nth-child(7) { width: 12%; }
 
 .data-table th {
     background: var(--gray-50);
@@ -471,6 +480,9 @@ body {
     border-bottom: 1px solid var(--gray-100);
     color: var(--gray-700);
     font-size: 0.875rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .data-table tbody tr {
@@ -498,9 +510,15 @@ body {
     transform: scaleY(1);
 }
 
-.data-table tbody tr:hover td:first-child {
-    padding-left: calc(var(--spacing-lg) + 6px);
-}
+.data-table tbody tr:hover td:first-child { padding-left: calc(var(--spacing-lg) + 6px); }
+
+/* Align special columns */
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) { text-align: right; }
+.data-table th:nth-child(6),
+.data-table td:nth-child(6) { text-align: left; }
+.data-table th:nth-child(7),
+.data-table td:nth-child(7) { text-align: center; }
 
 /* Employee name styling */
 .employee-name {
@@ -510,35 +528,16 @@ body {
 }
 
 /* Department badges */
-.department-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
-}
+.department-badge { display: inline-block; padding: 0.25rem 0.625rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
+.department-badge.engineering { background: rgba(99, 102, 241, 0.1); color: var(--primary); }
+.department-badge.sales { background: rgba(16, 185, 129, 0.1); color: var(--accent); }
+.department-badge.marketing { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.department-badge.hr, .department-badge.human-resources { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.department-badge.finance { background: rgba(59, 130, 246, 0.1); color: #3B82F6; }
+.department-badge.operations { background: rgba(139, 92, 246, 0.1); color: #8B5CF6; }
 
-.department-badge.engineering {
-    background: linear-gradient(135deg, #818CF8, #6366F1);
-    color: white;
-}
-
-.department-badge.sales {
-    background: linear-gradient(135deg, #34D399, #10B981);
-    color: white;
-}
-
-.department-badge.marketing {
-    background: linear-gradient(135deg, #FBBF24, #F59E0B);
-    color: white;
-}
-
-.department-badge.hr {
-    background: linear-gradient(135deg, #F87171, #EF4444);
-    color: white;
-}
+/* Actions container */
+.action-buttons { display: flex; gap: 0.375rem; justify-content: center; }
 
 .department-badge.finance {
     background: linear-gradient(135deg, #60A5FA, #3B82F6);
