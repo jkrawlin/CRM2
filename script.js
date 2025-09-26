@@ -326,9 +326,8 @@ function renderEmployeeTable() {
     }
   }
 
-  tbody.innerHTML = sorted.map((employee, idx) => `
+  tbody.innerHTML = sorted.map((employee) => `
     <tr>
-      <td class="row-header">${idx + 1}</td>
       <td>${employee.name}</td>
       <td>${employee.email}</td>
       <td>${employee.position}</td>
