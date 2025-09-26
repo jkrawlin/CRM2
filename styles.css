@@ -477,8 +477,8 @@ tbody tr:hover {
     background: var(--card-bg);
     padding: 2rem;
     border-radius: 12px;
-    max-width: 400px;
-    width: 90%;
+    max-width: 720px; /* wider to fit the employee form comfortably */
+    width: 95%;
     animation: slideUp 0.3s ease;
 }
 

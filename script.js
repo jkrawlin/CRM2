@@ -133,6 +133,10 @@ function setupEventListeners() {
   const signOutBtn = document.getElementById('signOutBtn');
   if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
 
+  // Open employee modal button
+  const openEmployeeModalBtn = document.getElementById('openEmployeeModalBtn');
+  if (openEmployeeModalBtn) openEmployeeModalBtn.addEventListener('click', openEmployeeModal);
+
   // Login page controls
   const loginSignInBtn = document.getElementById('loginSignInBtn');
   const loginSignUpBtn = document.getElementById('loginSignUpBtn');
@@ -212,6 +216,19 @@ window.closeModal = function() {
   deleteEmployeeId = null;
 }
 
+// Employee form modal controls
+window.openEmployeeModal = function() {
+  const modal = document.getElementById('employeeModal');
+  if (modal) modal.classList.add('show');
+  // Reset form to add mode
+  clearForm();
+}
+
+window.closeEmployeeModal = function() {
+  const modal = document.getElementById('employeeModal');
+  if (modal) modal.classList.remove('show');
+}
+
 // Clear form
 window.clearForm = function() {
   const form = document.getElementById('employeeForm');
@@ -251,8 +268,7 @@ window.editEmployee = function(id) {
     document.getElementById('joinDate').value = employee.joinDate;
     document.getElementById('formTitle').textContent = 'Edit Employee';
     document.querySelector('.btn-primary').innerHTML = '<i class="fas fa-save"></i> Update Employee';
-
-    document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth' });
+    openEmployeeModal();
   }
 }
 
