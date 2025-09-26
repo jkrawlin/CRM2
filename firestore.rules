@@ -26,6 +26,11 @@ service cloud.firestore {
       return v is string && v.matches('^\\d{4}-\\d{2}-\\d{2}$');
     }
 
+    // ISO 8601 date-time such as 2025-09-26T12:34:56.789Z
+    function isValidISODateTime(v) {
+      return v is string && v.matches('^\\d{4}-\\d{2}-\\d{2}T[0-9:.-]+Z$');
+    }
+
     function hasOnlyAllowedKeys(d) {
       // Allow only these keys
       return d.keys().hasOnly(['name','email','position','department','salary','joinDate']);
@@ -46,6 +51,30 @@ service cloud.firestore {
       allow create: if isSignedIn() && validateEmployee(request.resource.data);
       allow update: if isSignedIn() && validateEmployee(request.resource.data);
       allow delete: if isSignedIn();
+    }
+
+    // Customers collection used by the web app (no auth required for demo)
+    function customersAllowedKeys(d) {
+      return d.keys().hasOnly(['name','email','phone','company','createdAt']);
+    }
+
+    function validateCustomer(d) {
+      return customersAllowedKeys(d)
+        && isNonEmptyString(d.name)
+        && isValidEmail(d.email)
+        && (!('phone' in d) || (d.phone is string && d.phone.size() <= 30))
+        && (!('company' in d) || (d.company is string && d.company.size() <= 200))
+        && isValidISODateTime(d.createdAt);
+    }
+
+    match /customers/{docId} {
+      // Open reads so the public site can list customers
+      allow read: if true;
+      // Allow creating/updating documents that pass validation
+      allow create: if validateCustomer(request.resource.data);
+      allow update: if validateCustomer(request.resource.data);
+      // Disallow deletes for safety in this demo setup
+      allow delete: if false;
     }
 
     // Everything else is denied by default
