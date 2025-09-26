@@ -39,71 +39,73 @@
 
     <!-- Main App with modern UI -->
     <div id="appRoot" class="app-root" style="display:none;">
-        <!-- Modern Header -->
-        <div class="header">
-            <div class="header-content">
-                <div class="header-left">
-                    <h1>Employee Management</h1>
-                    <span class="subhead">Manage and organize your team efficiently</span>
-                </div>
-                <div class="header-actions">
-                    <div class="user-badge">
-                        <div class="user-avatar" id="userAvatar">A</div>
-                        <span class="user-email" id="userName">admin@company.com</span>
+            <!-- Excel-like Ribbon -->
+            <div class="ribbon">
+                <div class="ribbon-top">
+                    <div class="ribbon-tabs">
+                        <button class="ribbon-tab active">Home</button>
+                        <button class="ribbon-tab">Insert</button>
+                        <button class="ribbon-tab">Data</button>
+                        <button class="ribbon-tab">View</button>
                     </div>
-                    <button id="themeToggle" class="btn btn-ghost" title="Toggle theme"><i class="fas fa-moon"></i></button>
-                    <button id="signOutBtn" class="btn btn-secondary"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+                    <div class="ribbon-user">
+                        <div class="user-badge">
+                            <div class="user-avatar" id="userAvatar">A</div>
+                            <span class="user-email" id="userName">admin@company.com</span>
+                        </div>
+                        <button id="themeToggle" class="btn btn-ghost" title="Toggle theme"><i class="fas fa-moon"></i></button>
+                        <button id="signOutBtn" class="btn btn-secondary"><i class="fas fa-sign-out-alt"></i></button>
+                    </div>
+                </div>
+                <div class="ribbon-groups">
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-title">Records</div>
+                        <div class="ribbon-group-body">
+                            <button id="openEmployeeModalBtn" class="btn btn-primary"><i class="fas fa-user-plus"></i> Add</button>
+                            <button class="btn btn-secondary" id="confirmDeleteToolbar"><i class="fas fa-trash"></i> Delete</button>
+                        </div>
+                    </div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-title">Find</div>
+                        <div class="ribbon-group-body">
+                            <div class="search-box small">
+                                <i class="fas fa-search"></i>
+                                <input id="searchInput" type="search" placeholder="Search" />
+                            </div>
+                            <select id="filterDepartment" class="filter-select small">
+                                <option value="">All Departments</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="ribbon-group">
+                        <div class="ribbon-group-title">Sort</div>
+                        <div class="ribbon-group-body">
+                            <button class="btn btn-secondary" onclick="sortTable('name')"><i class="fas fa-sort-alpha-down"></i> Name</button>
+                            <button class="btn btn-secondary" onclick="sortTable('salary')"><i class="fas fa-sort-numeric-down"></i> Salary</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Search and Filter Controls -->
-        <div class="controls-section">
-            <div class="search-box">
-                <i class="fas fa-search"></i>
-                <input id="searchInput" type="search" placeholder="Search by name, email, position..." />
-            </div>
-            <select id="filterDepartment" class="filter-select">
-                <option value="">All Departments</option>
-            </select>
-            <button id="openEmployeeModalBtn" class="btn btn-primary"><i class="fas fa-user-plus"></i> Add Employee</button>
-        </div>
-
-        <!-- Modern Stats Cards -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-users"></i></div>
-                <div class="stat-value" id="totalEmployees">0</div>
-                <div class="stat-label">Total Employees</div>
-                <span class="stat-change">+12%</span>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-building"></i></div>
-                <div class="stat-value" id="totalDepartments">0</div>
-                <div class="stat-label">Departments</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon"><i class="fas fa-dollar-sign"></i></div>
-                <div class="stat-value" id="avgSalary">$0</div>
-                <div class="stat-label">Average Salary</div>
-            </div>
-        </div>
+            <!-- remove old controls/stats in favor of ribbon and status bar -->
 
         <!-- Modern Table -->
         <div class="table-container">
             <div class="table-header"><h3 class="table-title">Employee Directory</h3></div>
-                    <table class="data-table">
-                        <colgroup>
-                            <col style="width: 20%" />  <!-- Name -->
-                            <col style="width: 24%" />  <!-- Email -->
-                            <col style="width: 16%" />  <!-- Position -->
-                            <col style="width: 14%" />  <!-- Department -->
-                            <col style="width: 10%" />  <!-- Salary -->
-                            <col style="width: 10%" />  <!-- Join Date -->
-                            <col style="width: 6%" />   <!-- Actions -->
-                        </colgroup>
+                            <table class="data-table excel-table">
+                                <colgroup>
+                                    <col />                 <!-- Row # -->
+                                    <col />                 <!-- Name -->
+                                    <col />                 <!-- Email -->
+                                    <col />                 <!-- Position -->
+                                    <col />                 <!-- Department -->
+                                    <col />                 <!-- Salary -->
+                                    <col />                 <!-- Join Date -->
+                                    <col />                 <!-- Actions -->
+                                </colgroup>
                 <thead>
                     <tr>
+                                        <th class="row-header"></th>
                         <th onclick="sortTable('name')">Name <i class="fas fa-sort"></i></th>
                         <th onclick="sortTable('email')">Email <i class="fas fa-sort"></i></th>
                         <th onclick="sortTable('position')">Position <i class="fas fa-sort"></i></th>
@@ -121,6 +123,13 @@
                 <p>Start by adding your first team member</p>
             </div>
         </div>
+
+                        <!-- Status bar (Excel-like) -->
+                        <div class="status-bar">
+                            <div class="status-item">Count: <strong id="totalEmployees">0</strong></div>
+                            <div class="status-item">Departments: <strong id="totalDepartments">0</strong></div>
+                            <div class="status-item">Average Salary: <strong id="avgSalary">$0</strong></div>
+                        </div>
     </div>
 
     <!-- Enhanced Delete Modal -->
