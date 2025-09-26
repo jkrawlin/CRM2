@@ -472,7 +472,7 @@ function formatDate(dateString) {
         to { opacity: 0; transform: translateX(100%); }
     }
     .badge {
-        background: var(--primary-color);
+    background: var(--primary);
         color: white;
         padding: 0.25rem 0.5rem;
         border-radius: 4px;
