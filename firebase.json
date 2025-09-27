@@ -6,8 +6,20 @@
     "public": ".",
     "ignore": [
       "firebase.json",
+      "firebase-debug.log",
+  "firestore.rules",
+  "storage.rules",
       "**/.*",
-      "**/node_modules/**"
+      "**/node_modules/**",
+      ".git/**",
+      ".firebase/**",
+      ".vscode/**",
+      ".qodo/**",
+      "src/**",
+      "postcss.config.cjs",
+      "tailwind.config.cjs",
+      "package*.json",
+      "README.md"
     ],
     "rewrites": [
       {
@@ -15,5 +27,9 @@
         "destination": "/index.html"
       }
     ]
+  }
+  ,
+  "storage": {
+    "rules": "storage.rules"
   }
 }

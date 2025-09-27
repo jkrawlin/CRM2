@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
-    <link rel="stylesheet" href="assets/tailwind.css" />
+    <link rel="stylesheet" href="assets/tailwind.css?v=20250926-4" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 </head>
@@ -39,86 +39,150 @@
         </div>
     </div>
 
-    <!-- Main App with modern UI -->
-    <div id="appRoot" class="max-w-7xl mx-auto p-8 space-y-8" style="display:none;">
-        <!-- Header -->
-        <div class="card p-8 relative overflow-hidden">
+        <!-- Main App with modern UI -->
+        <div id="appRoot" style="display:none;">
+            <div class="flex min-h-screen">
+                <!-- Sidebar -->
+                <aside class="w-64 bg-white border-r border-gray-200 p-6 hidden md:flex md:flex-col">
+                    <div class="text-xl font-extrabold bg-gradient-to-r from-indigo-500 to-indigo-700 bg-clip-text text-transparent mb-6">CRM</div>
+                    <nav class="space-y-1">
+                        <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="dashboard">
+                            <i class="fas fa-chart-line text-indigo-500"></i>
+                            <span>Dashboard</span>
+                        </button>
+                        <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="payroll">
+                            <i class="fas fa-file-invoice-dollar text-indigo-500"></i>
+                            <span>Payroll</span>
+                        </button>
+                        <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="employees">
+                            <i class="fas fa-users text-indigo-500"></i>
+                            <span>Employees</span>
+                        </button>
+                        <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="temporary">
+                            <i class="fas fa-user-clock text-indigo-500"></i>
+                            <span>Temporary Employees</span>
+                        </button>
+                    </nav>
+                    <div class="mt-auto pt-6">
+                        <button id="signOutBtnSidebar" class="btn btn-secondary w-full"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+                    </div>
+                </aside>
+                <!-- Main content -->
+                <main class="flex-1 max-w-7xl mx-auto p-8 space-y-8">
+                <!-- Header -->
+                <div class="card p-8 relative overflow-hidden">
             <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-2xl font-extrabold bg-gradient-to-r from-indigo-500 to-indigo-700 bg-clip-text text-transparent">Employee Management</h1>
-                    <span class="text-gray-500">Manage and organize your team efficiently</span>
-                </div>
+                <div></div>
                 <div class="flex items-center gap-3">
                     <div class="user-badge flex items-center gap-2 bg-gray-50 border-2 border-gray-100 rounded-lg px-3 py-2">
                         <div class="user-avatar w-8 h-8 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-400 text-white flex items-center justify-center text-sm font-semibold" id="userAvatar">A</div>
                         <span class="user-email text-sm font-medium text-gray-700" id="userName">admin@company.com</span>
                     </div>
-                    <button id="themeToggle" class="btn btn-ghost" title="Toggle theme"><i class="fas fa-moon"></i></button>
-                    <button id="signOutBtn" class="btn btn-secondary"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
                 </div>
             </div>
             <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-indigo-500 to-indigo-400"></div>
-        </div>
+    </div>
 
         <!-- Search and Filter Controls -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="md:col-span-2 relative">
                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                <input id="searchInput" type="search" placeholder="Search by name, email, position..." class="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-md focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" />
+                <input id="searchInput" type="search" placeholder="Search by Qatar ID, name, email, position..." class="w-full pl-10 pr-4 py-2 border-2 border-gray-200 rounded-md focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" />
             </div>
-            <div class="flex items-center gap-3">
-                <select id="filterDepartment" class="flex-1 border-2 border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500">
-                    <option value="">All Departments</option>
-                </select>
-                <button id="openEmployeeModalBtn" class="btn btn-primary btn-lg group relative overflow-hidden">
-                    <div class="absolute inset-0 bg-gradient-to-r from-purple-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <i class="fas fa-user-plus relative z-10"></i>
-                    <span class="relative z-10">Add Employee</span>
+            <div class="flex items-center gap-3 justify-end">
+                <button id="openEmployeeModalBtn" class="btn btn-primary btn-lg">
+                    <i class="fas fa-user-plus"></i>
+                    <span>Add Employee</span>
+                </button>
+                <button id="openTempEmployeeModalBtn" class="btn btn-primary btn-lg" style="display:none;">
+                    <i class="fas fa-user-clock"></i>
+                    <span>Add Temporary</span>
                 </button>
             </div>
         </div>
 
-        <!-- Modern Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div class="card p-6 relative overflow-hidden">
-                <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-users"></i></div>
-                <div id="totalEmployees" class="text-3xl font-extrabold text-gray-900">0</div>
-                <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Total Employees</div>
-                <span class="absolute top-4 right-4 text-xs font-semibold text-white bg-emerald-500 px-2 py-1 rounded">+12%</span>
+        <!-- Dashboard Section -->
+        <section id="dashboardSection" data-section="dashboard" class="space-y-8">
+            <!-- Modern Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
+                <div class="card p-6 relative overflow-hidden">
+                    <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-users"></i></div>
+                    <div id="totalEmployees" class="text-3xl font-extrabold text-gray-900">0</div>
+                    <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Total Employees</div>
+                    <span class="absolute top-4 right-4 text-xs font-semibold text-white bg-emerald-500 px-2 py-1 rounded">+12%</span>
+                </div>
             </div>
-            <div class="card p-6">
-                <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-building"></i></div>
-                <div id="totalDepartments" class="text-3xl font-extrabold text-gray-900">0</div>
-                <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Departments</div>
-            </div>
-            <div class="card p-6">
-                <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-dollar-sign"></i></div>
-                <div id="avgSalary" class="text-3xl font-extrabold text-gray-900">$0</div>
-                <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Average Salary</div>
-            </div>
-        </div>
+        </section>
 
-        <!-- Modern Table -->
-        <div class="card overflow-hidden">
+        <!-- Payroll Section -->
+        <section id="payrollSection" data-section="payroll" class="space-y-8" style="display:none;">
+            <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
+                <div class="card p-6 relative overflow-hidden">
+                    <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-file-invoice-dollar"></i></div>
+                    <div id="totalPayroll" class="text-3xl font-extrabold text-gray-900">$0</div>
+                    <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Total Monthly Payroll</div>
+                </div>
+            </div>
+
+            <div class="card overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Payroll</h3></div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <colgroup>
+                            <col class="w-[24%]" />  <!-- Name -->
+                            <col class="w-[12%]" />  <!-- Type -->
+                            <col class="w-[22%]" />  <!-- Department -->
+                            <col class="w-[14%]" />  <!-- Monthly Salary -->
+                            <col class="w-[14%]" />  <!-- Start Date -->
+                            <col class="w-[14%]" />  <!-- Qatar ID -->
+                        </colgroup>
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('name')">Name <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('type')">Type <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortPayroll('department')">Department <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortPayroll('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('joinDate')">Start Date <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="payrollTableBody" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+                <div class="empty-state hidden" id="payrollEmptyState">
+                    <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
+                    <h3 class="text-lg font-semibold text-gray-700">No Records Found</h3>
+                    <p class="text-gray-500">Add employees to see payroll here</p>
+                </div>
+            </div>
+        </section>
+
+    <!-- Employees Section -->
+    <section id="employeesSection" data-section="employees" class="space-y-8">
+    <div class="card overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Employee Directory</h3></div>
             <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                     <colgroup>
-                        <col class="w-[20%]" />
-                        <col class="w-[24%]" />
-                        <col class="w-[16%]" />
-                        <col class="w-[14%]" />
-                        <col class="w-[10%]" />
-                        <col class="w-[10%]" />
-                        <col class="w-[6%]" />
+                        <col class="w-[16%]" />  <!-- Name -->
+                        <col class="w-[20%]" />  <!-- Email -->
+                        <col class="w-[10%]" />  <!-- Phone -->
+                        <col class="w-[10%]" />  <!-- Qatar ID -->
+                        <col class="w-[10%]" />  <!-- Position -->
+                        <col class="w-[14%]" />  <!-- Department -->
+                        <col class="w-[12%]" />  <!-- Monthly Salary -->
+                        <col class="w-[6%]" />   <!-- Join Date -->
+                        <col class="w-[2%]" />   <!-- Actions -->
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name')">Name <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email')">Email <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone')">Phone <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('department')">Department <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-right font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('salary')">Salary <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Department <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-center font-semibold px-4 py-3">Actions</th>
                         </tr>
@@ -131,15 +195,62 @@
                 <h3 class="text-lg font-semibold text-gray-700">No Employees Found</h3>
                 <p class="text-gray-500">Start by adding your first team member</p>
             </div>
+                </div>
+    </section>
+
+    <!-- Temporary Employees Section -->
+    <section id="temporarySection" data-section="temporary" class="space-y-8" style="display:none;">
+        <div class="card overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Temporary Employees</h3></div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <colgroup>
+                        <col class="w-[16%]" />  <!-- Name -->
+                        <col class="w-[20%]" />  <!-- Email -->
+                        <col class="w-[10%]" />  <!-- Phone -->
+                        <col class="w-[10%]" />  <!-- Qatar ID -->
+                        <col class="w-[10%]" />  <!-- Position -->
+                        <col class="w-[14%]" />  <!-- Department -->
+                        <col class="w-[12%]" />  <!-- Monthly Salary -->
+                        <col class="w-[6%]" />   <!-- Join Date -->
+                        <col class="w-[2%]" />   <!-- Actions -->
+                    </colgroup>
+                    <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <tr>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name','temporary')">Name <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email','temporary')">Email <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone','temporary')">Phone <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid','temporary')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position','temporary')">Position <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department','temporary')">Department <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary','temporary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate','temporary')">Join Date <i class="fas fa-sort ml-1"></i></th>
+                            <th class="text-center font-semibold px-4 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tempEmployeeTableBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+            <div class="empty-state hidden" id="tempEmptyState">
+                <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
+                <h3 class="text-lg font-semibold text-gray-700">No Temporary Employees Found</h3>
+                <p class="text-gray-500">Start by adding your first temporary team member</p>
+            </div>
         </div>
-    </div>
+    </section>
+                </main>
+            </div>
+        </div>
 
     <!-- Enhanced Delete Modal -->
     <div class="modal" id="deleteModal">
         <div class="modal-content">
-            <div class="modal-header">
-                <div class="modal-icon" style="background: linear-gradient(135deg, #EF4444, #DC2626);"><i class="fas fa-exclamation-triangle"></i></div>
-                <h3>Confirm Deletion</h3>
+            <div class="modal-header flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="modal-icon" style="background: linear-gradient(135deg, #EF4444, #DC2626);"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h3>Confirm Deletion</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closeModal()"><i class="fas fa-times"></i></button>
             </div>
             <p style="color: var(--gray-600); margin-bottom: 1.5rem;">This action cannot be undone. The employee record will be permanently removed from the system.</p>
             <div class="modal-buttons" style="display: flex; gap: 1rem; justify-content: flex-end;">
@@ -154,7 +265,6 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="modal-header-content">
-                    <div class="modal-icon"><i class="fas fa-user-plus"></i></div>
                     <div>
                         <h3 id="formTitle" class="modal-title">Add New Employee</h3>
                         <p class="modal-subtitle">Fill in the details to add a new team member</p>
@@ -211,16 +321,12 @@
                                 <i class="fas fa-building label-icon"></i>
                                 Department
                             </label>
-                            <select id="department" required class="select">
-                                <option value="">Choose a department</option>
-                                <option value="Engineering">🔧 Engineering</option>
-                                <option value="Sales">📈 Sales</option>
-                                <option value="Marketing">📢 Marketing</option>
-                                <option value="HR">👥 Human Resources</option>
-                                <option value="Finance">💰 Finance</option>
-                                <option value="Operations">⚙️ Operations</option>
-                            </select>
-                            <span class="error-message">Please select a department</span>
+                            <input type="text"
+                                   id="department"
+                                   required
+                                   placeholder="e.g., Engineering"
+                                   class="input" />
+                            <span class="error-message">Please enter a department</span>
                         </div>
                     </div>
                     
@@ -228,15 +334,14 @@
                         <div class="form-group">
                             <label for="salary" class="label">
                                 <i class="fas fa-dollar-sign label-icon"></i>
-                                Annual Salary
+                                Monthly Salary
                             </label>
-                            <input type="number" 
-                                   id="salary" 
-                                   required 
-                                   placeholder="75000" 
-                                   min="0" 
-                                   step="1000"
-                                   class="input" />
+                <input type="number" 
+                    id="salary" 
+                    required 
+                    step="any"
+                    placeholder="5000" 
+                    class="input" />
                             <span class="error-message">Please enter a valid salary</span>
                         </div>
                         <div class="form-group">
@@ -249,6 +354,58 @@
                                    required 
                                    class="input" />
                             <span class="error-message">Please select a join date</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="qid" class="label">
+                                <i class="fas fa-id-card label-icon"></i>
+                                Qatar ID Number
+                            </label>
+                            <input type="text"
+                                   id="qid"
+                                   inputmode="numeric"
+                                   pattern="[0-9]*"
+                                   placeholder="e.g., 12345678901"
+                                   class="input" />
+                            <span class="error-message">Qatar ID should be digits only</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="phone" class="label">
+                                <i class="fas fa-phone label-icon"></i>
+                                Phone Number
+                            </label>
+                            <input type="tel"
+                                   id="phone"
+                                   placeholder="e.g., +974 5555 1234"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid phone number</span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="label">
+                                <i class="fas fa-file-pdf label-icon"></i>
+                                Qatar ID PDF
+                            </label>
+                            <input type="file" id="qidPdf" accept="application/pdf" class="input" />
+                            <div class="mt-2 flex gap-2">
+                                <button type="button" id="viewQidPdfBtn" class="btn btn-ghost" style="display:none;"><i class="fas fa-eye"></i> View</button>
+                                <span id="qidPdfStatus" class="text-xs text-gray-500"></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="label">
+                                <i class="fas fa-passport label-icon"></i>
+                                Passport PDF
+                            </label>
+                            <input type="file" id="passportPdf" accept="application/pdf" class="input" />
+                            <div class="mt-2 flex gap-2">
+                                <button type="button" id="viewPassportPdfBtn" class="btn btn-ghost" style="display:none;"><i class="fas fa-eye"></i> View</button>
+                                <span id="passportPdfStatus" class="text-xs text-gray-500"></span>
+                            </div>
                         </div>
                     </div>
                 </form>
@@ -267,9 +424,85 @@
         </div>
     </div>
 
+    <!-- Employee Details Modal -->
+    <div class="modal" id="viewModal">
+        <div class="modal-content">
+            <div class="modal-header flex items-center justify-between">
+                <div class="modal-header-content">
+                    <div>
+                        <h3 class="modal-title">Employee Details</h3>
+                        <p class="modal-subtitle" id="viewNameSub">&nbsp;</p>
+                    </div>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closeViewModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Full Name</dt>
+                        <dd id="viewName" class="text-gray-900 font-semibold">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt>
+                        <dd id="viewEmail" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt>
+                        <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt>
+                        <dd id="viewQid" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt>
+                        <dd id="viewPosition" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt>
+                        <dd id="viewDepartment" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt>
+                        <dd id="viewSalary" class="text-gray-900 tabular-nums">&nbsp;</dd>
+                    </div>
+                    <div class="space-y-1 md:col-span-2">
+                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt>
+                        <dd id="viewJoinDate" class="text-gray-900">&nbsp;</dd>
+                    </div>
+                </dl>
+
+                <!-- Documents Section -->
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
+                            <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                        </div>
+                        <div id="qidDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <iframe id="qidPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Qatar ID PDF Preview"></iframe>
+                    </div>
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
+                            <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                        </div>
+                        <div id="passportDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <iframe id="passportPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Passport PDF Preview"></iframe>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeViewModal()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Enhanced Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script type="module" src="script.js"></script>
+    <script type="module" src="script.js?v=20250927-02"></script>
 </body>
 </html>

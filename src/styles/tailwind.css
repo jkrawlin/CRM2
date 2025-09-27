@@ -9,8 +9,8 @@
 @layer components {
   .card { @apply bg-white rounded-xl shadow-card border border-gray-100; }
   .btn { @apply inline-flex items-center gap-2 font-semibold rounded-lg transition-all duration-200 px-4 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[.98]; }
-  .btn-lg { @apply px-6 py-3 text-sm font-bold; }
-  .btn-primary { @apply text-white bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:via-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5; }
+  .btn-lg { @apply px-5 py-2.5 text-sm font-bold; }
+  .btn-primary { @apply text-white bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg focus:ring-indigo-100; }
   .btn-secondary { @apply bg-white text-gray-700 border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm hover:shadow-md; }
   .btn-ghost { @apply bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-800; }
   .badge { @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold; }
@@ -31,25 +31,46 @@
   .department-badge.operations { @apply text-white bg-gradient-to-r from-violet-400 to-purple-600; }
 
   /* Modal */
-  .modal { @apply hidden fixed inset-0 bg-black/60 backdrop-blur-md z-[1000]; }
+  .modal { @apply hidden fixed inset-0 bg-black/60 backdrop-blur-md z-[1000]; pointer-events:auto; }
   .modal.show { @apply flex items-center justify-center p-4; }
-  .modal-content { @apply bg-white rounded-2xl shadow-2xl max-w-2xl w-full animate-modal-enter border border-gray-100; }
-  .modal-header { @apply bg-gradient-to-r from-indigo-50 to-purple-50 px-8 py-6 border-b border-gray-100 rounded-t-2xl; }
+  .modal-content { @apply bg-white rounded-2xl shadow-2xl max-w-xl w-auto animate-modal-enter border border-gray-100 relative overflow-hidden; pointer-events:auto; }
+  .modal-content::before { content: none; }
+  .modal-content::after { content: none; }
+  .modal-header { @apply bg-white px-6 py-4 border-b border-gray-100 rounded-t-2xl; }
+  .modal-header::after { @apply content-[''] absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent; }
   .modal-header-content { @apply flex items-center gap-4; }
-  .modal-icon { @apply w-14 h-14 rounded-xl flex items-center justify-center text-white bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 shadow-lg; }
-  .modal-title { @apply text-2xl font-bold text-gray-900; }
-  .modal-subtitle { @apply text-gray-600 text-sm mt-1; }
-  .modal-body { @apply px-8 py-6; }
-  .modal-footer { @apply px-8 py-6 bg-gray-50 border-t border-gray-100 rounded-b-2xl flex justify-end gap-3; }
+  .modal-icon { @apply w-16 h-16 rounded-2xl flex items-center justify-center text-white bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-600 shadow-xl relative; }
+  .modal-icon::before { @apply content-[''] absolute inset-0 rounded-2xl bg-white/20 backdrop-blur-sm; }
+  .modal-title { @apply text-2xl font-bold text-gray-900 relative z-10; }
+  .modal-subtitle { @apply text-gray-600 text-base mt-2 relative z-10; }
+  .modal-body { @apply px-6 py-6 bg-gradient-to-b from-white to-gray-50/50 relative; }
+  .modal-body::before { @apply content-[''] absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-200 to-transparent; }
+  .modal-footer { @apply px-6 py-4 bg-gray-50 border-t border-gray-100 rounded-b-2xl flex justify-end gap-4 relative; }
+  .modal-footer::before { @apply content-[''] absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent; }
+
+  /* Make the Add Employee modal a rectangle (no rounded corners), wider, and less tall */
+  #employeeModal .modal-content { @apply rounded-none max-w-5xl w-full max-h-[80vh] overflow-y-auto; }
+  #employeeModal .modal-header { @apply rounded-none; }
+  #employeeModal .modal-body { @apply px-6 py-4; }
+  #employeeModal .modal-footer { @apply rounded-none; }
+  #employeeModal .form-section { @apply space-y-4; }
+  #employeeModal .form-group { @apply p-2; }
+  #employeeModal .form-row { @apply grid grid-cols-1 md:grid-cols-3 gap-4; }
+
+  /* Employee View modal: rectangular and wide */
+  #viewModal .modal-content { @apply rounded-none max-w-3xl w-full; }
+  #viewModal .modal-header { @apply rounded-none; }
+  #viewModal .modal-footer { @apply rounded-none; }
 
   /* Form controls */
   .form-section { @apply space-y-6; }
-  .form-row { @apply grid grid-cols-1 md:grid-cols-2 gap-6; }
-  .form-group { @apply space-y-2; }
-  .label { @apply flex items-center gap-2 font-semibold text-sm text-gray-800; }
+  .form-row { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
+  .form-group { @apply space-y-2 relative bg-white/60 backdrop-blur-sm rounded-xl p-3 border border-gray-200/50 shadow-sm hover:shadow-md transition-all duration-300; }
+  .form-group::before { @apply content-[''] absolute -inset-2 bg-gradient-to-r from-indigo-50/50 via-purple-50/30 to-pink-50/50 rounded-xl opacity-0 hover:opacity-100 transition-opacity duration-300 pointer-events-none; }
+  .label { @apply flex items-center gap-2 font-semibold text-sm text-gray-800 relative z-10; }
   .label-icon { @apply text-indigo-500; }
-  .input { @apply w-full border-2 border-gray-300 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all duration-200; }
-  .select { @apply w-full border-2 border-gray-300 rounded-lg px-4 py-3 text-gray-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 bg-white transition-all duration-200; }
+  .input { @apply w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 transition-all duration-200 bg-white/80 backdrop-blur-sm; }
+  .select { @apply w-full border-2 border-gray-300 rounded-lg px-3 py-2 text-gray-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 bg-white/80 backdrop-blur-sm transition-all duration-200; }
   input.error, select.error { @apply border-rose-400 focus:ring-rose-100 focus:border-rose-500 bg-rose-50; }
   .error-message { @apply text-rose-600 text-xs font-medium mt-1 hidden; }
   .form-group input.error + .error-message { @apply block; }

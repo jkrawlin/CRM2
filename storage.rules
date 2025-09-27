@@ -1,0 +1,38 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    // Allow only PDF uploads for employee documents in defined paths
+    function isPdfUpload() {
+      return request.resource != null && request.resource.contentType == 'application/pdf';
+    }
+
+    // Max 50MB (adjust if needed)
+    function isAllowedSize() {
+      return request.resource != null && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // File name must be one of the allowed PDF names
+    function isAllowedEmployeeFile(fileName) {
+      return fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf';
+    }
+    // Employees PDFs
+    match /employees/{docId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isAllowedEmployeeFile(fileName) && isPdfUpload() && isAllowedSize();
+    }
+
+    // Temporary Employees PDFs
+    match /temporaryEmployees/{docId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isAllowedEmployeeFile(fileName) && isPdfUpload() && isAllowedSize();
+    }
+
+    // Deny everything else explicitly
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

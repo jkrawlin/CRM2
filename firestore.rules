@@ -18,7 +18,8 @@ service cloud.firestore {
     }
 
     function isValidSalary(v) {
-      return (v is int || v is float) && v >= 0 && v <= 1000000000; // 0..1B
+      // Only ensure it's a number. No min/max constraints per product decision.
+      return (v is int || v is float);
     }
 
     function isValidISODate(v) {
@@ -32,8 +33,8 @@ service cloud.firestore {
     }
 
     function hasOnlyAllowedKeys(d) {
-      // Allow only these keys
-      return d.keys().hasOnly(['name','email','position','department','salary','joinDate']);
+      // Allow only these keys (qid/phone/pdf urls are optional)
+      return d.keys().hasOnly(['name','email','position','department','salary','joinDate','qid','phone','qidPdfUrl','passportPdfUrl']);
     }
 
     function validateEmployee(d) {
@@ -47,6 +48,14 @@ service cloud.firestore {
     }
 
     match /employees/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateEmployee(request.resource.data);
+      allow update: if isSignedIn() && validateEmployee(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+
+    // Temporary employees collection with same schema/permissions
+    match /temporaryEmployees/{docId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && validateEmployee(request.resource.data);
       allow update: if isSignedIn() && validateEmployee(request.resource.data);
