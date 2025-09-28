@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
-    <link rel="stylesheet" href="assets/tailwind.css?v=20250926-4" />
+    <link rel="stylesheet" href="assets/tailwind.css?v=20250928-07" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 </head>
@@ -155,6 +155,25 @@
                     <p class="text-gray-500">Add employees to see payroll here</p>
                 </div>
             </div>
+
+                        <!-- Payroll Frame Controls -->
+                        <div class="card p-6">
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div class="flex items-center gap-3">
+                                    <label for="payrollMonth" class="text-sm font-semibold text-gray-700 whitespace-nowrap"><i class="fas fa-calendar-alt text-indigo-500"></i> Payroll Month</label>
+                                    <input id="payrollMonth" type="month" class="border-2 border-gray-200 rounded-md px-3 py-2 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500" />
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <button id="exportPayrollCsvBtn" class="btn btn-secondary"><i class="fas fa-file-csv"></i> Export CSV</button>
+                                    <button id="printPayrollBtn" class="btn btn-primary"><i class="fas fa-print"></i> Print Payroll</button>
+                                </div>
+                            </div>
+                            <div class="mt-6">
+                                <div id="payrollFrame" class="bg-white border border-gray-200 rounded-lg p-6">
+                                    <!-- Rendered by script.js (renderPayrollFrame) -->
+                                </div>
+                            </div>
+                        </div>
         </section>
 
     <!-- Employees Section -->
@@ -242,20 +261,28 @@
             </div>
         </div>
 
-    <!-- Enhanced Delete Modal -->
+    <!-- Enhanced Delete Modal (simplified, no red gradient square) -->
     <div class="modal" id="deleteModal">
         <div class="modal-content">
             <div class="modal-header flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <div class="modal-icon" style="background: linear-gradient(135deg, #EF4444, #DC2626);"><i class="fas fa-exclamation-triangle"></i></div>
-                    <h3>Confirm Deletion</h3>
+                    <i class="fas fa-exclamation-triangle text-rose-600"></i>
+                    <h3 class="modal-title">Confirm Deletion</h3>
                 </div>
                 <button class="btn btn-ghost" aria-label="Close" onclick="closeModal()"><i class="fas fa-times"></i></button>
             </div>
-            <p style="color: var(--gray-600); margin-bottom: 1.5rem;">This action cannot be undone. The employee record will be permanently removed from the system.</p>
-            <div class="modal-buttons" style="display: flex; gap: 1rem; justify-content: flex-end;">
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <div class="alert-icon"><i class="fas fa-exclamation"></i></div>
+                    <div>
+                        <p class="font-semibold">This action cannot be undone.</p>
+                        <p class="text-sm opacity-90">The employee record will be permanently removed from the system.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()"><i class="fas fa-times"></i> Cancel</button>
-                <button class="btn btn-primary" id="confirmDelete" style="background: linear-gradient(135deg, #EF4444, #DC2626);"><i class="fas fa-trash"></i> Delete Employee</button>
+                <button class="btn btn-danger" id="confirmDelete"><i class="fas fa-trash"></i> Delete Employee</button>
             </div>
         </div>
     </div>
@@ -384,6 +411,46 @@
                         </div>
                     </div>
 
+                    <!-- Bank details -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="bankName" class="label">
+                                <i class="fas fa-university label-icon"></i>
+                                Bank Name
+                            </label>
+                            <input type="text"
+                                   id="bankName"
+                                   placeholder="e.g., Qatar National Bank"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid bank name</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="bankAccountNumber" class="label">
+                                <i class="fas fa-hashtag label-icon"></i>
+                                Account Number
+                            </label>
+                            <input type="text"
+                                   id="bankAccountNumber"
+                                   inputmode="numeric"
+                                   placeholder="e.g., 1234567890"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid account number</span>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group md:col-span-2">
+                            <label for="bankIban" class="label">
+                                <i class="fas fa-globe label-icon"></i>
+                                IBAN
+                            </label>
+                            <input type="text"
+                                   id="bankIban"
+                                   placeholder="e.g., QA58 DOHB 0000 1234 5678 90AB CDEF G"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid IBAN</span>
+                        </div>
+                    </div>
+
                     <div class="form-row">
                         <div class="form-group">
                             <label class="label">
@@ -437,49 +504,103 @@
                 <button class="btn btn-ghost" aria-label="Close" onclick="closeViewModal()"><i class="fas fa-times"></i></button>
             </div>
             <div class="modal-body">
-                <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Full Name</dt>
-                        <dd id="viewName" class="text-gray-900 font-semibold">&nbsp;</dd>
+                <!-- Tabs -->
+                <div class="border-b mb-4">
+                    <div class="flex items-center gap-2">
+                        <button id="viewTabInfoBtn" class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600">Info</button>
+                        <button id="viewTabDocsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800">Documents</button>
                     </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt>
-                        <dd id="viewEmail" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt>
-                        <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt>
-                        <dd id="viewQid" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt>
-                        <dd id="viewPosition" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt>
-                        <dd id="viewDepartment" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt>
-                        <dd id="viewSalary" class="text-gray-900 tabular-nums">&nbsp;</dd>
-                    </div>
-                    <div class="space-y-1 md:col-span-2">
-                        <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt>
-                        <dd id="viewJoinDate" class="text-gray-900">&nbsp;</dd>
-                    </div>
-                </dl>
+                </div>
 
-                <!-- Documents Section -->
-                <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Info Tab Content -->
+                                <div id="viewTabInfo" class="space-y-6">
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <!-- Personal -->
+                                        <div class="card p-4">
+                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                                <i class="fas fa-user text-indigo-500"></i>
+                                                <span>Personal</span>
+                                            </div>
+                                            <div class="grid grid-cols-1 gap-3">
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Full Name</div>
+                                                    <div id="viewName" class="text-gray-900 font-semibold">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</div>
+                                                    <div id="viewEmail" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</div>
+                                                    <div id="viewPhone" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</div>
+                                                    <div id="viewQid" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Job -->
+                                        <div class="card p-4">
+                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                                <i class="fas fa-briefcase text-indigo-500"></i>
+                                                <span>Job</span>
+                                            </div>
+                                            <div class="grid grid-cols-1 gap-3">
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</div>
+                                                    <div id="viewPosition" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</div>
+                                                    <div id="viewDepartment" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</div>
+                                                    <div id="viewSalary" class="text-gray-900 tabular-nums">&nbsp;</div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</div>
+                                                    <div id="viewJoinDate" class="text-gray-900">&nbsp;</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Bank Details (full width) -->
+                                    <div class="card p-4">
+                                        <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                            <i class="fas fa-university text-indigo-500"></i>
+                                            <span>Bank Details</span>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div>
+                                                <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</div>
+                                                <div id="viewBankName" class="text-gray-900">&nbsp;</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account Number</div>
+                                                <div id="viewAccountNumber" class="text-gray-900">&nbsp;</div>
+                                            </div>
+                                            <div class="md:col-span-1 md:col-span-1 md:col-start-auto">
+                                                <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</div>
+                                                <div id="viewIban" class="text-gray-900 break-all">&nbsp;</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                <!-- Documents Tab Content -->
+                <div id="viewTabDocs" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="card p-4">
                         <div class="flex items-center justify-between mb-3">
                             <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
                             <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
                         </div>
                         <div id="qidDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <div id="qidLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
                         <iframe id="qidPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Qatar ID PDF Preview"></iframe>
                     </div>
                     <div class="card p-4">
@@ -488,8 +609,10 @@
                             <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
                         </div>
                         <div id="passportDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <div id="passportLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
                         <iframe id="passportPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Passport PDF Preview"></iframe>
                     </div>
+                </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -503,6 +626,6 @@
     <!-- Enhanced Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script type="module" src="script.js?v=20250927-02"></script>
+    <script type="module" src="script.js?v=20250928-08"></script>
 </body>
 </html>

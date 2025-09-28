@@ -1,36 +1,51 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function isSignedIn() {
+    // Security functions
+    function isAuthenticated() {
       return request.auth != null;
     }
-    // Allow only PDF uploads for employee documents in defined paths
-    function isPdfUpload() {
-      return request.resource != null && request.resource.contentType == 'application/pdf';
+    
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
     }
-
-    // Max 50MB (adjust if needed)
-    function isAllowedSize() {
-      return request.resource != null && request.resource.size < 50 * 1024 * 1024;
+    
+    function isValidPdf() {
+      return request.resource.contentType == 'application/pdf';
     }
-
-    // File name must be one of the allowed PDF names
-    function isAllowedEmployeeFile(fileName) {
-      return fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf';
+    
+    function isValidSize() {
+      return request.resource.size < 50 * 1024 * 1024; // 50MB max
     }
-    // Employees PDFs
+    
+    // Employee documents - authenticated users only
     match /employees/{docId}/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isAllowedEmployeeFile(fileName) && isPdfUpload() && isAllowedSize();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+        && isValidPdf()
+        && isValidSize()
+        && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf');
+      allow delete: if isAuthenticated();
     }
-
-    // Temporary Employees PDFs
+    
+    // Temporary employee documents - authenticated users only  
     match /temporaryEmployees/{docId}/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isAllowedEmployeeFile(fileName) && isPdfUpload() && isAllowedSize();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+        && isValidPdf()
+        && isValidSize()
+        && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf');
+      allow delete: if isAuthenticated();
     }
-
-    // Deny everything else explicitly
+    
+    // User-specific documents (future enhancement)
+    match /users/{userId}/documents/{document} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+    
+    // Deny all other paths
     match /{allPaths=**} {
       allow read, write: if false;
     }

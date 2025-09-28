@@ -13,6 +13,7 @@
   .btn-primary { @apply text-white bg-indigo-600 hover:bg-indigo-700 shadow-md hover:shadow-lg focus:ring-indigo-100; }
   .btn-secondary { @apply bg-white text-gray-700 border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 shadow-sm hover:shadow-md; }
   .btn-ghost { @apply bg-transparent text-gray-600 hover:bg-gray-100 hover:text-gray-800; }
+  .btn-danger { @apply text-white bg-rose-600 hover:bg-rose-700 shadow-md hover:shadow-lg focus:ring-rose-100; }
   .badge { @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold; }
   .badge-engineering { @apply bg-indigo-100 text-indigo-700; }
   .badge-sales { @apply bg-emerald-100 text-emerald-700; }
@@ -31,9 +32,11 @@
   .department-badge.operations { @apply text-white bg-gradient-to-r from-violet-400 to-purple-600; }
 
   /* Modal */
-  .modal { @apply hidden fixed inset-0 bg-black/60 backdrop-blur-md z-[1000]; pointer-events:auto; }
+  /* Remove backdrop blur for performance */
+  .modal { @apply hidden fixed inset-0 bg-black/60 z-[1000]; pointer-events:auto; }
   .modal.show { @apply flex items-center justify-center p-4; }
-  .modal-content { @apply bg-white rounded-2xl shadow-2xl max-w-xl w-auto animate-modal-enter border border-gray-100 relative overflow-hidden; pointer-events:auto; }
+  /* Use lighter shadow to reduce paint cost */
+  .modal-content { @apply bg-white rounded-2xl shadow-xl max-w-xl w-auto animate-modal-enter border border-gray-100 relative overflow-hidden; pointer-events:auto; }
   .modal-content::before { content: none; }
   .modal-content::after { content: none; }
   .modal-header { @apply bg-white px-6 py-4 border-b border-gray-100 rounded-t-2xl; }
@@ -58,7 +61,7 @@
   #employeeModal .form-row { @apply grid grid-cols-1 md:grid-cols-3 gap-4; }
 
   /* Employee View modal: rectangular and wide */
-  #viewModal .modal-content { @apply rounded-none max-w-3xl w-full; }
+  #viewModal .modal-content { @apply rounded-none max-w-3xl w-full max-h-[80vh] overflow-y-auto; }
   #viewModal .modal-header { @apply rounded-none; }
   #viewModal .modal-footer { @apply rounded-none; }
 
@@ -82,6 +85,11 @@
   .toast.error { @apply border-rose-500; }
   .toast.warning { @apply border-amber-500; }
   .toast-message { @apply flex-1 text-sm font-medium text-gray-800; }
+
+  /* Alerts */
+  .alert { @apply w-full bg-white border-2 rounded-lg px-4 py-3 flex items-start gap-3; }
+  .alert-danger { @apply border-rose-200 bg-rose-50 text-rose-800; }
+  .alert-icon { @apply w-8 h-8 rounded-md bg-rose-600 text-white flex items-center justify-center mt-0.5; }
 
   /* Action buttons in table */
   .action-buttons { @apply flex items-center justify-center gap-1; }

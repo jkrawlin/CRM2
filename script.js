@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20250927-02';
+import { db, auth, storage } from './firebase-config.js?v=20250928-03';
 import {
   collection,
   addDoc,
@@ -19,7 +19,8 @@ import {
 import {
   ref as storageRef,
   uploadBytes,
-  getDownloadURL
+  getDownloadURL,
+  getBlob
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 let employees = [];
@@ -37,6 +38,8 @@ let unsubscribeEmployees = null;
 let unsubscribeTemporary = null;
 let authed = false;
 let authInitialized = false;
+// Track current View modal context to lazy-load documents and manage blob URLs
+let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -105,6 +108,8 @@ function loadEmployeesRealtime() {
       renderEmployeeTable();
       updateStats();
       updateDepartmentFilter();
+      // Keep payroll in sync as data arrives
+      renderPayrollTable();
     },
     (error) => {
       console.error("Error loading employees: ", error);
@@ -122,6 +127,8 @@ function loadTemporaryRealtime() {
     (snapshot) => {
       temporaryEmployees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
       renderTemporaryTable();
+      // Keep payroll in sync as data arrives
+      renderPayrollTable();
     },
     (error) => {
       console.error("Error loading temporary employees: ", error);
@@ -311,6 +318,20 @@ function setupEventListeners() {
       if (viewModalEl && viewModalEl.classList.contains('show')) closeViewModal();
     }
   });
+
+  // Payroll Frame controls
+  const payrollMonthEl = document.getElementById('payrollMonth');
+  const exportCsvBtn = document.getElementById('exportPayrollCsvBtn');
+  const printBtn = document.getElementById('printPayrollBtn');
+  if (payrollMonthEl) {
+    // Default to current month
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    payrollMonthEl.value = payrollMonthEl.value || ym;
+    payrollMonthEl.addEventListener('change', () => renderPayrollFrame());
+  }
+  if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportPayrollCsv);
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
 }
 
 // Toggle visible section and active nav
@@ -391,7 +412,10 @@ async function handleFormSubmit(e) {
     salary: parseFloat(document.getElementById('salary').value),
     joinDate: document.getElementById('joinDate').value,
     qid: (document.getElementById('qid')?.value || '').trim(),
-    phone: (document.getElementById('phone')?.value || '').trim()
+    phone: (document.getElementById('phone')?.value || '').trim(),
+    bankName: (document.getElementById('bankName')?.value || '').trim(),
+    bankAccountNumber: (document.getElementById('bankAccountNumber')?.value || '').trim(),
+    bankIban: ((document.getElementById('bankIban')?.value || '').trim() || '').toUpperCase().replace(/\s+/g, '')
   };
   const isNew = !employee.id;
 
@@ -404,6 +428,10 @@ async function handleFormSubmit(e) {
 
   const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
 
+  // Close the modal immediately for both Add and Edit
+  closeEmployeeModal();
+  showToast(isNew ? 'Saving new employee…' : 'Updating employee…', 'info');
+
   // If creating new document without ID, first create the doc to get ID, then upload
   if (!employee.id) {
     const { id, ...newData } = employee;
@@ -411,27 +439,30 @@ async function handleFormSubmit(e) {
     employee.id = docRef.id;
   }
 
-  // Helper to upload using the actual employee.id path
-  const uploadIfNeeded = async (key, file) => {
+  // Helper to upload a file to a specific storage path and return its download URL
+  const uploadIfNeeded = async (file, storagePath) => {
     if (!file) return null;
     if (file.type !== 'application/pdf') {
       showToast('Please upload PDF files only', 'warning');
       return null;
     }
     try {
-      const path = `${basePath}/${employee.id}/${key}.pdf`;
-      const ref = storageRef(storage, path);
-      await uploadBytes(ref, file, { contentType: 'application/pdf' });
-      return await getDownloadURL(ref);
-    } catch (err) {
-      console.error('Upload failed:', err);
-      showToast('Failed to upload document. Saving other changes.', 'error');
-      return null; // continue saving other fields
+      const destRef = storageRef(storage, storagePath);
+      const snapshot = await uploadBytes(destRef, file, { contentType: 'application/pdf' });
+      return await getDownloadURL(snapshot.ref);
+    } catch (error) {
+      console.error('Upload error:', error);
+      if (error && error.code === 'storage/unauthorized') {
+        showToast('Please sign in to upload files', 'error');
+      } else {
+        showToast('Failed to upload file: ' + (error?.message || 'Unknown error'), 'error');
+      }
+      return null;
     }
   };
 
-  const qidUrl = await uploadIfNeeded('qidPdf', files.qidPdf);
-  const passportUrl = await uploadIfNeeded('passportPdf', files.passportPdf);
+  const qidUrl = await uploadIfNeeded(files.qidPdf, `${basePath}/${employee.id}/qidPdf.pdf`);
+  const passportUrl = await uploadIfNeeded(files.passportPdf, `${basePath}/${employee.id}/passportPdf.pdf`);
   if (qidUrl) employee.qidPdfUrl = qidUrl;
   if (passportUrl) employee.passportPdfUrl = passportUrl;
 
@@ -579,16 +610,181 @@ function renderPayrollTable() {
   }
   emptyState.classList.add('hidden');
 
-  tbody.innerHTML = sorted.map(emp => `
-    <tr class="hover:bg-gray-50">
-      <td class="px-4 py-3 font-semibold text-gray-900">${emp.name}</td>
-      <td class="px-4 py-3">${emp._type}</td>
-      <td class="px-4 py-3">${emp.department || '-'}</td>
-      <td class="px-4 py-3 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      <td class="px-4 py-3 whitespace-nowrap">${formatDate(emp.joinDate)}</td>
-      <td class="px-4 py-3">${emp.qid || '-'}</td>
-    </tr>
-  `).join('');
+  // Group by type: Permanent (Employee) and Temporary
+  const groups = {
+    Employee: [],
+    Temporary: []
+  };
+  sorted.forEach(emp => {
+    if (emp._type === 'Temporary') groups.Temporary.push(emp);
+    else groups.Employee.push(emp);
+  });
+
+  const typeBadge = (t) => {
+    const isTemp = t === 'Temporary';
+    const cls = isTemp ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
+    const label = isTemp ? 'Temporary' : 'Permanent';
+    return `<span class="px-2 py-1 rounded text-xs font-semibold ${cls}">${label}</span>`;
+  };
+
+  const section = (label, items) => {
+    if (!items.length) return '';
+    const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
+    const header = `<tr class="${tone}"><td colspan="6" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
+    const rows = items.map(emp => `
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-semibold text-gray-900">${emp.name}</td>
+        <td class="px-4 py-3">${typeBadge(emp._type)}</td>
+        <td class="px-4 py-3">${emp.department || '-'}</td>
+        <td class="px-4 py-3 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+        <td class="px-4 py-3 whitespace-nowrap">${formatDate(emp.joinDate)}</td>
+        <td class="px-4 py-3">${emp.qid || '-'}</td>
+      </tr>
+    `).join('');
+    return header + rows;
+  };
+
+  tbody.innerHTML = [
+    section('Permanent Employees', groups.Employee),
+    section('Temporary Employees', groups.Temporary)
+  ].join('');
+
+  // Also render the printable payroll frame whenever table renders
+  renderPayrollFrame();
+}
+
+// Render a printable payroll frame
+function renderPayrollFrame() {
+  const frame = document.getElementById('payrollFrame');
+  if (!frame) return;
+  const monthEl = document.getElementById('payrollMonth');
+  const ym = monthEl && monthEl.value ? monthEl.value : '';
+  const [yr, mo] = ym ? ym.split('-') : ['',''];
+
+  // Gather combined list, sorted by name
+  const combined = [
+    ...employees.map(e => ({ ...e, _type: 'Employee' })),
+    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
+  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const total = combined.reduce((sum, e) => sum + Number(e.salary || 0), 0);
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  const monthTitle = ym ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
+
+  const byType = {
+    Employee: combined.filter(e => e._type === 'Employee'),
+    Temporary: combined.filter(e => e._type === 'Temporary')
+  };
+
+  const badge = (t) => t === 'Temporary'
+    ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-amber-100 text-amber-800">Temporary</span>'
+    : '<span class="px-2 py-1 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">Permanent</span>';
+
+  const renderGroup = (label, items) => {
+    if (!items.length) return '';
+    const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
+    const header = `<tr class="${tone}"><td colspan="9" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
+    const rows = items.map((e, i) => `
+      <tr class="border-b border-gray-100">
+        <td class="px-4 py-2 text-gray-600">${i + 1}</td>
+        <td class="px-4 py-2 font-semibold text-gray-900">${e.name || ''}</td>
+        <td class="px-4 py-2">${badge(e._type)}</td>
+        <td class="px-4 py-2">${e.department || '-'}</td>
+        <td class="px-4 py-2">${e.qid || '-'}</td>
+        <td class="px-4 py-2">${e.bankName || '-'}</td>
+        <td class="px-4 py-2">${maskAccount(e.bankAccountNumber)}</td>
+        <td class="px-4 py-2 break-all">${e.bankIban || '-'}</td>
+        <td class="px-4 py-2 text-right tabular-nums">${fmt(e.salary)}</td>
+      </tr>
+    `).join('');
+    return header + rows;
+  };
+
+  const rows = [
+    renderGroup('Permanent Employees', byType.Employee),
+    renderGroup('Temporary Employees', byType.Temporary)
+  ].join('');
+
+  frame.innerHTML = `
+    <div class="flex items-start justify-between mb-4">
+      <div>
+        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Payroll</div>
+        <div class="text-xl font-extrabold text-gray-900">${monthTitle}</div>
+      </div>
+      <div class="text-right">
+        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Total</div>
+        <div class="text-xl font-extrabold text-gray-900">${fmt(total)}</div>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+          <tr>
+            <th class="text-left font-semibold px-4 py-2">#</th>
+            <th class="text-left font-semibold px-4 py-2">Name</th>
+            <th class="text-left font-semibold px-4 py-2">Type</th>
+            <th class="text-left font-semibold px-4 py-2">Department</th>
+            <th class="text-left font-semibold px-4 py-2">QID</th>
+            <th class="text-left font-semibold px-4 py-2">Bank</th>
+            <th class="text-left font-semibold px-4 py-2">Account</th>
+            <th class="text-left font-semibold px-4 py-2">IBAN</th>
+            <th class="text-right font-semibold px-4 py-2">Monthly Salary</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function maskAccount(acc) {
+  if (!acc) return '-';
+  const s = String(acc).replace(/\s+/g, '');
+  if (s.length <= 4) return s;
+  return '•••• ' + s.slice(-4);
+}
+
+function exportPayrollCsv() {
+  const combined = [
+    ...employees.map(e => ({ ...e, _type: 'Employee' })),
+    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
+  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const headers = ['Name','Type','Department','QID','Bank Name','Account Number','IBAN','Monthly Salary'];
+  const rows = combined.map(e => [
+    quoteCsv(e.name || ''),
+    quoteCsv(e._type || ''),
+    quoteCsv(e.department || ''),
+    quoteCsv(e.qid || ''),
+    quoteCsv(e.bankName || ''),
+    quoteCsv(e.bankAccountNumber || ''),
+    quoteCsv(e.bankIban || ''),
+    String(Number(e.salary || 0))
+  ].join(','));
+
+  const csv = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  a.href = url;
+  a.download = `payroll-${ym}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function quoteCsv(val) {
+  const s = String(val ?? '');
+  if (/[",\n]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
 }
 
 window.closeEmployeeModal = function() {
@@ -661,6 +857,9 @@ window.editEmployee = function(id, which) {
     setVal('joinDate', employee.joinDate);
     setVal('qid', employee.qid || '');
     setVal('phone', employee.phone || '');
+  setVal('bankName', employee.bankName || '');
+  setVal('bankAccountNumber', employee.bankAccountNumber || '');
+  setVal('bankIban', employee.bankIban || '');
 
     // PDF view buttons state
     const qidBtn = document.getElementById('viewQidPdfBtn');
@@ -670,7 +869,26 @@ window.editEmployee = function(id, which) {
     if (qidBtn) {
       if (employee.qidPdfUrl) {
         qidBtn.style.display = '';
-        qidBtn.onclick = () => window.open(employee.qidPdfUrl, '_blank');
+        qidBtn.onclick = async () => {
+          const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+          try {
+            const ref = storageRef(storage, `${basePath}/${employee.id}/qidPdf.pdf`);
+            const url = await getDownloadURL(ref);
+            window.open(url, '_blank');
+          } catch (e) {
+            console.warn('Open QID via URL failed, trying blob', e?.code || e?.message || e);
+            try {
+              const ref = storageRef(storage, `${basePath}/${employee.id}/qidPdf.pdf`);
+              const blob = await getBlob(ref);
+              const blobUrl = URL.createObjectURL(blob);
+              window.open(blobUrl, '_blank');
+              // No revoke here since it opens in a new tab and browser clears on navigation
+            } catch (e2) {
+              console.warn('Open QID failed, falling back to stored URL', e2?.code || e2?.message || e2);
+              window.open(employee.qidPdfUrl, '_blank');
+            }
+          }
+        };
         if (qidStatus) qidStatus.textContent = 'Uploaded';
       } else {
         qidBtn.style.display = 'none';
@@ -680,7 +898,25 @@ window.editEmployee = function(id, which) {
     if (passBtn) {
       if (employee.passportPdfUrl) {
         passBtn.style.display = '';
-        passBtn.onclick = () => window.open(employee.passportPdfUrl, '_blank');
+        passBtn.onclick = async () => {
+          const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+          try {
+            const ref = storageRef(storage, `${basePath}/${employee.id}/passportPdf.pdf`);
+            const url = await getDownloadURL(ref);
+            window.open(url, '_blank');
+          } catch (e) {
+            console.warn('Open Passport via URL failed, trying blob', e?.code || e?.message || e);
+            try {
+              const ref = storageRef(storage, `${basePath}/${employee.id}/passportPdf.pdf`);
+              const blob = await getBlob(ref);
+              const blobUrl = URL.createObjectURL(blob);
+              window.open(blobUrl, '_blank');
+            } catch (e2) {
+              console.warn('Open Passport failed, falling back to stored URL', e2?.code || e2?.message || e2);
+              window.open(employee.passportPdfUrl, '_blank');
+            }
+          }
+        };
         if (passStatus) passStatus.textContent = 'Uploaded';
       } else {
         passBtn.style.display = 'none';
@@ -781,65 +1017,198 @@ function renderEmployeeTable() {
 }
 
 // View employee (read-only modal)
-window.viewEmployee = function(id, which) {
+window.viewEmployee = async function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
   const emp = list.find(e => e.id === id);
   if (!emp) return;
-  const fmtCurrency = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const byId = (x) => document.getElementById(x);
-  const deptText = emp.department || '';
-  if (byId('viewName')) byId('viewName').textContent = emp.name || '';
-  if (byId('viewNameSub')) byId('viewNameSub').textContent = emp.position ? `${emp.position} • ${deptText}` : deptText;
-  if (byId('viewEmail')) byId('viewEmail').textContent = emp.email || '';
-  if (byId('viewQid')) byId('viewQid').textContent = emp.qid || '-';
-  if (byId('viewPhone')) byId('viewPhone').textContent = emp.phone || '-';
-  if (byId('viewPosition')) byId('viewPosition').textContent = emp.position || '';
-  if (byId('viewDepartment')) byId('viewDepartment').textContent = deptText;
-  if (byId('viewSalary')) byId('viewSalary').textContent = fmtCurrency(emp.salary);
-  if (byId('viewJoinDate')) byId('viewJoinDate').textContent = formatDate(emp.joinDate);
-  // PDF preview + links in View modal
-  const qidPreview = byId('qidPdfPreview');
-  const qidLink = byId('qidPdfLink');
-  const qidEmpty = byId('qidDocEmpty');
-  if (qidPreview && qidLink && qidEmpty) {
-    if (emp.qidPdfUrl && typeof emp.qidPdfUrl === 'string') {
-      qidPreview.src = emp.qidPdfUrl;
-      qidPreview.style.display = '';
-      qidLink.href = emp.qidPdfUrl;
-      qidLink.style.display = '';
-      qidEmpty.style.display = 'none';
-    } else {
+
+  // Open modal immediately to improve perceived performance
+  const vm = document.getElementById('viewModal');
+  if (vm) vm.classList.add('show');
+
+  // Defer heavy DOM updates to the next animation frame
+  requestAnimationFrame(() => {
+    const perfLabel = `viewInfoPopulate:${emp.id}`;
+    try { console.time(perfLabel); } catch {}
+
+    const fmtCurrency = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    const deptText = emp.department || '';
+    const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
+    setText('viewName', emp.name || '');
+    setText('viewNameSub', emp.position ? `${emp.position} • ${deptText}` : deptText);
+    setText('viewEmail', emp.email || '');
+    setText('viewQid', emp.qid || '-');
+    setText('viewPhone', emp.phone || '-');
+    setText('viewPosition', emp.position || '');
+    setText('viewDepartment', deptText);
+    setText('viewSalary', fmtCurrency(emp.salary));
+    setText('viewJoinDate', formatDate(emp.joinDate));
+  setText('viewBankName', emp.bankName || '-');
+  setText('viewAccountNumber', emp.bankAccountNumber || '-');
+  setText('viewIban', emp.bankIban || '-');
+
+    // Reset Documents tab previews (lazy-load when tab is opened)
+    const qidPreview = byId('qidPdfPreview');
+    const qidLink = byId('qidPdfLink');
+    const qidEmpty = byId('qidDocEmpty');
+    if (qidPreview && qidLink && qidEmpty) {
+      if (qidPreview.src && qidPreview.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(qidPreview.src); } catch {}
+      }
       qidPreview.removeAttribute('src');
       qidPreview.style.display = 'none';
       qidLink.style.display = 'none';
       qidEmpty.style.display = '';
     }
-  }
-
-  const passPreview = byId('passportPdfPreview');
-  const passLink = byId('passportPdfLink');
-  const passEmpty = byId('passportDocEmpty');
-  if (passPreview && passLink && passEmpty) {
-    if (emp.passportPdfUrl && typeof emp.passportPdfUrl === 'string') {
-      passPreview.src = emp.passportPdfUrl;
-      passPreview.style.display = '';
-      passLink.href = emp.passportPdfUrl;
-      passLink.style.display = '';
-      passEmpty.style.display = 'none';
-    } else {
+    const passPreview = byId('passportPdfPreview');
+    const passLink = byId('passportPdfLink');
+    const passEmpty = byId('passportDocEmpty');
+    if (passPreview && passLink && passEmpty) {
+      if (passPreview.src && passPreview.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(passPreview.src); } catch {}
+      }
       passPreview.removeAttribute('src');
       passPreview.style.display = 'none';
       passLink.style.display = 'none';
       passEmpty.style.display = '';
     }
-  }
-  const vm = document.getElementById('viewModal');
-  if (vm) vm.classList.add('show');
+
+    // Save context for lazy document loading
+    currentViewCtx = { id: emp.id, which: (which === 'temporary' ? 'temporary' : 'employees'), docsLoaded: false, revoke: [] };
+
+    // Default to Info tab active
+    activateViewTab('info');
+
+    try { console.timeEnd(perfLabel); } catch {}
+  });
 }
 
 window.closeViewModal = function() {
   const vm = document.getElementById('viewModal');
   if (vm) vm.classList.remove('show');
+  // Revoke any blob URLs and reset context
+  try {
+    const qidPreview = document.getElementById('qidPdfPreview');
+    const passPreview = document.getElementById('passportPdfPreview');
+    [qidPreview, passPreview].forEach((ifr) => {
+      if (ifr && ifr.src && ifr.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(ifr.src); } catch {}
+      }
+      if (ifr) {
+        ifr.removeAttribute('src');
+        ifr.style.display = 'none';
+      }
+    });
+  } catch {}
+  currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
+}
+
+// View modal tab handling
+function activateViewTab(which) {
+  const infoBtn = document.getElementById('viewTabInfoBtn');
+  const docsBtn = document.getElementById('viewTabDocsBtn');
+  const info = document.getElementById('viewTabInfo');
+  const docs = document.getElementById('viewTabDocs');
+  if (!infoBtn || !docsBtn || !info || !docs) return;
+
+  const setActive = (btn, active) => {
+    if (active) {
+      btn.classList.add('font-semibold', 'text-indigo-600');
+      btn.classList.remove('text-gray-600');
+      btn.classList.add('border-b-2', 'border-indigo-600');
+    } else {
+      btn.classList.remove('font-semibold', 'text-indigo-600');
+      btn.classList.add('text-gray-600');
+      btn.classList.remove('border-b-2', 'border-indigo-600');
+    }
+  };
+
+  if (which === 'docs') {
+    info.classList.add('hidden');
+    docs.classList.remove('hidden');
+    setActive(infoBtn, false);
+    setActive(docsBtn, true);
+    // Lazy load documents on first open
+    if (!currentViewCtx.docsLoaded && currentViewCtx.id) {
+      loadCurrentViewDocuments().catch(err => console.warn('Doc load failed', err));
+    }
+  } else {
+    docs.classList.add('hidden');
+    info.classList.remove('hidden');
+    setActive(infoBtn, true);
+    setActive(docsBtn, false);
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'viewTabInfoBtn') {
+    activateViewTab('info');
+  } else if (e.target && e.target.id === 'viewTabDocsBtn') {
+    activateViewTab('docs');
+  }
+});
+
+// Load documents for the current View modal context
+async function loadCurrentViewDocuments() {
+  const byId = (x) => document.getElementById(x);
+  const basePathFor = (w) => w === 'temporary' ? 'temporaryEmployees' : 'employees';
+  const w = currentViewCtx.which;
+  const id = currentViewCtx.id;
+  if (!id) return;
+
+  const overallLabel = `viewDocsLoad:${id}`;
+  try { console.time(overallLabel); } catch {}
+
+  async function setDoc(kind, previewId, linkId, emptyId, loadingId) {
+    const preview = byId(previewId);
+    const link = byId(linkId);
+    const empty = byId(emptyId);
+    const loading = byId(loadingId);
+    if (!preview || !link || !empty) return;
+
+    const storagePath = `${basePathFor(w)}/${id}/${kind}Pdf.pdf`;
+    const ref = storageRef(storage, storagePath);
+    if (loading) loading.style.display = '';
+    empty.style.display = 'none';
+    // Try a fresh streaming URL first
+    try {
+      const url = await getDownloadURL(ref);
+      preview.src = url;
+      preview.style.display = '';
+      link.href = url;
+      link.style.display = '';
+      if (loading) loading.style.display = 'none';
+      return;
+    } catch (e) {
+      console.warn('getDownloadURL failed, trying blob', kind, e?.code || e?.message || e);
+    }
+    // Fallback to blob (may be heavy for large files)
+    try {
+      const blob = await getBlob(ref);
+      const blobUrl = URL.createObjectURL(blob);
+      preview.src = blobUrl;
+      preview.style.display = '';
+      link.href = blobUrl;
+      link.style.display = '';
+      if (loading) loading.style.display = 'none';
+      currentViewCtx.revoke.push(blobUrl);
+    } catch (e) {
+      console.warn('Blob download failed', kind, e?.code || e?.message || e);
+      preview.removeAttribute('src');
+      preview.style.display = 'none';
+      link.style.display = 'none';
+      if (loading) loading.style.display = 'none';
+      empty.style.display = '';
+    }
+  }
+
+  await Promise.all([
+    setDoc('qid', 'qidPdfPreview', 'qidPdfLink', 'qidDocEmpty', 'qidLoading'),
+    setDoc('passport', 'passportPdfPreview', 'passportPdfLink', 'passportDocEmpty', 'passportLoading'),
+  ]);
+  currentViewCtx.docsLoaded = true;
+  try { console.timeEnd(overallLabel); } catch {}
 }
 
 // Render temporary employee table
