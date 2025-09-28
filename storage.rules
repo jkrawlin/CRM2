@@ -13,6 +13,9 @@ service firebase.storage {
     function isValidPdf() {
       return request.resource.contentType == 'application/pdf';
     }
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
     
     function isValidSize() {
       return request.resource.size < 50 * 1024 * 1024; // 50MB max
@@ -21,10 +24,12 @@ service firebase.storage {
     // Employee documents - authenticated users only
     match /employees/{docId}/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated() 
-        && isValidPdf()
+      allow write: if isAuthenticated()
         && isValidSize()
-        && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf');
+        && (
+          (isValidPdf() && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf'))
+          || (isValidImage() && (fileName == 'profile.jpg' || fileName == 'profile.png' || fileName == 'profile.webp'))
+        );
       allow delete: if isAuthenticated();
     }
     
@@ -32,9 +37,11 @@ service firebase.storage {
     match /temporaryEmployees/{docId}/{fileName} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated()
-        && isValidPdf()
         && isValidSize()
-        && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf');
+        && (
+          (isValidPdf() && (fileName == 'qidPdf.pdf' || fileName == 'passportPdf.pdf'))
+          || (isValidImage() && (fileName == 'profile.jpg' || fileName == 'profile.png' || fileName == 'profile.webp'))
+        );
       allow delete: if isAuthenticated();
     }
     

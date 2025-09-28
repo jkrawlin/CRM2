@@ -33,8 +33,12 @@ service cloud.firestore {
     }
 
     function hasOnlyAllowedKeys(d) {
-      // Allow only these keys (qid/phone/pdf urls are optional)
-      return d.keys().hasOnly(['name','email','position','department','salary','joinDate','qid','phone','qidPdfUrl','passportPdfUrl']);
+      // Allow only these keys (others are optional)
+      return d.keys().hasOnly([
+        'name','email','position','department','salary','joinDate',
+        'qid','phone','qidPdfUrl','passportPdfUrl',
+        'bankName','bankAccountNumber','bankIban','profileImageUrl'
+      ]);
     }
 
     function validateEmployee(d) {
@@ -44,7 +48,16 @@ service cloud.firestore {
         && isNonEmptyString(d.position)
         && isValidDepartment(d.department)
         && isValidSalary(d.salary)
-        && isValidISODate(d.joinDate);
+        && isValidISODate(d.joinDate)
+        // Optionals with basic validation
+        && (!('qid' in d) || (d.qid is string && d.qid.size() <= 32))
+        && (!('phone' in d) || (d.phone is string && d.phone.size() <= 32))
+        && (!('qidPdfUrl' in d) || (d.qidPdfUrl is string && d.qidPdfUrl.size() <= 2048))
+        && (!('passportPdfUrl' in d) || (d.passportPdfUrl is string && d.passportPdfUrl.size() <= 2048))
+        && (!('bankName' in d) || (d.bankName is string && d.bankName.size() <= 200))
+        && (!('bankAccountNumber' in d) || (d.bankAccountNumber is string && d.bankAccountNumber.size() <= 40))
+        && (!('bankIban' in d) || (d.bankIban is string && d.bankIban.size() <= 40))
+        && (!('profileImageUrl' in d) || (d.profileImageUrl is string && d.profileImageUrl.size() <= 2048));
     }
 
     match /employees/{docId} {

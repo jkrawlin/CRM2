@@ -40,6 +40,8 @@ let authed = false;
 let authInitialized = false;
 // Track current View modal context to lazy-load documents and manage blob URLs
 let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
+// Track which payroll sub-tab is active: 'table' or 'report'
+let currentPayrollSubTab = (typeof localStorage !== 'undefined' && localStorage.getItem('payrollSubTab')) || 'table';
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -213,8 +215,10 @@ function setupEventListeners() {
   // File inputs listeners
   const qidPdf = document.getElementById('qidPdf');
   const passportPdf = document.getElementById('passportPdf');
+  const profileImage = document.getElementById('profileImage');
   if (qidPdf) qidPdf.addEventListener('change', () => markPending('qid'));
   if (passportPdf) passportPdf.addEventListener('change', () => markPending('passport'));
+  if (profileImage) profileImage.addEventListener('change', () => markPending('profile'));
   const searchEl = document.getElementById('searchInput');
   if (searchEl) searchEl.addEventListener('input', handleSearch);
   // Department filter removed from UI
@@ -236,6 +240,9 @@ function setupEventListeners() {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-nav');
       setActiveSection(target);
+      if (target === 'payroll') {
+        renderPayrollTable();
+      }
     });
   });
 
@@ -332,6 +339,14 @@ function setupEventListeners() {
   }
   if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportPayrollCsv);
   if (printBtn) printBtn.addEventListener('click', () => window.print());
+
+  // Payroll sub-tab buttons
+  const tabTableBtn = document.getElementById('payrollTabTableBtn');
+  const tabReportBtn = document.getElementById('payrollTabReportBtn');
+  if (tabTableBtn) tabTableBtn.addEventListener('click', () => setPayrollSubTab('table'));
+  if (tabReportBtn) tabReportBtn.addEventListener('click', () => setPayrollSubTab('report'));
+  // Initialize sub-tab visibility according to stored preference
+  setPayrollSubTab(currentPayrollSubTab);
 }
 
 // Toggle visible section and active nav
@@ -369,6 +384,13 @@ function setActiveSection(key) {
       addBtn.style.display = 'none';
       addTempBtn.style.display = 'none';
     }
+  }
+
+  // When navigating to Payroll, ensure the table/frame are freshly rendered
+  if (key === 'payroll') {
+    renderPayrollTable();
+    // Restore previously selected sub-tab
+    setPayrollSubTab(currentPayrollSubTab);
   }
 }
 
@@ -415,7 +437,8 @@ async function handleFormSubmit(e) {
     phone: (document.getElementById('phone')?.value || '').trim(),
     bankName: (document.getElementById('bankName')?.value || '').trim(),
     bankAccountNumber: (document.getElementById('bankAccountNumber')?.value || '').trim(),
-    bankIban: ((document.getElementById('bankIban')?.value || '').trim() || '').toUpperCase().replace(/\s+/g, '')
+    bankIban: ((document.getElementById('bankIban')?.value || '').trim() || '').toUpperCase().replace(/\s+/g, ''),
+    profileImageUrl: undefined
   };
   const isNew = !employee.id;
 
@@ -424,6 +447,7 @@ async function handleFormSubmit(e) {
   const files = {
     qidPdf: document.getElementById('qidPdf')?.files?.[0] || null,
     passportPdf: document.getElementById('passportPdf')?.files?.[0] || null,
+    profileImage: document.getElementById('profileImage')?.files?.[0] || null,
   };
 
   const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
@@ -440,15 +464,22 @@ async function handleFormSubmit(e) {
   }
 
   // Helper to upload a file to a specific storage path and return its download URL
-  const uploadIfNeeded = async (file, storagePath) => {
+  const uploadIfNeeded = async (file, storagePath, type) => {
     if (!file) return null;
-    if (file.type !== 'application/pdf') {
-      showToast('Please upload PDF files only', 'warning');
-      return null;
+    if (type === 'pdf') {
+      if (file.type !== 'application/pdf') {
+        showToast('Please upload PDF files only', 'warning');
+        return null;
+      }
+    } else if (type === 'image') {
+      if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+        showToast('Please upload a PNG, JPEG, or WEBP image', 'warning');
+        return null;
+      }
     }
     try {
       const destRef = storageRef(storage, storagePath);
-      const snapshot = await uploadBytes(destRef, file, { contentType: 'application/pdf' });
+      const snapshot = await uploadBytes(destRef, file, { contentType: file.type });
       return await getDownloadURL(snapshot.ref);
     } catch (error) {
       console.error('Upload error:', error);
@@ -461,10 +492,17 @@ async function handleFormSubmit(e) {
     }
   };
 
-  const qidUrl = await uploadIfNeeded(files.qidPdf, `${basePath}/${employee.id}/qidPdf.pdf`);
-  const passportUrl = await uploadIfNeeded(files.passportPdf, `${basePath}/${employee.id}/passportPdf.pdf`);
+  const qidUrl = await uploadIfNeeded(files.qidPdf, `${basePath}/${employee.id}/qidPdf.pdf`, 'pdf');
+  const passportUrl = await uploadIfNeeded(files.passportPdf, `${basePath}/${employee.id}/passportPdf.pdf`, 'pdf');
+  // Profile image: preserve extension based on mime type
+  let profileUrl = null;
+  if (files.profileImage) {
+    const ext = files.profileImage.type === 'image/png' ? 'png' : files.profileImage.type === 'image/webp' ? 'webp' : 'jpg';
+    profileUrl = await uploadIfNeeded(files.profileImage, `${basePath}/${employee.id}/profile.${ext}`, 'image');
+  }
   if (qidUrl) employee.qidPdfUrl = qidUrl;
   if (passportUrl) employee.passportPdfUrl = passportUrl;
+  if (profileUrl) employee.profileImageUrl = profileUrl;
 
   try {
     if (which === 'temporary') {
@@ -740,6 +778,43 @@ function renderPayrollFrame() {
   `;
 }
 
+// Toggle Payroll sub-tabs (Table vs Month Report)
+function setPayrollSubTab(which) {
+  const tablePane = document.getElementById('payrollTabTable');
+  const reportPane = document.getElementById('payrollTabReport');
+  const tableBtn = document.getElementById('payrollTabTableBtn');
+  const reportBtn = document.getElementById('payrollTabReportBtn');
+  if (!tablePane || !reportPane || !tableBtn || !reportBtn) return;
+
+  const activateBtn = (btn, active) => {
+    if (active) {
+      btn.classList.add('font-semibold', 'text-indigo-600', 'border-b-2', 'border-indigo-600');
+      btn.classList.remove('text-gray-600');
+    } else {
+      btn.classList.remove('font-semibold', 'text-indigo-600', 'border-b-2', 'border-indigo-600');
+      btn.classList.add('text-gray-600');
+    }
+  };
+
+  if (which === 'report') {
+    tablePane.style.display = 'none';
+    reportPane.style.display = '';
+    activateBtn(tableBtn, false);
+    activateBtn(reportBtn, true);
+    renderPayrollFrame();
+    currentPayrollSubTab = 'report';
+  } else {
+    // default to table
+    tablePane.style.display = '';
+    reportPane.style.display = 'none';
+    activateBtn(tableBtn, true);
+    activateBtn(reportBtn, false);
+    renderPayrollTable();
+    currentPayrollSubTab = 'table';
+  }
+  try { localStorage.setItem('payrollSubTab', currentPayrollSubTab); } catch {}
+}
+
 function maskAccount(acc) {
   if (!acc) return '-';
   const s = String(acc).replace(/\s+/g, '');
@@ -855,7 +930,7 @@ window.editEmployee = function(id, which) {
     setVal('department', employee.department);
     setVal('salary', employee.salary);
     setVal('joinDate', employee.joinDate);
-    setVal('qid', employee.qid || '');
+  setVal('qid', employee.qid || '');
     setVal('phone', employee.phone || '');
   setVal('bankName', employee.bankName || '');
   setVal('bankAccountNumber', employee.bankAccountNumber || '');
@@ -1035,8 +1110,15 @@ window.viewEmployee = async function(id, which) {
     const fmtCurrency = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     const deptText = emp.department || '';
     const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
-    setText('viewName', emp.name || '');
-    setText('viewNameSub', emp.position ? `${emp.position} • ${deptText}` : deptText);
+  setText('viewName', emp.name || '');
+  setText('viewNameSub', emp.position ? `${emp.position} • ${deptText}` : deptText);
+  // Large header duplicates for enhanced layout
+  setText('viewNameDisplay', emp.name || '');
+  setText('viewNameSubDisplay', emp.position ? `${emp.position} • ${deptText}` : deptText);
+  const deptChip = byId('viewDepartmentChip');
+  if (deptChip) deptChip.textContent = deptText || '—';
+  const typeChip = byId('viewTypeChip');
+  if (typeChip) typeChip.textContent = (list === temporaryEmployees) ? 'Temporary' : 'Permanent';
     setText('viewEmail', emp.email || '');
     setText('viewQid', emp.qid || '-');
     setText('viewPhone', emp.phone || '-');
@@ -1047,6 +1129,26 @@ window.viewEmployee = async function(id, which) {
   setText('viewBankName', emp.bankName || '-');
   setText('viewAccountNumber', emp.bankAccountNumber || '-');
   setText('viewIban', emp.bankIban || '-');
+
+    // Profile image preview
+    const img = byId('viewProfileImage');
+    const ph = byId('viewProfilePlaceholder');
+    const imgL = byId('viewProfileImageLarge');
+    const phL = byId('viewProfilePlaceholderLarge');
+    const applyImg = (imgEl, phEl) => {
+      if (!imgEl || !phEl) return;
+      if (emp.profileImageUrl) {
+        imgEl.src = emp.profileImageUrl;
+        imgEl.classList.remove('hidden');
+        phEl.classList.add('hidden');
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.classList.add('hidden');
+        phEl.classList.remove('hidden');
+      }
+    };
+    applyImg(img, ph);
+    applyImg(imgL, phL);
 
     // Reset Documents tab previews (lazy-load when tab is opened)
     const qidPreview = byId('qidPdfPreview');
@@ -1145,6 +1247,8 @@ document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'viewTabInfoBtn') {
     activateViewTab('info');
   } else if (e.target && e.target.id === 'viewTabDocsBtn') {
+    activateViewTab('docs');
+  } else if (e.target && e.target.id === 'openDocsFromHeaderBtn') {
     activateViewTab('docs');
   }
 });
@@ -1373,7 +1477,8 @@ function validateForm() {
 function markPending(which) {
   const map = {
     qid: 'qidPdfStatus',
-    passport: 'passportPdfStatus'
+    passport: 'passportPdfStatus',
+    profile: 'profileImageStatus'
   };
   const id = map[which];
   const el = document.getElementById(id);
@@ -1431,6 +1536,12 @@ function formatDate(dateString) {
         border-radius: 4px;
         font-size: 0.85rem;
     }
+  /* Modal polish */
+  #viewModal .modal-content { border-radius: 16px; }
+  #viewModal .modal-header { border-bottom: 1px solid #f1f5f9; }
+  #viewModal .modal-body { background: linear-gradient(180deg, rgba(248,250,252,0.6), rgba(255,255,255,1)); }
+  #viewModal .card { box-shadow: 0 0 0 1px rgba(226,232,240,0.7) inset; }
+    #openDocsFromHeaderBtn:hover { background: rgba(99,102,241,0.06); }
   `;
   document.head.appendChild(style);
 })();
