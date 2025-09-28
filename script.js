@@ -1096,180 +1096,93 @@ window.viewEmployee = async function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
   const emp = list.find(e => e.id === id);
   if (!emp) return;
+  const byId = (x) => document.getElementById(x);
 
-  const modal = document.getElementById('viewModal');
-  const body = modal ? modal.querySelector('.modal-body') : null;
-  if (!modal || !body) return;
+  // Open modal immediately to improve perceived performance
+  const vm = document.getElementById('viewModal');
+  if (vm) vm.classList.add('show');
 
-  // Open modal
-  modal.classList.add('show');
+  // Defer heavy DOM updates to the next animation frame
+  requestAnimationFrame(() => {
+    const perfLabel = `viewInfoPopulate:${emp.id}`;
+    try { console.time(perfLabel); } catch {}
 
-  // Helpers
-  const fmtMoney = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  const fmtDate = (d) => {
-    try { if (window.dayjs) return window.dayjs(d).format('MMMM D, YYYY'); } catch {}
-    return d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
-  };
-  const initials = (emp.name || 'U').trim().split(/\s+/).map(s => s[0]).join('').slice(0,2).toUpperCase();
-  const dept = emp.department || '-';
-  const typeLabel = which === 'temporary' ? 'Temporary' : 'Permanent';
-  const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+    const fmtCurrency = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    const deptText = emp.department || '';
+    const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
+  setText('viewName', emp.name || '');
+  setText('viewNameSub', emp.position ? `${emp.position} • ${deptText}` : deptText);
+  // Large header duplicates for enhanced layout
+  setText('viewNameDisplay', emp.name || '');
+  setText('viewNameSubDisplay', emp.position ? `${emp.position} • ${deptText}` : deptText);
+  const deptChip = byId('viewDepartmentChip');
+  if (deptChip) deptChip.textContent = deptText || '—';
+  const typeChip = byId('viewTypeChip');
+  if (typeChip) typeChip.textContent = (list === temporaryEmployees) ? 'Temporary' : 'Permanent';
+    setText('viewEmail', emp.email || '');
+    setText('viewQid', emp.qid || '-');
+    setText('viewPhone', emp.phone || '-');
+    setText('viewPosition', emp.position || '');
+    setText('viewDepartment', deptText);
+    setText('viewSalary', fmtCurrency(emp.salary));
+    setText('viewJoinDate', formatDate(emp.joinDate));
+  setText('viewBankName', emp.bankName || '-');
+  setText('viewAccountNumber', emp.bankAccountNumber || '-');
+  setText('viewIban', emp.bankIban || '-');
 
-  // Build redesigned content (Tailwind utilities only)
-  body.innerHTML = `
-    <div class="space-y-5">
-      <!-- Header -->
-      <div class="bg-white rounded-xl border border-gray-200 shadow-card p-5">
-        <div class="flex items-start gap-4">
-          <div>
-            <div class="w-16 h-16 rounded-full overflow-hidden ring-2 ring-white shadow ${emp.profileImageUrl ? '' : 'bg-gray-100 flex items-center justify-center'}">
-              ${emp.profileImageUrl ? `<img src="${emp.profileImageUrl}" alt="${emp.name}" class="w-full h-full object-cover"/>` : `<span class="text-gray-500 font-semibold">${initials}</span>`}
-            </div>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="min-w-0">
-              <h2 class="text-base md:text-lg font-bold text-gray-900 truncate">${emp.name || ''}</h2>
-              <p class="text-sm text-gray-600 truncate">${[emp.position, dept].filter(Boolean).join(' • ')}</p>
-              <div class="flex flex-wrap items-center gap-2 mt-2">
-                <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">${dept}</span>
-                <span class="px-2 py-0.5 rounded text-xs font-medium ${typeLabel === 'Permanent' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${typeLabel}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+    // Profile image preview
+    const img = byId('viewProfileImage');
+    const ph = byId('viewProfilePlaceholder');
+    const imgL = byId('viewProfileImageLarge');
+    const phL = byId('viewProfilePlaceholderLarge');
+    const applyImg = (imgEl, phEl) => {
+      if (!imgEl || !phEl) return;
+      if (emp.profileImageUrl) {
+        imgEl.src = emp.profileImageUrl;
+        imgEl.classList.remove('hidden');
+        phEl.classList.add('hidden');
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.classList.add('hidden');
+        phEl.classList.remove('hidden');
+      }
+    };
+    applyImg(img, ph);
+    applyImg(imgL, phL);
 
-      <!-- Tabs -->
-      <div class="border-b"><div class="flex gap-1">
-        <button class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600" data-tab="overview">Overview</button>
-        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="contact">Contact</button>
-        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="financial">Financial</button>
-        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="documents">Documents</button>
-      </div></div>
-
-      <!-- Panes -->
-      <div data-pane="overview">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-briefcase text-indigo-500"></i><span>Employment</span></div>
-            <dl class="space-y-2">
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt><dd class="text-sm text-gray-900 font-medium">${emp.position || '-'}</dd></div>
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt><dd class="text-sm text-gray-900 font-medium">${dept}</dd></div>
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt><dd class="text-sm text-gray-900">${fmtDate(emp.joinDate)}</dd></div>
-            </dl>
-          </div>
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-chart-line text-indigo-500"></i><span>Compensation</span></div>
-            <dl class="space-y-2">
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt><dd class="text-sm text-gray-900 font-semibold">${fmtMoney(emp.salary)}</dd></div>
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Annual Salary</dt><dd class="text-sm text-gray-900">${fmtMoney((emp.salary||0)*12)}</dd></div>
-            </dl>
-          </div>
-        </div>
-      </div>
-
-      <div data-pane="contact" class="hidden">
-        <div class="bg-white rounded-xl border border-gray-200 p-4">
-          <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-address-card text-indigo-500"></i><span>Contact</span></div>
-          <dl class="space-y-2">
-            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt><dd class="text-sm text-gray-900 break-all">${emp.email || '-'}</dd></div>
-            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt><dd class="text-sm text-gray-900">${emp.phone || '-'}</dd></div>
-            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt><dd class="text-sm text-gray-900">${emp.qid || '-'}</dd></div>
-          </dl>
-        </div>
-      </div>
-
-      <div data-pane="financial" class="hidden">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-money-check-dollar text-indigo-500"></i><span>Salary</span></div>
-            <div class="flex items-baseline gap-2"><span class="text-sm text-gray-600">Monthly</span><span class="text-xl font-bold">${fmtMoney(emp.salary)}</span></div>
-            <div class="mt-2 text-sm text-gray-600">Annual: <span class="font-medium text-gray-900">${fmtMoney((emp.salary||0)*12)}</span></div>
-          </div>
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-university text-indigo-500"></i><span>Bank Details</span></div>
-            <dl class="space-y-2">
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</dt><dd class="text-sm text-gray-900">${emp.bankName || '-'}</dd></div>
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account</dt><dd class="text-sm text-gray-900">${maskAccount(emp.bankAccountNumber)}</dd></div>
-              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</dt><dd class="text-sm text-gray-900 break-all">${emp.bankIban || '-'}</dd></div>
-            </dl>
-          </div>
-        </div>
-      </div>
-
-      <div data-pane="documents" class="hidden">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center justify-between mb-3">
-              <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
-              ${emp.qidPdfUrl ? `<a href="#" class="px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700 font-semibold" data-doc="qid">Open</a>` : ''}
-            </div>
-            ${emp.qidPdfUrl ? `<iframe class="w-full h-80 border border-gray-200 rounded-lg" data-preview="qid"></iframe>` : `<div class='text-gray-500 text-sm'>No document uploaded</div>`}
-          </div>
-          <div class="bg-white rounded-xl border border-gray-200 p-4">
-            <div class="flex items-center justify-between mb-3">
-              <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
-              ${emp.passportPdfUrl ? `<a href="#" class="px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700 font-semibold" data-doc="passport">Open</a>` : ''}
-            </div>
-            ${emp.passportPdfUrl ? `<iframe class="w-full h-80 border border-gray-200 rounded-lg" data-preview="passport"></iframe>` : `<div class='text-gray-500 text-sm'>No document uploaded</div>`}
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-
-  // No quick actions in header (email/call/docs) to keep UI minimal
-
-  // Tabs
-  const tabButtons = Array.from(body.querySelectorAll('[data-tab]'));
-  const panes = Array.from(body.querySelectorAll('[data-pane]'));
-  function switchPane(name) {
-    tabButtons.forEach(btn => {
-      const active = btn.getAttribute('data-tab') === name;
-      btn.classList.toggle('font-semibold', active);
-      btn.classList.toggle('text-indigo-600', active);
-      btn.classList.toggle('border-b-2', active);
-      btn.classList.toggle('border-indigo-600', active);
-      btn.classList.toggle('text-gray-600', !active);
-    });
-    panes.forEach(pane => {
-      pane.classList.toggle('hidden', pane.getAttribute('data-pane') !== name);
-    });
-    if (name === 'documents') loadDocPreviews();
-  }
-  tabButtons.forEach(btn => btn.addEventListener('click', () => switchPane(btn.getAttribute('data-tab'))));
-
-  // Default pane
-  switchPane('overview');
-
-  // Documents handling
-  async function getFreshUrl(kind) {
-    try {
-      const ref = storageRef(storage, `${basePath}/${emp.id}/${kind}Pdf.pdf`);
-      return await getDownloadURL(ref);
-    } catch (e) {
-      const fallback = kind === 'qid' ? emp.qidPdfUrl : emp.passportPdfUrl;
-      return fallback || null;
+    // Reset Documents tab previews (lazy-load when tab is opened)
+    const qidPreview = byId('qidPdfPreview');
+    const qidLink = byId('qidPdfLink');
+    const qidEmpty = byId('qidDocEmpty');
+    if (qidPreview && qidLink && qidEmpty) {
+      if (qidPreview.src && qidPreview.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(qidPreview.src); } catch {}
+      }
+      qidPreview.removeAttribute('src');
+      qidPreview.style.display = 'none';
+      qidLink.style.display = 'none';
+      qidEmpty.style.display = '';
     }
-  }
-
-  async function loadDocPreviews() {
-    const kinds = ['qid','passport'];
-    for (const kind of kinds) {
-      const iframe = body.querySelector(`[data-preview="${kind}"]`);
-      if (!iframe) continue;
-      const url = await getFreshUrl(kind);
-      if (url) iframe.src = url;
+    const passPreview = byId('passportPdfPreview');
+    const passLink = byId('passportPdfLink');
+    const passEmpty = byId('passportDocEmpty');
+    if (passPreview && passLink && passEmpty) {
+      if (passPreview.src && passPreview.src.startsWith('blob:')) {
+        try { URL.revokeObjectURL(passPreview.src); } catch {}
+      }
+      passPreview.removeAttribute('src');
+      passPreview.style.display = 'none';
+      passLink.style.display = 'none';
+      passEmpty.style.display = '';
     }
-  }
 
-  body.querySelectorAll('[data-doc]').forEach(link => {
-    link.addEventListener('click', async (e) => {
-      e.preventDefault();
-      const kind = link.getAttribute('data-doc');
-      const url = await getFreshUrl(kind);
-      if (url) window.open(url, '_blank'); else showToast('Document not available', 'warning');
-    });
+    // Save context for lazy document loading
+    currentViewCtx = { id: emp.id, which: (which === 'temporary' ? 'temporary' : 'employees'), docsLoaded: false, revoke: [] };
+
+    // Default to Info tab active
+    activateViewTab('info');
+
+    try { console.timeEnd(perfLabel); } catch {}
   });
 }
 
@@ -1278,7 +1191,6 @@ window.closeViewModal = function() {
   if (vm) vm.classList.remove('show');
   // Revoke any blob URLs and reset context
   try {
-    // Legacy IDs cleanup
     const qidPreview = document.getElementById('qidPdfPreview');
     const passPreview = document.getElementById('passportPdfPreview');
     [qidPreview, passPreview].forEach((ifr) => {
@@ -1290,16 +1202,6 @@ window.closeViewModal = function() {
         ifr.style.display = 'none';
       }
     });
-    // Dynamic content cleanup
-    const body = vm ? vm.querySelector('.modal-body') : null;
-    if (body) {
-      body.querySelectorAll('iframe[data-preview]').forEach(ifr => {
-        try { if (ifr.src && ifr.src.startsWith('blob:')) URL.revokeObjectURL(ifr.src); } catch {}
-        ifr.removeAttribute('src');
-      });
-      // Clear body to detach listeners
-      body.innerHTML = '';
-    }
   } catch {}
   currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
 }
@@ -1640,7 +1542,6 @@ function formatDate(dateString) {
   #viewModal .modal-body { background: linear-gradient(180deg, rgba(248,250,252,0.6), rgba(255,255,255,1)); }
   #viewModal .card { box-shadow: 0 0 0 1px rgba(226,232,240,0.7) inset; }
     #openDocsFromHeaderBtn:hover { background: rgba(99,102,241,0.06); }
-    .shadow-card { box-shadow: 0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.10); }
   `;
   document.head.appendChild(style);
 })();
