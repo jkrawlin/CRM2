@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
     <link rel="stylesheet" href="assets/tailwind.css?v=20250928-12" />
-    <link rel="stylesheet" href="styles.css?v=20250928-13" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 </head>
@@ -532,169 +531,143 @@
             </div>
             <div class="modal-body">
                 <!-- Tabs -->
-                <div class="border-b mb-6">
-                    <div class="flex items-center gap-1">
-                        <button id="viewTabInfoBtn" class="px-4 py-2.5 rounded-t-lg font-semibold text-indigo-600 bg-indigo-50 border-b-2 border-indigo-600">
-                            <i class="fas fa-info-circle mr-2"></i>Information
-                        </button>
-                        <button id="viewTabDocsBtn" class="px-4 py-2.5 rounded-t-lg text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors">
-                            <i class="fas fa-folder-open mr-2"></i>Documents
-                        </button>
+                <div class="border-b mb-4">
+                    <div class="flex items-center gap-2">
+                        <button id="viewTabInfoBtn" class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600">Info</button>
+                        <button id="viewTabDocsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800">Documents</button>
                     </div>
                 </div>
 
-                <!-- Info Tab Content -->
-                <div id="viewTabInfo" class="space-y-6">
-                    <!-- Simple Profile Header -->
-                    <div class="bg-white border border-gray-200 rounded-lg p-5">
-                        <div class="flex items-center justify-between gap-5">
-                            <div class="flex items-center gap-5 min-w-0">
-                                <img id="viewProfileImageLarge" class="w-20 h-20 rounded-full object-cover border border-gray-200 hidden" style="width:80px;height:80px;" alt="Profile Image" />
-                                <div id="viewProfilePlaceholderLarge" class="w-20 h-20 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center border border-gray-200" style="width:80px;height:80px;">
-                                    <i class="fas fa-user text-2xl"></i>
-                                </div>
-                                <div class="min-w-0">
-                                    <div id="viewNameDisplay" class="text-lg font-bold text-gray-900 truncate">&nbsp;</div>
-                                    <div id="viewNameSubDisplay" class="text-sm text-gray-500 mt-0.5">&nbsp;</div>
-                                    <div class="flex items-center flex-wrap gap-1.5 mt-2">
-                                        <span id="viewDepartmentChip" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">&nbsp;</span>
-                                        <span id="viewTypeChip" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100">&nbsp;</span>
+                                <!-- Info Tab Content -->
+                                <div id="viewTabInfo" class="space-y-6">
+                                    <!-- Large Profile Header -->
+                                    <div class="card p-4">
+                                        <div class="flex items-center justify-between gap-4">
+                                            <div class="flex items-center gap-4 min-w-0">
+                                                <img id="viewProfileImageLarge" class="w-16 h-16 rounded-full object-cover ring-2 ring-white shadow hidden" style="width:64px;height:64px;" alt="Profile Image" />
+                                                <div id="viewProfilePlaceholderLarge" class="w-16 h-16 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-gray-400 flex items-center justify-center ring-1 ring-gray-200" style="width:64px;height:64px;">
+                                                    <i class="fas fa-user text-2xl"></i>
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <div id="viewNameDisplay" class="text-sm md:text-base font-extrabold text-gray-900">&nbsp;</div>
+                                                    <div id="viewNameSubDisplay" class="text-xs text-gray-600">&nbsp;</div>
+                                                    <div class="flex items-center gap-2 mt-2">
+                                                        <span id="viewDepartmentChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">&nbsp;</span>
+                                                        <span id="viewTypeChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">&nbsp;</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button id="openDocsFromHeaderBtn" type="button" class="btn btn-ghost hidden md:inline-flex"><i class="fas fa-folder-open"></i> Documents</button>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-fr">
+                                        <!-- Personal -->
+                                        <div class="card p-4 h-full">
+                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                                <i class="fas fa-user text-indigo-500"></i>
+                                                <span>Personal</span>
+                                            </div>
+                                            <div class="mb-2 hidden">
+                                                <div class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Profile</div>
+                                                <div class="flex items-center gap-4">
+                                                    <img id="viewProfileImage" class="w-16 h-16 rounded-md object-cover border border-gray-200 hidden" alt="Profile Image" />
+                                                    <div id="viewProfilePlaceholder" class="w-16 h-16 rounded-md bg-gray-100 text-gray-400 flex items-center justify-center">
+                                                        <i class="fas fa-user text-xl"></i>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <dl class="space-y-3">
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Full Name</dt>
+                                                    <dd id="viewName" class="text-gray-900 font-semibold truncate">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt>
+                                                    <dd id="viewEmail" class="text-gray-900 break-all">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt>
+                                                    <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt>
+                                                    <dd id="viewQid" class="text-gray-900">&nbsp;</dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+
+                                        <!-- Job -->
+                                        <div class="card p-4 h-full">
+                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                                <i class="fas fa-briefcase text-indigo-500"></i>
+                                                <span>Job</span>
+                                            </div>
+                                            <dl class="space-y-3">
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt>
+                                                    <dd id="viewPosition" class="text-gray-900">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt>
+                                                    <dd id="viewDepartment" class="text-gray-900">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt>
+                                                    <dd id="viewSalary" class="text-gray-900 tabular-nums">&nbsp;</dd>
+                                                </div>
+                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
+                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt>
+                                                    <dd id="viewJoinDate" class="text-gray-900">&nbsp;</dd>
+                                                </div>
+                                            </dl>
+                                        </div>
+                                    </div>
+
+                                    <!-- Bank Details (full width) -->
+                                    <div class="card p-4">
+                                        <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                                            <i class="fas fa-university text-indigo-500"></i>
+                                            <span>Bank Details</span>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <dl class="space-y-2">
+                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</dt>
+                                                <dd id="viewBankName" class="text-gray-900">&nbsp;</dd>
+                                            </dl>
+                                            <dl class="space-y-2">
+                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account Number</dt>
+                                                <dd id="viewAccountNumber" class="text-gray-900">&nbsp;</dd>
+                                            </dl>
+                                            <dl class="space-y-2">
+                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</dt>
+                                                <dd id="viewIban" class="text-gray-900 break-all">&nbsp;</dd>
+                                            </dl>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <button id="openDocsFromHeaderBtn" type="button" class="btn btn-ghost hidden md:inline-flex">
-                                <i class="fas fa-folder-open"></i> <span class="hidden lg:inline">Documents</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Information Grid (Refined Alignment) -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-fr">
-                        <!-- Personal -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-5 h-full">
-                            <h4 class="text-sm font-semibold text-gray-800 mb-3">Personal</h4>
-                            <dl class="space-y-2">
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Full Name</dt>
-                                    <dd id="viewName" class="text-sm text-gray-900 font-medium truncate">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Email</dt>
-                                    <dd id="viewEmail" class="text-sm text-gray-900 break-all">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Phone</dt>
-                                    <dd id="viewPhone" class="text-sm text-gray-900">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Qatar ID</dt>
-                                    <dd id="viewQid" class="text-sm text-gray-900 font-mono">&nbsp;</dd>
-                                </div>
-                            </dl>
-                        </div>
-
-                        <!-- Job -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-5 h-full">
-                            <h4 class="text-sm font-semibold text-gray-800 mb-3">Job</h4>
-                            <dl class="space-y-2">
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Position</dt>
-                                    <dd id="viewPosition" class="text-sm text-gray-900">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Department</dt>
-                                    <dd id="viewDepartment" class="text-sm text-gray-900">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Monthly Salary</dt>
-                                    <dd id="viewSalary" class="text-sm text-gray-900 tabular-nums">&nbsp;</dd>
-                                </div>
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3 py-1.5">
-                                    <dt class="text-xs text-gray-500">Start Date</dt>
-                                    <dd id="viewJoinDate" class="text-sm text-gray-900">&nbsp;</dd>
-                                </div>
-                            </dl>
-                        </div>
-                    </div>
-
-                    <!-- Banking (Refined) -->
-                    <div class="bg-white border border-gray-200 rounded-lg p-5">
-                        <h4 class="text-sm font-semibold text-gray-800 mb-3">Banking</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <dl class="space-y-1">
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3">
-                                    <dt class="text-xs text-gray-500">Bank Name</dt>
-                                    <dd id="viewBankName" class="text-sm text-gray-900 font-medium">&nbsp;</dd>
-                                </div>
-                            </dl>
-                            <dl class="space-y-1">
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3">
-                                    <dt class="text-xs text-gray-500">Account Number</dt>
-                                    <dd id="viewAccountNumber" class="text-sm text-gray-900 font-mono">&nbsp;</dd>
-                                </div>
-                            </dl>
-                            <dl class="space-y-1">
-                                <div class="grid grid-cols-[120px_1fr] md:grid-cols-[160px_1fr] items-start gap-3">
-                                    <dt class="text-xs text-gray-500">IBAN</dt>
-                                    <dd id="viewIban" class="text-sm text-gray-900 font-mono break-all">&nbsp;</dd>
-                                </div>
-                            </dl>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Documents Tab Content -->
                 <div id="viewTabDocs" class="hidden">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-white border border-gray-200 rounded-lg p-5">
-                            <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                                <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                    <div class="w-8 h-8 rounded-lg bg-rose-100 flex items-center justify-center">
-                                        <i class="fas fa-file-pdf text-rose-600 text-sm"></i>
-                                    </div>
-                                    <span>Qatar ID Document</span>
-                                </h4>
-                                <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost btn-sm" style="display:none;">
-                                    <i class="fas fa-external-link-alt"></i> Open
-                                </a>
-                            </div>
-                            <div id="qidDocEmpty" class="text-gray-500 text-sm text-center py-8">
-                                <i class="fas fa-file-circle-xmark text-3xl text-gray-300 mb-2"></i>
-                                <p>No document uploaded</p>
-                            </div>
-                            <div id="qidLoading" class="text-gray-400 text-sm text-center py-8" style="display:none;">
-                                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                                <p>Loading document...</p>
-                            </div>
-                            <iframe id="qidPdfPreview" 
-                                    style="display:none; width:100%; height:400px; border:1px solid #e5e7eb; border-radius: 0.5rem;" 
-                                    title="Qatar ID PDF Preview"></iframe>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
+                            <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
                         </div>
-                        <div class="bg-white border border-gray-200 rounded-lg p-5">
-                            <div class="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                                <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2">
-                                    <div class="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                                        <i class="fas fa-passport text-indigo-600 text-sm"></i>
-                                    </div>
-                                    <span>Passport Document</span>
-                                </h4>
-                                <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost btn-sm" style="display:none;">
-                                    <i class="fas fa-external-link-alt"></i> Open
-                                </a>
-                            </div>
-                            <div id="passportDocEmpty" class="text-gray-500 text-sm text-center py-8">
-                                <i class="fas fa-file-circle-xmark text-3xl text-gray-300 mb-2"></i>
-                                <p>No document uploaded</p>
-                            </div>
-                            <div id="passportLoading" class="text-gray-400 text-sm text-center py-8" style="display:none;">
-                                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                                <p>Loading document...</p>
-                            </div>
-                            <iframe id="passportPdfPreview" 
-                                    style="display:none; width:100%; height:400px; border:1px solid #e5e7eb; border-radius: 0.5rem;" 
-                                    title="Passport PDF Preview"></iframe>
-                        </div>
+                        <div id="qidDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <div id="qidLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
+                        <iframe id="qidPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Qatar ID PDF Preview"></iframe>
                     </div>
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
+                            <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                        </div>
+                        <div id="passportDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                        <div id="passportLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
+                        <iframe id="passportPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Passport PDF Preview"></iframe>
+                    </div>
+                </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -708,6 +681,7 @@
     <!-- Enhanced Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script type="module" src="script.js?v=20250928-15"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dayjs/1.11.10/dayjs.min.js" referrerpolicy="no-referrer"></script>
+    <script type="module" src="script.js?v=20250928-16"></script>
 </body>
 </html>

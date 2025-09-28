@@ -1093,173 +1093,182 @@ function renderEmployeeTable() {
 
 // View employee (read-only modal)
 window.viewEmployee = async function(id, which) {
-  // Resolve employee data
   const list = which === 'temporary' ? temporaryEmployees : employees;
-  const employee = list.find(e => e.id === id);
-  if (!employee) return;
+  const emp = list.find(e => e.id === id);
+  if (!emp) return;
 
   const modal = document.getElementById('viewModal');
-  const modalBody = modal ? modal.querySelector('.modal-body') : null;
-  if (!modal || !modalBody) return;
+  const body = modal ? modal.querySelector('.modal-body') : null;
+  if (!modal || !body) return;
 
-  // Open modal immediately
+  // Open modal
   modal.classList.add('show');
 
-  // Prepare display helpers
-  const formattedSalary = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(employee.salary || 0));
-  const joinDate = employee.joinDate ? new Date(employee.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
-  const initials = (employee.name || 'U').trim().split(/\s+/).map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  const deptClass = (employee.department || '').toLowerCase().replace(/\s+/g, '-');
+  // Helpers
+  const fmtMoney = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmtDate = (d) => {
+    try { if (window.dayjs) return window.dayjs(d).format('MMMM D, YYYY'); } catch {}
+    return d ? new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : '-';
+  };
+  const initials = (emp.name || 'U').trim().split(/\s+/).map(s => s[0]).join('').slice(0,2).toUpperCase();
+  const dept = emp.department || '-';
+  const typeLabel = which === 'temporary' ? 'Temporary' : 'Permanent';
   const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
 
-  // Render enhanced UI
-  modalBody.innerHTML = `
-    <div class="employee-header">
-      <div class="employee-avatar-container">
-        <div class="employee-avatar">
-          ${employee.profileImageUrl ? `<img src="${employee.profileImageUrl}" alt="${employee.name}" />` : `<span class="avatar-initials">${initials}</span>`}
-        </div>
-        <div class="online-indicator"></div>
-      </div>
-      <div class="employee-header-info">
-        <h2 class="employee-name">${employee.name || ''}</h2>
-        <p class="employee-title">${employee.position || ''}</p>
-        <div class="employee-badges">
-          <span class="badge badge-${deptClass || 'engineering'}">${employee.department || '-'}</span>
-          <span class="badge badge-status">${which === 'temporary' ? 'Temporary' : 'Active'}</span>
-        </div>
-      </div>
-      <div class="employee-header-actions">
-        <button class="action-btn-icon" title="Send Email" data-action="email"><i class="fas fa-envelope"></i></button>
-        <button class="action-btn-icon" title="Call" data-action="call"><i class="fas fa-phone"></i></button>
-        <button class="action-btn-icon" title="More Options"><i class="fas fa-ellipsis-v"></i></button>
-      </div>
-    </div>
-
-    <div class="info-tabs">
-      <button class="tab-btn active" data-tab="overview"><i class="fas fa-user"></i> Overview</button>
-      <button class="tab-btn" data-tab="contact"><i class="fas fa-address-card"></i> Contact</button>
-      <button class="tab-btn" data-tab="financial"><i class="fas fa-dollar-sign"></i> Financial</button>
-      <button class="tab-btn" data-tab="documents"><i class="fas fa-file-alt"></i> Documents</button>
-    </div>
-
-    <div class="tab-content">
-      <div class="tab-pane active" id="overview-tab">
-        <div class="info-grid">
-          <div class="info-card">
-            <div class="info-card-header"><i class="fas fa-briefcase"></i><h3>Employment Details</h3></div>
-            <div class="info-card-body">
-              <div class="info-row"><span class="info-label">Employee ID</span><span class="info-value">#${employee.id || 'EMP001'}</span></div>
-              <div class="info-row"><span class="info-label">Department</span><span class="info-value"><span class="department-chip ${deptClass || 'engineering'}">${employee.department || '-'}</span></span></div>
-              <div class="info-row"><span class="info-label">Position</span><span class="info-value">${employee.position || '-'}</span></div>
-              <div class="info-row"><span class="info-label">Join Date</span><span class="info-value">${joinDate}</span></div>
-              <div class="info-row"><span class="info-label">Employment Type</span><span class="info-value"><span class="status-chip ${which === 'temporary' ? '' : 'active'}">${which === 'temporary' ? 'Temporary' : 'Full Time'}</span></span></div>
+  // Build redesigned content (Tailwind utilities only)
+  body.innerHTML = `
+    <div class="space-y-5">
+      <!-- Header -->
+      <div class="bg-white rounded-xl border border-gray-200 shadow-card p-5">
+        <div class="flex items-start gap-4">
+          <div>
+            <div class="w-16 h-16 rounded-full overflow-hidden ring-2 ring-white shadow ${emp.profileImageUrl ? '' : 'bg-gray-100 flex items-center justify-center'}">
+              ${emp.profileImageUrl ? `<img src="${emp.profileImageUrl}" alt="${emp.name}" class="w-full h-full object-cover"/>` : `<span class="text-gray-500 font-semibold">${initials}</span>`}
             </div>
           </div>
-          <div class="info-card">
-            <div class="info-card-header"><i class="fas fa-chart-line"></i><h3>Performance</h3></div>
-            <div class="info-card-body">
-              <div class="performance-metric"><span class="metric-label">Overall Rating</span><div class="rating-stars"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="far fa-star"></i><span class="rating-value">4.2</span></div></div>
-              <div class="performance-metric"><span class="metric-label">Attendance</span><div class="progress-bar"><div class="progress-fill" style="width: 95%"></div></div><span class="metric-value">95%</span></div>
-              <div class="performance-metric"><span class="metric-label">Projects Completed</span><span class="metric-value">12</span></div>
+          <div class="min-w-0 flex-1">
+            <div class="min-w-0">
+              <h2 class="text-base md:text-lg font-bold text-gray-900 truncate">${emp.name || ''}</h2>
+              <p class="text-sm text-gray-600 truncate">${[emp.position, dept].filter(Boolean).join(' • ')}</p>
+              <div class="flex flex-wrap items-center gap-2 mt-2">
+                <span class="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">${dept}</span>
+                <span class="px-2 py-0.5 rounded text-xs font-medium ${typeLabel === 'Permanent' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}">${typeLabel}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="tab-pane" id="contact-tab" style="display:none;">
-        <div class="info-grid">
-          <div class="info-card">
-            <div class="info-card-header"><i class="fas fa-phone"></i><h3>Contact Information</h3></div>
-            <div class="info-card-body">
-              <div class="info-row"><span class="info-label">Email</span><span class="info-value"><a href="mailto:${employee.email || ''}" class="link"><i class="fas fa-envelope"></i> ${employee.email || '-'}</a></span></div>
-              <div class="info-row"><span class="info-label">Phone</span><span class="info-value"><a href="tel:${employee.phone || ''}" class="link"><i class="fas fa-phone"></i> ${employee.phone || 'Not provided'}</a></span></div>
-              <div class="info-row"><span class="info-label">Qatar ID</span><span class="info-value">${employee.qid || 'Not provided'}</span></div>
-            </div>
+      <!-- Tabs -->
+      <div class="border-b"><div class="flex gap-1">
+        <button class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600" data-tab="overview">Overview</button>
+        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="contact">Contact</button>
+        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="financial">Financial</button>
+        <button class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" data-tab="documents">Documents</button>
+      </div></div>
+
+      <!-- Panes -->
+      <div data-pane="overview">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-briefcase text-indigo-500"></i><span>Employment</span></div>
+            <dl class="space-y-2">
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt><dd class="text-sm text-gray-900 font-medium">${emp.position || '-'}</dd></div>
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt><dd class="text-sm text-gray-900 font-medium">${dept}</dd></div>
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt><dd class="text-sm text-gray-900">${fmtDate(emp.joinDate)}</dd></div>
+            </dl>
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-chart-line text-indigo-500"></i><span>Compensation</span></div>
+            <dl class="space-y-2">
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt><dd class="text-sm text-gray-900 font-semibold">${fmtMoney(emp.salary)}</dd></div>
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Annual Salary</dt><dd class="text-sm text-gray-900">${fmtMoney((emp.salary||0)*12)}</dd></div>
+            </dl>
           </div>
         </div>
       </div>
 
-      <div class="tab-pane" id="financial-tab" style="display:none;">
-        <div class="info-grid">
-          <div class="info-card">
-            <div class="info-card-header"><i class="fas fa-money-check-alt"></i><h3>Salary Information</h3></div>
-            <div class="info-card-body">
-              <div class="salary-display"><span class="salary-label">Monthly Salary</span><span class="salary-amount">${formattedSalary}</span></div>
-              <div class="info-row"><span class="info-label">Annual Salary</span><span class="info-value">${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(employee.salary || 0) * 12)}</span></div>
-            </div>
+      <div data-pane="contact" class="hidden">
+        <div class="bg-white rounded-xl border border-gray-200 p-4">
+          <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-address-card text-indigo-500"></i><span>Contact</span></div>
+          <dl class="space-y-2">
+            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt><dd class="text-sm text-gray-900 break-all">${emp.email || '-'}</dd></div>
+            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt><dd class="text-sm text-gray-900">${emp.phone || '-'}</dd></div>
+            <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt><dd class="text-sm text-gray-900">${emp.qid || '-'}</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div data-pane="financial" class="hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-money-check-dollar text-indigo-500"></i><span>Salary</span></div>
+            <div class="flex items-baseline gap-2"><span class="text-sm text-gray-600">Monthly</span><span class="text-xl font-bold">${fmtMoney(emp.salary)}</span></div>
+            <div class="mt-2 text-sm text-gray-600">Annual: <span class="font-medium text-gray-900">${fmtMoney((emp.salary||0)*12)}</span></div>
           </div>
-          <div class="info-card">
-            <div class="info-card-header"><i class="fas fa-university"></i><h3>Banking Details</h3></div>
-            <div class="info-card-body">
-              <div class="info-row"><span class="info-label">Bank Name</span><span class="info-value">${employee.bankName || 'Not provided'}</span></div>
-              <div class="info-row"><span class="info-label">Account Number</span><span class="info-value">${employee.bankAccountNumber ? '****' + String(employee.bankAccountNumber).slice(-4) : 'Not provided'}</span></div>
-              <div class="info-row"><span class="info-label">IBAN</span><span class="info-value">${employee.bankIban || 'Not provided'}</span></div>
-            </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500"><i class="fas fa-university text-indigo-500"></i><span>Bank Details</span></div>
+            <dl class="space-y-2">
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</dt><dd class="text-sm text-gray-900">${emp.bankName || '-'}</dd></div>
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account</dt><dd class="text-sm text-gray-900">${maskAccount(emp.bankAccountNumber)}</dd></div>
+              <div class="grid grid-cols-[160px_1fr] gap-2 items-start"><dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</dt><dd class="text-sm text-gray-900 break-all">${emp.bankIban || '-'}</dd></div>
+            </dl>
           </div>
         </div>
       </div>
 
-      <div class="tab-pane" id="documents-tab" style="display:none;">
-        <div class="documents-grid">
-          ${employee.qidPdfUrl ? `
-            <div class="document-card">
-              <i class="fas fa-id-card doc-icon"></i>
-              <span class="doc-name">Qatar ID</span>
-              <a href="#" class="doc-action" data-kind="qid"><i class="fas fa-download"></i> View</a>
-            </div>` : ''}
-          ${employee.passportPdfUrl ? `
-            <div class="document-card">
-              <i class="fas fa-passport doc-icon"></i>
-              <span class="doc-name">Passport</span>
-              <a href="#" class="doc-action" data-kind="passport"><i class="fas fa-download"></i> View</a>
-            </div>` : ''}
-          ${!employee.qidPdfUrl && !employee.passportPdfUrl ? `
-            <div class="no-documents">
-              <i class="fas fa-folder-open"></i>
-              <p>No documents uploaded</p>
-            </div>` : ''}
+      <div data-pane="documents" class="hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
+              ${emp.qidPdfUrl ? `<a href="#" class="px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700 font-semibold" data-doc="qid">Open</a>` : ''}
+            </div>
+            ${emp.qidPdfUrl ? `<iframe class="w-full h-80 border border-gray-200 rounded-lg" data-preview="qid"></iframe>` : `<div class='text-gray-500 text-sm'>No document uploaded</div>`}
+          </div>
+          <div class="bg-white rounded-xl border border-gray-200 p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
+              ${emp.passportPdfUrl ? `<a href="#" class="px-3 py-1.5 rounded-md bg-gray-50 border border-gray-200 text-gray-700 font-semibold" data-doc="passport">Open</a>` : ''}
+            </div>
+            ${emp.passportPdfUrl ? `<iframe class="w-full h-80 border border-gray-200 rounded-lg" data-preview="passport"></iframe>` : `<div class='text-gray-500 text-sm'>No document uploaded</div>`}
+          </div>
         </div>
       </div>
     </div>
   `;
 
-  // Wire header actions
-  const emailBtn = modal.querySelector('[data-action="email"]');
-  if (emailBtn && employee.email) emailBtn.addEventListener('click', () => window.open(`mailto:${employee.email}`, '_self'));
-  const callBtn = modal.querySelector('[data-action="call"]');
-  if (callBtn && employee.phone) callBtn.addEventListener('click', () => window.open(`tel:${employee.phone}`, '_self'));
+  // No quick actions in header (email/call/docs) to keep UI minimal
 
-  // Tabs behavior
-  const tabBtns = modal.querySelectorAll('.tab-btn');
-  const tabPanes = modal.querySelectorAll('.tab-pane');
-  tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const target = btn.dataset.tab;
-      tabBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      tabPanes.forEach(pane => {
-        pane.style.display = pane.id === `${target}-tab` ? 'block' : 'none';
-      });
+  // Tabs
+  const tabButtons = Array.from(body.querySelectorAll('[data-tab]'));
+  const panes = Array.from(body.querySelectorAll('[data-pane]'));
+  function switchPane(name) {
+    tabButtons.forEach(btn => {
+      const active = btn.getAttribute('data-tab') === name;
+      btn.classList.toggle('font-semibold', active);
+      btn.classList.toggle('text-indigo-600', active);
+      btn.classList.toggle('border-b-2', active);
+      btn.classList.toggle('border-indigo-600', active);
+      btn.classList.toggle('text-gray-600', !active);
     });
-  });
+    panes.forEach(pane => {
+      pane.classList.toggle('hidden', pane.getAttribute('data-pane') !== name);
+    });
+    if (name === 'documents') loadDocPreviews();
+  }
+  tabButtons.forEach(btn => btn.addEventListener('click', () => switchPane(btn.getAttribute('data-tab'))));
 
-  // Document links with fresh Storage URLs
-  modal.querySelectorAll('.doc-action').forEach(a => {
-    a.addEventListener('click', async (e) => {
+  // Default pane
+  switchPane('overview');
+
+  // Documents handling
+  async function getFreshUrl(kind) {
+    try {
+      const ref = storageRef(storage, `${basePath}/${emp.id}/${kind}Pdf.pdf`);
+      return await getDownloadURL(ref);
+    } catch (e) {
+      const fallback = kind === 'qid' ? emp.qidPdfUrl : emp.passportPdfUrl;
+      return fallback || null;
+    }
+  }
+
+  async function loadDocPreviews() {
+    const kinds = ['qid','passport'];
+    for (const kind of kinds) {
+      const iframe = body.querySelector(`[data-preview="${kind}"]`);
+      if (!iframe) continue;
+      const url = await getFreshUrl(kind);
+      if (url) iframe.src = url;
+    }
+  }
+
+  body.querySelectorAll('[data-doc]').forEach(link => {
+    link.addEventListener('click', async (e) => {
       e.preventDefault();
-      const kind = a.getAttribute('data-kind');
-      const path = `${basePath}/${employee.id}/${kind}Pdf.pdf`;
-      try {
-        const refObj = storageRef(storage, path);
-        const url = await getDownloadURL(refObj);
-        window.open(url, '_blank');
-      } catch (err) {
-        // Fallback to stored URL
-        const fallback = kind === 'qid' ? employee.qidPdfUrl : employee.passportPdfUrl;
-        if (fallback) window.open(fallback, '_blank');
-        else showToast('Document not available', 'warning');
-      }
+      const kind = link.getAttribute('data-doc');
+      const url = await getFreshUrl(kind);
+      if (url) window.open(url, '_blank'); else showToast('Document not available', 'warning');
     });
   });
 }
@@ -1269,6 +1278,7 @@ window.closeViewModal = function() {
   if (vm) vm.classList.remove('show');
   // Revoke any blob URLs and reset context
   try {
+    // Legacy IDs cleanup
     const qidPreview = document.getElementById('qidPdfPreview');
     const passPreview = document.getElementById('passportPdfPreview');
     [qidPreview, passPreview].forEach((ifr) => {
@@ -1280,6 +1290,16 @@ window.closeViewModal = function() {
         ifr.style.display = 'none';
       }
     });
+    // Dynamic content cleanup
+    const body = vm ? vm.querySelector('.modal-body') : null;
+    if (body) {
+      body.querySelectorAll('iframe[data-preview]').forEach(ifr => {
+        try { if (ifr.src && ifr.src.startsWith('blob:')) URL.revokeObjectURL(ifr.src); } catch {}
+        ifr.removeAttribute('src');
+      });
+      // Clear body to detach listeners
+      body.innerHTML = '';
+    }
   } catch {}
   currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
 }
@@ -1620,6 +1640,7 @@ function formatDate(dateString) {
   #viewModal .modal-body { background: linear-gradient(180deg, rgba(248,250,252,0.6), rgba(255,255,255,1)); }
   #viewModal .card { box-shadow: 0 0 0 1px rgba(226,232,240,0.7) inset; }
     #openDocsFromHeaderBtn:hover { background: rgba(99,102,241,0.06); }
+    .shadow-card { box-shadow: 0 1px 2px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.10); }
   `;
   document.head.appendChild(style);
 })();
