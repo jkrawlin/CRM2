@@ -546,12 +546,19 @@ body {
     background: white;
     padding: var(--spacing-2xl);
     border-radius: var(--radius-xl);
+    /* Base modal size (Delete/Employee form) */
     max-width: 600px;
     width: 95%;
     max-height: 90vh;
     overflow-y: auto;
     animation: slideUp var(--transition-slow);
     box-shadow: var(--shadow-xl);
+}
+
+/* Employee Info modal: much wider */
+#viewModal .modal-content {
+    max-width: 1400px;
+    width: 98vw;
 }
 
 @keyframes slideUp {

@@ -4,9 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
-    <link rel="stylesheet" href="assets/tailwind.css?v=20250928-12" />
+    <link rel="stylesheet" href="assets/tailwind.css?v=20250929-02" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+        <style id="payslip-print-css">
+            /* Print-only payslip: hide everything except the payslip area */
+            @media print {
+                body * { visibility: hidden !important; }
+                #payslipPrintArea, #payslipPrintArea * { visibility: visible !important; }
+                #payslipPrintArea { position: absolute; left: 0; top: 0; width: 100%; padding: 16mm; }
+                /* Page setup for A4 portrait */
+                @page { size: A4 portrait; margin: 0; }
+                /* Basic styles for slip */
+                .payslip { font-family: Inter, Arial, sans-serif; color: #111827; }
+                .payslip-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 12px; }
+                .payslip-header .title { font-size: 22px; font-weight: 800; }
+                .payslip-header .subtitle { color:#6B7280; font-size: 12px; }
+                .payslip-header .brand { font-weight: 700; color:#4F46E5; }
+                .payslip-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px 16px; margin: 8px 0 12px; font-size: 12px; }
+                .payslip-grid .label { color:#6B7280; }
+                .payslip-grid .value { font-weight: 600; color:#111827; }
+                .payslip-table { width:100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+                .payslip-table th, .payslip-table td { border: 1px solid #E5E7EB; padding: 6px 8px; }
+                .payslip-table thead th { background:#F3F4F6; color:#374151; text-align:left; }
+                .payslip-table .total td { font-weight: 800; }
+                .payslip-notes { margin-top: 10px; font-size: 12px; }
+                .payslip-footer { margin-top: 14px; color:#6B7280; font-size: 11px; text-align:right; }
+            }
+            /* Screen-only: keep the payslip hidden */
+            #payslipPrintArea { display: none; }
+        </style>
 </head>
 <body>
     <!-- Login Page with modern design -->
@@ -139,12 +166,13 @@
                                 <div class="overflow-x-auto">
                                         <table class="min-w-full text-sm">
                         <colgroup>
-                            <col class="w-[24%]" />  <!-- Name -->
+                            <col class="w-[22%]" />  <!-- Name -->
                             <col class="w-[12%]" />  <!-- Type -->
-                            <col class="w-[22%]" />  <!-- Department -->
+                            <col class="w-[20%]" />  <!-- Department -->
                             <col class="w-[14%]" />  <!-- Monthly Salary -->
                             <col class="w-[14%]" />  <!-- Start Date -->
                             <col class="w-[14%]" />  <!-- Qatar ID -->
+                            <col class="w-[18%]" />  <!-- Actions -->
                         </colgroup>
                         <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                             <tr>
@@ -154,6 +182,7 @@
                                 <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortPayroll('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
                                 <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('joinDate')">Start Date <i class="fas fa-sort ml-1"></i></th>
                                 <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortPayroll('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-center font-semibold px-4 py-3">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="payrollTableBody" class="divide-y divide-gray-100"></tbody>
@@ -485,7 +514,6 @@
                             </label>
                             <input type="file" id="qidPdf" accept="application/pdf" class="input" />
                             <div class="mt-2 flex gap-2">
-                                <button type="button" id="viewQidPdfBtn" class="btn btn-ghost" style="display:none;"><i class="fas fa-eye"></i> View</button>
                                 <span id="qidPdfStatus" class="text-xs text-gray-500"></span>
                             </div>
                         </div>
@@ -496,7 +524,6 @@
                             </label>
                             <input type="file" id="passportPdf" accept="application/pdf" class="input" />
                             <div class="mt-2 flex gap-2">
-                                <button type="button" id="viewPassportPdfBtn" class="btn btn-ghost" style="display:none;"><i class="fas fa-eye"></i> View</button>
                                 <span id="passportPdfStatus" class="text-xs text-gray-500"></span>
                             </div>
                         </div>
@@ -517,163 +544,201 @@
         </div>
     </div>
 
-    <!-- Employee Details Modal -->
-    <div class="modal" id="viewModal">
-        <div class="modal-content">
+    <!-- Employee Details Modal (Accordion-based, accessible) -->
+    <div class="modal" id="viewModal" role="dialog" aria-modal="true" aria-labelledby="viewModalTitle" aria-describedby="viewNameSub">
+        <div class="modal-content md:max-w-5xl lg:max-w-6xl w-full max-w-[98vw]" tabindex="-1">
             <div class="modal-header flex items-center justify-between">
                 <div class="modal-header-content">
                     <div>
-                        <h3 class="modal-title">Employee Details</h3>
+                        <h3 class="modal-title" id="viewModalTitle">Employee Details</h3>
                         <p class="modal-subtitle" id="viewNameSub">&nbsp;</p>
                     </div>
                 </div>
-                <button class="btn btn-ghost" aria-label="Close" onclick="closeViewModal()"><i class="fas fa-times"></i></button>
+                <button class="btn btn-ghost" aria-label="Close" id="viewCloseIcon"><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body">
-                <!-- Tabs -->
-                <div class="border-b mb-4">
-                    <div class="flex items-center gap-2">
-                        <button id="viewTabInfoBtn" class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600">Info</button>
-                        <button id="viewTabDocsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800">Documents</button>
-                    </div>
-                </div>
-
-                                <!-- Info Tab Content -->
-                                <div id="viewTabInfo" class="space-y-6">
-                                    <!-- Large Profile Header -->
-                                    <div class="card p-4">
-                                        <div class="flex items-center justify-between gap-4">
-                                            <div class="flex items-center gap-4 min-w-0">
-                                                <img id="viewProfileImageLarge" class="w-16 h-16 rounded-full object-cover ring-2 ring-white shadow hidden" style="width:64px;height:64px;" alt="Profile Image" />
-                                                <div id="viewProfilePlaceholderLarge" class="w-16 h-16 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-gray-400 flex items-center justify-center ring-1 ring-gray-200" style="width:64px;height:64px;">
-                                                    <i class="fas fa-user text-2xl"></i>
-                                                </div>
-                                                <div class="min-w-0">
-                                                    <div id="viewNameDisplay" class="text-sm md:text-base font-extrabold text-gray-900">&nbsp;</div>
-                                                    <div id="viewNameSubDisplay" class="text-xs text-gray-600">&nbsp;</div>
-                                                    <div class="flex items-center gap-2 mt-2">
-                                                        <span id="viewDepartmentChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">&nbsp;</span>
-                                                        <span id="viewTypeChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">&nbsp;</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <button id="openDocsFromHeaderBtn" type="button" class="btn btn-ghost hidden md:inline-flex"><i class="fas fa-folder-open"></i> Documents</button>
-                                        </div>
-                                    </div>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 auto-rows-fr">
-                                        <!-- Personal -->
-                                        <div class="card p-4 h-full">
-                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                                <i class="fas fa-user text-indigo-500"></i>
-                                                <span>Personal</span>
-                                            </div>
-                                            <div class="mb-2 hidden">
-                                                <div class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Profile</div>
-                                                <div class="flex items-center gap-4">
-                                                    <img id="viewProfileImage" class="w-16 h-16 rounded-md object-cover border border-gray-200 hidden" alt="Profile Image" />
-                                                    <div id="viewProfilePlaceholder" class="w-16 h-16 rounded-md bg-gray-100 text-gray-400 flex items-center justify-center">
-                                                        <i class="fas fa-user text-xl"></i>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <dl class="space-y-3">
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Full Name</dt>
-                                                    <dd id="viewName" class="text-gray-900 font-semibold truncate">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Email</dt>
-                                                    <dd id="viewEmail" class="text-gray-900 break-all">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Phone</dt>
-                                                    <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Qatar ID</dt>
-                                                    <dd id="viewQid" class="text-gray-900">&nbsp;</dd>
-                                                </div>
-                                            </dl>
-                                        </div>
-
-                                        <!-- Job -->
-                                        <div class="card p-4 h-full">
-                                            <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                                <i class="fas fa-briefcase text-indigo-500"></i>
-                                                <span>Job</span>
-                                            </div>
-                                            <dl class="space-y-3">
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Position</dt>
-                                                    <dd id="viewPosition" class="text-gray-900">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Department</dt>
-                                                    <dd id="viewDepartment" class="text-gray-900">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly Salary</dt>
-                                                    <dd id="viewSalary" class="text-gray-900 tabular-nums">&nbsp;</dd>
-                                                </div>
-                                                <div class="grid grid-cols-[140px_1fr] md:grid-cols-[160px_1fr] items-start gap-2">
-                                                    <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Start Date</dt>
-                                                    <dd id="viewJoinDate" class="text-gray-900">&nbsp;</dd>
-                                                </div>
-                                            </dl>
-                                        </div>
-                                    </div>
-
-                                    <!-- Bank Details (full width) -->
-                                    <div class="card p-4">
-                                        <div class="flex items-center gap-2 mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                                            <i class="fas fa-university text-indigo-500"></i>
-                                            <span>Bank Details</span>
-                                        </div>
-                                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                            <dl class="space-y-2">
-                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</dt>
-                                                <dd id="viewBankName" class="text-gray-900">&nbsp;</dd>
-                                            </dl>
-                                            <dl class="space-y-2">
-                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account Number</dt>
-                                                <dd id="viewAccountNumber" class="text-gray-900">&nbsp;</dd>
-                                            </dl>
-                                            <dl class="space-y-2">
-                                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</dt>
-                                                <dd id="viewIban" class="text-gray-900 break-all">&nbsp;</dd>
-                                            </dl>
-                                        </div>
+            <div class="modal-body space-y-4">
+                <!-- Overview Section -->
+                <section class="card overflow-hidden" aria-labelledby="acc-overview-h">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-overview">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-user-circle text-indigo-500"></i>
+                            <h4 id="acc-overview-h" class="text-sm font-bold text-gray-800">Overview</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-overview" class="px-6 pt-6 pb-6">
+                        <div class="flex flex-col md:flex-row items-start md:items-center gap-4">
+                            <div class="relative">
+                                <div class="rounded-full p-1 bg-gradient-to-br from-gray-200 via-gray-300 to-gray-400 border border-gray-400 shadow-sm">
+                                    <img id="viewProfileImageLarge" class="w-[220px] h-[220px] rounded-full object-cover hidden" alt="Profile image" />
+                                    <div id="viewProfilePlaceholderLarge" class="w-[220px] h-[220px] rounded-full bg-gradient-to-br from-indigo-100 via-white to-purple-100 text-indigo-400 flex items-center justify-center">
+                                        <i class="fas fa-user text-5xl"></i>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div id="viewNameDisplay" class="text-lg md:text-xl font-extrabold text-gray-900">&nbsp;</div>
+                                <div id="viewNameSubDisplay" class="text-sm text-gray-600">&nbsp;</div>
+                                <div class="flex items-center gap-2 mt-3 flex-wrap">
+                                    <span id="viewDepartmentChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">&nbsp;</span>
+                                    <span id="viewTypeChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">&nbsp;</span>
+                                </div>
+                                <!-- Stats: Join date, Salary, Attendance, Rating -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                                    <div>
+                                        <div class="text-xs text-gray-500">Start Date</div>
+                                        <div id="viewJoinDate" class="text-gray-900 font-semibold">&nbsp;</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-500">Monthly Salary</div>
+                                        <div id="viewSalary" class="text-gray-900 font-semibold tabular-nums">&nbsp;</div>
+                                    </div>
+                                    <div id="viewAttendanceWrap" class="hidden">
+                                        <div class="text-xs text-gray-500">Attendance</div>
+                                        <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div id="viewAttendanceBar" class="h-full bg-indigo-500" style="width:0%"></div>
+                                        </div>
+                                        <div id="viewAttendanceLabel" class="text-xs text-gray-600 mt-1">&nbsp;</div>
+                                    </div>
+                                    <div id="viewRatingWrap" class="hidden">
+                                        <div class="text-xs text-gray-500">Rating</div>
+                                        <div id="viewRatingStars" class="flex items-center gap-1" aria-label="Rating"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                        </div>
+                    </div>
+                </section>
 
-                <!-- Documents Tab Content -->
-                <div id="viewTabDocs" class="hidden">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="card p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
-                            <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                <!-- Contact & Personal -->
+                <section class="card overflow-hidden" aria-labelledby="acc-contact-h">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-contact">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-address-card text-indigo-500"></i>
+                            <h4 id="acc-contact-h" class="text-sm font-bold text-gray-800">Contact & Personal</h4>
                         </div>
-                        <div id="qidDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
-                        <div id="qidLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
-                        <iframe id="qidPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Qatar ID PDF Preview"></iframe>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-contact" class="px-6 pt-6 pb-6 hidden">
+                        <dl class="space-y-2">
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-user text-indigo-500"></i> Full Name</dt>
+                                <dd id="viewName" class="text-gray-900 font-semibold truncate">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-envelope text-indigo-500"></i> Email</dt>
+                                <dd id="viewEmail" class="text-gray-900 break-all">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-phone text-indigo-500"></i> Phone</dt>
+                                <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-id-card text-indigo-500"></i> Qatar ID</dt>
+                                <dd id="viewQid" class="text-gray-900 tabular-nums">&nbsp;</dd>
+                            </div>
+                        </dl>
                     </div>
-                    <div class="card p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
-                            <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                </section>
+
+                <!-- Employment Details -->
+                <section class="card overflow-hidden" aria-labelledby="acc-employment-h">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-employment">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-briefcase text-indigo-500"></i>
+                            <h4 id="acc-employment-h" class="text-sm font-bold text-gray-800">Employment Details</h4>
                         </div>
-                        <div id="passportDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
-                        <div id="passportLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
-                        <iframe id="passportPdfPreview" style="display:none; width:100%; height:320px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Passport PDF Preview"></iframe>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-employment" class="px-6 pt-6 pb-6 hidden">
+                        <dl class="space-y-2">
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-briefcase text-indigo-500"></i> Position</dt>
+                                <dd id="viewPosition" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-layer-group text-indigo-500"></i> Department</dt>
+                                <dd id="viewDepartment" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="hidden"> <!-- Keep for backward compatibility if referenced -->
+                                <img id="viewProfileImage" class="w-16 h-16 rounded-md object-cover border border-gray-200 hidden" alt="Profile Image" />
+                                <div id="viewProfilePlaceholder" class="w-16 h-16 rounded-md bg-gray-100 text-gray-400 flex items-center justify-center">
+                                    <i class="fas fa-user text-xl"></i>
+                                </div>
+                            </div>
+                        </dl>
                     </div>
-                </div>
-                </div>
+                </section>
+
+                <!-- Bank Details -->
+                <section class="card overflow-hidden" aria-labelledby="acc-bank-h">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-bank">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-university text-indigo-500"></i>
+                            <h4 id="acc-bank-h" class="text-sm font-bold text-gray-800">Bank Details</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-bank" class="px-6 pt-6 pb-6 hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <dl class="space-y-1">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Bank Name</dt>
+                                <dd id="viewBankName" class="text-gray-900">&nbsp;</dd>
+                            </dl>
+                            <dl class="space-y-1">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">Account Number</dt>
+                                <dd id="viewAccountNumber" class="text-gray-900 tabular-nums">&nbsp;</dd>
+                            </dl>
+                            <dl class="space-y-1">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500">IBAN</dt>
+                                <dd id="viewIban" class="text-gray-900 break-all">&nbsp;</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Documents & Actions -->
+                <section class="card overflow-hidden" aria-labelledby="acc-docs-h">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-docs" id="docsSectionHeader">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-folder-open text-indigo-500"></i>
+                            <h4 id="acc-docs-h" class="text-sm font-bold text-gray-800">Documents & Actions</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-docs" class="px-6 pt-6 pb-6 hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="card p-6">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-file-pdf text-rose-500"></i> Qatar ID PDF</h4>
+                                    <a id="qidPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                                </div>
+                                <div id="qidDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                                <div id="qidLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
+                                <iframe id="qidPdfPreview" style="display:none; width:100%; height:480px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Qatar ID PDF Preview"></iframe>
+                            </div>
+                            <div class="card p-6">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-sm font-bold text-gray-800 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport PDF</h4>
+                                    <a id="passportPdfLink" href="#" target="_blank" class="btn btn-ghost" style="display:none;"><i class="fas fa-external-link-alt"></i> Open</a>
+                                </div>
+                                <div id="passportDocEmpty" class="text-gray-500 text-sm">No document uploaded</div>
+                                <div id="passportLoading" class="text-gray-400 text-sm" style="display:none;">Loading…</div>
+                                <iframe id="passportPdfPreview" style="display:none; width:100%; height:480px; border:1px solid #e5e7eb; border-radius: 0.5rem;" title="Passport PDF Preview"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeViewModal()">
-                    <i class="fas fa-times"></i> Close
-                </button>
+            <!-- Prominent Action Bar -->
+            <div class="modal-footer sticky bottom-0 bg-white/80 backdrop-blur border-t border-gray-100 flex items-center justify-between gap-3">
+                <div class="text-sm text-gray-500 px-1">Press Esc to close • Tab to navigate</div>
+                <div class="flex items-center gap-2">
+                    <button type="button" class="btn btn-secondary" id="viewActionClose"><i class="fas fa-times"></i> Close</button>
+                    <button type="button" class="btn btn-primary" id="viewActionEdit"><i class="fas fa-pen"></i> Edit</button>
+                    <button type="button" class="btn btn-danger" id="viewActionDelete"><i class="fas fa-trash"></i> Delete</button>
+                </div>
             </div>
         </div>
     </div>
@@ -681,6 +746,178 @@
     <!-- Enhanced Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <script type="module" src="script.js?v=20250928-15"></script>
+    <!-- Payroll Detail Modal -->
+    <div class="modal" id="payrollModal" role="dialog" aria-modal="true" aria-labelledby="payrollModalTitle">
+        <div class="modal-content w-[98vw] max-w-[1400px] max-h-[80vh] overflow-y-auto rounded-none">
+            <div class="modal-header flex items-center justify-between rounded-none">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-file-invoice-dollar text-indigo-600"></i>
+                    <h3 id="payrollModalTitle" class="modal-title">Payroll Details</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closePayrollModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="card p-4">
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Employee</div>
+                        <div class="text-lg font-bold text-gray-900" id="payrollViewName">—</div>
+                        <div class="text-sm text-gray-600" id="payrollViewType">—</div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Compensation</div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Monthly Salary</span><span class="font-semibold" id="payrollViewSalary">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Start Date</span><span class="font-semibold" id="payrollViewJoinDate">—</span></div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Employment</div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Department</span><span class="font-semibold" id="payrollViewDepartment">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Position</span><span class="font-semibold" id="payrollViewPosition">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Qatar ID</span><span class="font-semibold" id="payrollViewQid">—</span></div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Bank</div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Bank Name</span><span class="font-semibold" id="payrollViewBankName">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Account</span><span class="font-semibold" id="payrollViewAccount">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">IBAN</span><span class="font-semibold break-all" id="payrollViewIban">—</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer flex items-center justify-end gap-2 rounded-none">
+                <button type="button" class="btn btn-secondary" onclick="closePayrollModal()"><i class="fas fa-times"></i> Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden print area populated dynamically for payslip printing -->
+    <div id="payslipPrintArea" aria-hidden="true"></div>
+
+    <!-- Payslip Form Modal -->
+    <div class="modal" id="payslipModal" role="dialog" aria-modal="true" aria-labelledby="payslipModalTitle">
+        <div class="modal-content max-w-xl w-full">
+            <div class="modal-header flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-receipt text-indigo-600"></i>
+                    <h3 id="payslipModalTitle" class="modal-title">Generate Payslip</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closePayslipModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="payslipForm" class="space-y-4">
+                    <div class="grid grid-cols-1 gap-4">
+                        <div>
+                            <label class="label"><i class="fas fa-user label-icon"></i> Employee</label>
+                            <input id="psEmployeeName" type="text" class="input" readonly />
+                            <input id="psEmployeeType" type="text" class="input mt-2" readonly />
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="label"><i class="fas fa-calendar-alt label-icon"></i> Pay Period</label>
+                                <input id="psPeriod" type="month" class="input" required />
+                            </div>
+                            <div>
+                                <label class="label"><i class="fas fa-dollar-sign label-icon"></i> Basic Salary</label>
+                                <input id="psBasic" type="number" step="any" class="input" required />
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="label"><i class="fas fa-plus-circle label-icon"></i> Allowances</label>
+                                <input id="psAllowances" type="number" step="any" class="input" value="0" />
+                            </div>
+                            <div>
+                                <label class="label"><i class="fas fa-minus-circle label-icon"></i> Deductions</label>
+                                <input id="psDeductions" type="number" step="any" class="input" value="0" />
+                            </div>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-sticky-note label-icon"></i> Notes (optional)</label>
+                            <textarea id="psNotes" class="input" rows="3" placeholder="Notes to include on the payslip..."></textarea>
+                        </div>
+                        <div class="flex items-center justify-between p-3 bg-gray-50 rounded border border-gray-200">
+                            <div class="text-sm text-gray-600">Net Pay</div>
+                            <div id="psNet" class="text-lg font-extrabold text-gray-900">$0.00</div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer flex items-center justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closePayslipModal()"><i class="fas fa-times"></i> Cancel</button>
+                <button type="button" class="btn btn-primary" id="payslipPrintBtn"><i class="fas fa-print"></i> Print Payslip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Slip Form Modal (for advances/partial payments) -->
+    <div class="modal" id="paymentModal" role="dialog" aria-modal="true" aria-labelledby="paymentModalTitle">
+        <div class="modal-content max-w-xl w-full">
+            <div class="modal-header flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-cash-register text-indigo-600"></i>
+                    <h3 id="paymentModalTitle" class="modal-title">Record Payment</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closePaymentModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm" class="space-y-4">
+                    <div>
+                        <label class="label"><i class="fas fa-user label-icon"></i> Employee</label>
+                        <input id="payEmployeeName" type="text" class="input" readonly />
+                        <input id="payEmployeeType" type="text" class="input mt-2" readonly />
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="label"><i class="fas fa-calendar-day label-icon"></i> Payment Date</label>
+                            <input id="payDate" type="date" class="input" required />
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-dollar-sign label-icon"></i> Amount</label>
+                            <input id="payAmount" type="number" step="any" class="input" required />
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="label"><i class="fas fa-wallet label-icon"></i> Payment Method</label>
+                            <select id="payMethod" class="input">
+                                <option value="cash">Cash</option>
+                                <option value="bank">Bank Transfer</option>
+                                <option value="cheque">Cheque</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-file-signature label-icon"></i> Reference (optional)</label>
+                            <input id="payRef" type="text" class="input" placeholder="Txn/cheque no." />
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="label"><i class="fas fa-hand-holding-usd label-icon"></i> Is Advance?</label>
+                            <select id="payIsAdvance" class="input">
+                                <option value="no">No</option>
+                                <option value="yes">Yes (advance)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-undo label-icon"></i> Deduct From</label>
+                            <select id="payDeductFrom" class="input">
+                                <option value="none">Do not deduct</option>
+                                <option value="next">Next payroll</option>
+                                <option value="installments">Split over 3 months</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="label"><i class="fas fa-sticky-note label-icon"></i> Notes (optional)</label>
+                        <textarea id="payNotes" class="input" rows="3" placeholder="Payment notes..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer flex items-center justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closePaymentModal()"><i class="fas fa-times"></i> Cancel</button>
+                <button type="button" class="btn btn-primary" id="paymentPrintBtn"><i class="fas fa-print"></i> Print Payment Slip</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js?v=20250929-07"></script>
 </body>
 </html>

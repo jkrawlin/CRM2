@@ -60,10 +60,15 @@
   #employeeModal .form-group { @apply p-2; }
   #employeeModal .form-row { @apply grid grid-cols-1 md:grid-cols-3 gap-4; }
 
-  /* Employee View modal: rectangular and wide */
-  #viewModal .modal-content { @apply rounded-none max-w-3xl w-full max-h-[80vh] overflow-y-auto; }
+  /* Employee View modal: rectangular and very wide */
+  #viewModal .modal-content { @apply rounded-none w-[98vw] max-w-[1400px] max-h-[80vh] overflow-y-auto; }
   #viewModal .modal-header { @apply rounded-none; }
   #viewModal .modal-footer { @apply rounded-none; }
+
+  /* Payroll View modal: match Employee View modal size and shape */
+  #payrollModal .modal-content { @apply rounded-none w-[98vw] max-w-[1400px] max-h-[80vh] overflow-y-auto; }
+  #payrollModal .modal-header { @apply rounded-none; }
+  #payrollModal .modal-footer { @apply rounded-none; }
 
   /* Form controls */
   .form-section { @apply space-y-6; }

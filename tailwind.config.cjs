@@ -2,7 +2,13 @@
 module.exports = {
   content: [
     './index.html',
-    './script.js'
+    './script.js',
+    './modules/**/*.js'
+  ],
+  safelist: [
+    // Ensure dynamically generated classes are not purged
+    'bg-amber-50', 'bg-amber-100', 'text-amber-800',
+    'bg-emerald-50', 'bg-emerald-100', 'text-emerald-800'
   ],
   theme: {
     extend: {

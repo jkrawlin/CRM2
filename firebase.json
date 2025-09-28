@@ -16,6 +16,8 @@
       ".vscode/**",
       ".qodo/**",
       "src/**",
+  "app.js",
+  "styles.css",
       "postcss.config.cjs",
       "tailwind.config.cjs",
       "package*.json",

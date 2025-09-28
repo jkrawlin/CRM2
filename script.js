@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20250928-03';
+import { db, auth, storage } from './firebase-config.js?v=20250929-04';
 import {
   collection,
   addDoc,
@@ -23,14 +23,23 @@ import {
   getBlob
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
+// Modules
+import {
+  initPayroll,
+  renderPayrollTable as payrollRenderTable,
+  renderPayrollFrame as payrollRenderFrame,
+  setPayrollSubTab as payrollSetPayrollSubTab,
+  sortPayroll as payrollSort,
+  exportPayrollCsv as payrollExportPayrollCsv,
+} from './modules/payroll.js?v=20250929-07';
+// Utilities used in this file (masking account numbers in Payroll modal)
+import { maskAccount } from './modules/utils.js?v=20250929-07';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-07';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-07';
+
 let employees = [];
 let temporaryEmployees = [];
-let currentSortColumn = '';
-let currentSortOrder = 'asc';
-let currentTempSortColumn = '';
-let currentTempSortOrder = 'asc';
-let payrollSortColumn = '';
-let payrollSortOrder = 'asc';
+// Sorting is handled by modules (employees/temporary)
 let deleteEmployeeId = null;
 let currentSearch = '';
 let currentDepartmentFilter = '';
@@ -38,10 +47,13 @@ let unsubscribeEmployees = null;
 let unsubscribeTemporary = null;
 let authed = false;
 let authInitialized = false;
+let payrollInited = false;
 // Track current View modal context to lazy-load documents and manage blob URLs
 let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
-// Track which payroll sub-tab is active: 'table' or 'report'
-let currentPayrollSubTab = (typeof localStorage !== 'undefined' && localStorage.getItem('payrollSubTab')) || 'table';
+// Track which payroll sub-tab is active: 'table' or 'report' (always default to table)
+let currentPayrollSubTab = 'table';
+// Track current payroll view data for payslip
+let currentPayrollView = null;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -70,7 +82,17 @@ document.addEventListener('DOMContentLoaded', () => {
   setActiveSection('dashboard');
   loadEmployeesRealtime();
   loadTemporaryRealtime();
-  // Initial payroll render
+  // Initialize payroll module and initial render
+  if (!payrollInited) {
+    try {
+      initPayroll({
+        getEmployees: () => employees,
+        getTemporaryEmployees: () => temporaryEmployees,
+        getSearchQuery: () => currentSearch,
+      });
+      payrollInited = true;
+    } catch (e) { console.warn('Payroll init failed', e); }
+  }
   renderPayrollTable();
     } else {
       // User is signed out
@@ -139,17 +161,26 @@ function loadTemporaryRealtime() {
   );
 }
 
+// Remove keys with undefined values (Firestore does not allow undefined)
+function cleanData(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) out[k] = v;
+  }
+  return out;
+}
+
 // Add or update employee in Firestore
 async function saveEmployee(employee, isNew = false) {
   try {
     if (employee.id) {
       const employeeRef = doc(db, "employees", employee.id);
       const { id, ...updateData } = employee;
-      await updateDoc(employeeRef, updateData);
+      await updateDoc(employeeRef, cleanData(updateData));
       showToast(isNew ? 'Employee added successfully' : 'Employee updated successfully', 'success');
     } else {
       const { id, ...newEmployee } = employee;
-  await addDoc(collection(db, "employees"), newEmployee);
+  await addDoc(collection(db, "employees"), cleanData(newEmployee));
   showToast('Employee added successfully', 'success');
     }
     clearForm();
@@ -169,11 +200,11 @@ async function saveTemporaryEmployee(employee, isNew = false) {
     if (employee.id) {
       const employeeRef = doc(db, "temporaryEmployees", employee.id);
       const { id, ...updateData } = employee;
-      await updateDoc(employeeRef, updateData);
+      await updateDoc(employeeRef, cleanData(updateData));
       showToast(isNew ? 'Temporary employee added successfully' : 'Temporary employee updated successfully', 'success');
     } else {
       const { id, ...newEmployee } = employee;
-  await addDoc(collection(db, "temporaryEmployees"), newEmployee);
+  await addDoc(collection(db, "temporaryEmployees"), cleanData(newEmployee));
   showToast('Temporary employee added successfully', 'success');
     }
     clearForm();
@@ -258,16 +289,18 @@ function setupEventListeners() {
   if (loginGoogleBtn) loginGoogleBtn.style.display = 'none';
 
   // Close modals when clicking outside the dialog
-  ['employeeModal', 'deleteModal', 'viewModal'].forEach((id) => {
+  ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal'].forEach((id) => {
     const modal = document.getElementById(id);
     if (modal) {
       modal.addEventListener('click', (e) => {
-        // Close when clicking anywhere outside the dialog content
-        const clickedInsideContent = e.target.closest('.modal-content');
-        if (!clickedInsideContent) {
+        // Close only when clicking the overlay itself (not inside dialog content)
+        if (e.target === modal) {
           if (id === 'employeeModal') closeEmployeeModal();
           if (id === 'deleteModal') closeModal();
           if (id === 'viewModal') closeViewModal();
+          if (id === 'payrollModal') closePayrollModal();
+          if (id === 'payslipModal') closePayslipModal();
+          if (id === 'paymentModal') closePaymentModal();
         }
       });
     }
@@ -275,42 +308,52 @@ function setupEventListeners() {
 
   // Global capture listener as a fallback to guarantee overlay clicks close modals
   document.addEventListener('click', (e) => {
-    const employeeModalEl = document.getElementById('employeeModal');
-    const deleteModalEl = document.getElementById('deleteModal');
-    const viewModalEl = document.getElementById('viewModal');
-    const anyOpen = (el) => el && el.classList.contains('show');
-    if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl)) return;
+  const employeeModalEl = document.getElementById('employeeModal');
+  const deleteModalEl = document.getElementById('deleteModal');
+  const viewModalEl = document.getElementById('viewModal');
+  const payrollModalEl = document.getElementById('payrollModal');
+  const payslipModalEl = document.getElementById('payslipModal');
+  const paymentModalEl = document.getElementById('paymentModal');
+  const anyOpen = (el) => el && el.classList.contains('show');
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl2) && !anyOpen(paymentModalEl)) return;
 
-    const clickedInsideContent = e.target.closest('.modal-content');
-    if (clickedInsideContent) return; // do nothing if click inside dialog
-
-    // If the click is inside an open modal overlay but outside content, close it
-    if (anyOpen(employeeModalEl) && e.target.closest('#employeeModal')) {
+    // If the click landed on an overlay (exact target is the overlay div), close it
+    if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
       closeEmployeeModal();
-    } else if (anyOpen(deleteModalEl) && e.target.closest('#deleteModal')) {
+    } else if (anyOpen(deleteModalEl) && e.target === deleteModalEl) {
       closeModal();
-    } else if (anyOpen(viewModalEl) && e.target.closest('#viewModal')) {
+    } else if (anyOpen(viewModalEl) && e.target === viewModalEl) {
       closeViewModal();
+    } else if (anyOpen(payrollModalEl) && e.target === payrollModalEl) {
+      closePayrollModal();
+    } else if (anyOpen(payslipModalEl) && e.target === payslipModalEl) {
+      closePayslipModal();
     }
   }, true);
 
   // Use pointerdown (captures mouse/touch/pen) to close even if click is prevented
   document.addEventListener('pointerdown', (e) => {
-    const employeeModalEl = document.getElementById('employeeModal');
-    const deleteModalEl = document.getElementById('deleteModal');
-    const viewModalEl = document.getElementById('viewModal');
-    const anyOpen = (el) => el && el.classList.contains('show');
-    if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl)) return;
+  const employeeModalEl = document.getElementById('employeeModal');
+  const deleteModalEl = document.getElementById('deleteModal');
+  const viewModalEl = document.getElementById('viewModal');
+  const payrollModalEl = document.getElementById('payrollModal');
+  const payslipModalEl2 = document.getElementById('payslipModal');
+  const anyOpen = (el) => el && el.classList.contains('show');
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl2)) return;
 
-    const insideContent = e.target.closest('.modal-content');
-    if (insideContent) return;
-
-    if (anyOpen(employeeModalEl) && e.target.closest('#employeeModal')) {
+    // Close when pointerdown lands on overlay element itself
+    if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
       closeEmployeeModal();
-    } else if (anyOpen(deleteModalEl) && e.target.closest('#deleteModal')) {
+    } else if (anyOpen(deleteModalEl) && e.target === deleteModalEl) {
       closeModal();
-    } else if (anyOpen(viewModalEl) && e.target.closest('#viewModal')) {
+    } else if (anyOpen(viewModalEl) && e.target === viewModalEl) {
       closeViewModal();
+    } else if (anyOpen(payrollModalEl) && e.target === payrollModalEl) {
+      closePayrollModal();
+    } else if (anyOpen(payslipModalEl2) && e.target === payslipModalEl2) {
+      closePayslipModal();
+    } else if (anyOpen(paymentModalEl) && e.target === paymentModalEl) {
+      closePaymentModal();
     }
   }, true);
 
@@ -320,16 +363,20 @@ function setupEventListeners() {
       const deleteModalEl = document.getElementById('deleteModal');
       const employeeModalEl = document.getElementById('employeeModal');
       const viewModalEl = document.getElementById('viewModal');
+      const payrollModalEl = document.getElementById('payrollModal');
+      const payslipModalEl = document.getElementById('payslipModal');
+      const paymentModalEl2 = document.getElementById('paymentModal');
       if (deleteModalEl && deleteModalEl.classList.contains('show')) closeModal();
       if (employeeModalEl && employeeModalEl.classList.contains('show')) closeEmployeeModal();
       if (viewModalEl && viewModalEl.classList.contains('show')) closeViewModal();
+      if (payrollModalEl && payrollModalEl.classList.contains('show')) closePayrollModal();
+      if (payslipModalEl && payslipModalEl.classList.contains('show')) closePayslipModal();
+      if (paymentModalEl2 && paymentModalEl2.classList.contains('show')) closePaymentModal();
     }
   });
 
   // Payroll Frame controls
   const payrollMonthEl = document.getElementById('payrollMonth');
-  const exportCsvBtn = document.getElementById('exportPayrollCsvBtn');
-  const printBtn = document.getElementById('printPayrollBtn');
   if (payrollMonthEl) {
     // Default to current month
     const now = new Date();
@@ -337,16 +384,73 @@ function setupEventListeners() {
     payrollMonthEl.value = payrollMonthEl.value || ym;
     payrollMonthEl.addEventListener('change', () => renderPayrollFrame());
   }
-  if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportPayrollCsv);
-  if (printBtn) printBtn.addEventListener('click', () => window.print());
+  // Export/Print and tab buttons are wired by the payroll module during init
 
-  // Payroll sub-tab buttons
-  const tabTableBtn = document.getElementById('payrollTabTableBtn');
-  const tabReportBtn = document.getElementById('payrollTabReportBtn');
-  if (tabTableBtn) tabTableBtn.addEventListener('click', () => setPayrollSubTab('table'));
-  if (tabReportBtn) tabReportBtn.addEventListener('click', () => setPayrollSubTab('report'));
-  // Initialize sub-tab visibility according to stored preference
-  setPayrollSubTab(currentPayrollSubTab);
+  // Accordion toggles inside View modal
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-acc-toggle]');
+    if (!btn) return;
+    const targetSel = btn.getAttribute('data-acc-target');
+    if (!targetSel) return;
+    const pane = document.querySelector(targetSel);
+    if (!pane) return;
+    const isHidden = pane.classList.contains('hidden');
+    // Collapse other sections? We'll keep independent for now.
+    pane.classList.toggle('hidden', !isHidden);
+    // Rotate chevron
+    const chev = btn.querySelector('.fa-chevron-down');
+    if (chev) chev.style.transform = isHidden ? 'rotate(180deg)' : '';
+    // ARIA state
+    btn.setAttribute('aria-expanded', String(isHidden));
+    // Lazy-load documents when opening Documents section
+    if (isHidden && targetSel === '#acc-docs' && currentViewCtx && currentViewCtx.id && !currentViewCtx.docsLoaded) {
+      loadCurrentViewDocuments().catch(() => {});
+    }
+  });
+
+  // Removed: header quick access button to open Documents section
+
+  // On large screens, auto-expand all sections by default when modal mounts
+  const mq = window.matchMedia('(min-width: 1024px)');
+  const ensureExpandedOnDesktop = () => {
+    if (!mq.matches) return;
+    ['#acc-overview', '#acc-contact', '#acc-employment', '#acc-bank', '#acc-docs'].forEach(sel => {
+      const pane = document.querySelector(sel);
+      const btn = document.querySelector(`[data-acc-target="${sel}"]`);
+      if (!pane || !btn) return;
+      pane.classList.remove('hidden');
+      btn.setAttribute('aria-expanded', 'true');
+      const chev = btn.querySelector('.fa-chevron-down');
+      if (chev) chev.style.transform = 'rotate(180deg)';
+    });
+  };
+  mq.addEventListener?.('change', ensureExpandedOnDesktop);
+  ensureExpandedOnDesktop();
+
+  // View modal action bar handlers
+  const viewCloseIcon = document.getElementById('viewCloseIcon');
+  if (viewCloseIcon) viewCloseIcon.addEventListener('click', () => closeViewModal());
+  const viewActionClose = document.getElementById('viewActionClose');
+  if (viewActionClose) viewActionClose.addEventListener('click', () => closeViewModal());
+  const viewActionEdit = document.getElementById('viewActionEdit');
+  if (viewActionEdit) viewActionEdit.addEventListener('click', () => {
+    const id = currentViewCtx?.id;
+    const which = currentViewCtx?.which === 'temporary' ? 'temporary' : 'employees';
+    if (!id) return;
+    closeViewModal();
+    editEmployee(id, which);
+  });
+  const viewActionDelete = document.getElementById('viewActionDelete');
+  if (viewActionDelete) viewActionDelete.addEventListener('click', () => {
+    const id = currentViewCtx?.id;
+    const which = currentViewCtx?.which === 'temporary' ? 'temporary' : 'employees';
+    if (!id) return;
+    closeViewModal();
+    openDeleteModal(id, which);
+  });
+
+  // Mobile swipe-to-close for View modal
+  setupSwipeToClose();
 }
 
 // Toggle visible section and active nav
@@ -388,9 +492,9 @@ function setActiveSection(key) {
 
   // When navigating to Payroll, ensure the table/frame are freshly rendered
   if (key === 'payroll') {
+    // Always open Payroll on the Table sub-tab
+    setPayrollSubTab('table');
     renderPayrollTable();
-    // Restore previously selected sub-tab
-    setPayrollSubTab(currentPayrollSubTab);
   }
 }
 
@@ -437,8 +541,7 @@ async function handleFormSubmit(e) {
     phone: (document.getElementById('phone')?.value || '').trim(),
     bankName: (document.getElementById('bankName')?.value || '').trim(),
     bankAccountNumber: (document.getElementById('bankAccountNumber')?.value || '').trim(),
-    bankIban: ((document.getElementById('bankIban')?.value || '').trim() || '').toUpperCase().replace(/\s+/g, ''),
-    profileImageUrl: undefined
+    bankIban: ((document.getElementById('bankIban')?.value || '').trim() || '').toUpperCase().replace(/\s+/g, '')
   };
   const isNew = !employee.id;
 
@@ -458,9 +561,15 @@ async function handleFormSubmit(e) {
 
   // If creating new document without ID, first create the doc to get ID, then upload
   if (!employee.id) {
-    const { id, ...newData } = employee;
-    const docRef = await addDoc(collection(db, basePath), newData);
-    employee.id = docRef.id;
+    try {
+      const { id, ...newData } = employee;
+      const docRef = await addDoc(collection(db, basePath), cleanData(newData));
+      employee.id = docRef.id;
+    } catch (error) {
+      console.error('Failed to create employee record:', error);
+      showToast('Failed to create employee record. Please try again.', 'error');
+      return;
+    }
   }
 
   // Helper to upload a file to a specific storage path and return its download URL
@@ -571,287 +680,371 @@ window.openEmployeeModal = function(which = 'employees', mode = 'add') {
   }
 }
 
-// Payroll sorting
+// Payroll sorting (delegates to module)
 window.sortPayroll = function(column) {
-  if (payrollSortColumn === column) {
-    payrollSortOrder = payrollSortOrder === 'asc' ? 'desc' : 'asc';
-  } else {
-    payrollSortColumn = column;
-    payrollSortOrder = 'asc';
-  }
-  renderPayrollTable();
+  payrollSort(column, {
+    getEmployees: () => employees,
+    getTemporaryEmployees: () => temporaryEmployees,
+    getSearchQuery: () => currentSearch,
+  });
 }
 
 // Render payroll table (combines employees and temporary)
 function renderPayrollTable() {
-  const tbody = document.getElementById('payrollTableBody');
-  const emptyState = document.getElementById('payrollEmptyState');
-  const totalEl = document.getElementById('totalPayroll');
-  if (!tbody || !emptyState) return;
-
-  // Merge with type tag
-  const combined = [
-    ...employees.map(e => ({ ...e, _type: 'Employee' })),
-    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
-  ];
-
-  // Apply current search (same logic as others)
-  const filtered = combined.filter(emp => {
-    const query = (currentSearch || '').trim();
-    const queryDigits = query.replace(/\D/g, '');
-    const empQidDigits = String(emp.qid || '').replace(/\D/g, '');
-    let matchesSearch = true;
-    if (query) {
-      if (queryDigits.length >= 4) {
-        matchesSearch = empQidDigits.includes(queryDigits);
-      } else {
-        const text = `${emp.name} ${emp.email} ${emp.qid || ''} ${emp.phone || ''} ${emp.position} ${emp.department}`.toLowerCase();
-        matchesSearch = text.includes(query.toLowerCase());
-      }
-    }
-    return matchesSearch;
+  payrollRenderTable({
+    getEmployees: () => employees,
+    getTemporaryEmployees: () => temporaryEmployees,
+    getSearchQuery: () => currentSearch,
   });
-
-  // Sort
-  const sorted = [...filtered];
-  if (payrollSortColumn) {
-    sorted.sort((a, b) => {
-      let va;
-      let vb;
-      switch (payrollSortColumn) {
-        case 'salary':
-          va = Number(a.salary);
-          vb = Number(b.salary);
-          break;
-        case 'type':
-          va = (a._type || '').toLowerCase();
-          vb = (b._type || '').toLowerCase();
-          break;
-        default:
-          va = (a[payrollSortColumn] ?? '').toString().toLowerCase();
-          vb = (b[payrollSortColumn] ?? '').toString().toLowerCase();
-      }
-      if (va < vb) return payrollSortOrder === 'asc' ? -1 : 1;
-      if (va > vb) return payrollSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }
-
-  // Total payroll
-  const total = filtered.reduce((sum, e) => sum + Number(e.salary || 0), 0);
-  if (totalEl) totalEl.textContent = `$${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-
-  if (sorted.length === 0) {
-    tbody.innerHTML = '';
-    emptyState.classList.remove('hidden');
-    return;
-  }
-  emptyState.classList.add('hidden');
-
-  // Group by type: Permanent (Employee) and Temporary
-  const groups = {
-    Employee: [],
-    Temporary: []
-  };
-  sorted.forEach(emp => {
-    if (emp._type === 'Temporary') groups.Temporary.push(emp);
-    else groups.Employee.push(emp);
-  });
-
-  const typeBadge = (t) => {
-    const isTemp = t === 'Temporary';
-    const cls = isTemp ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
-    const label = isTemp ? 'Temporary' : 'Permanent';
-    return `<span class="px-2 py-1 rounded text-xs font-semibold ${cls}">${label}</span>`;
-  };
-
-  const section = (label, items) => {
-    if (!items.length) return '';
-    const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
-    const header = `<tr class="${tone}"><td colspan="6" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
-    const rows = items.map(emp => `
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-3 font-semibold text-gray-900">${emp.name}</td>
-        <td class="px-4 py-3">${typeBadge(emp._type)}</td>
-        <td class="px-4 py-3">${emp.department || '-'}</td>
-        <td class="px-4 py-3 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-        <td class="px-4 py-3 whitespace-nowrap">${formatDate(emp.joinDate)}</td>
-        <td class="px-4 py-3">${emp.qid || '-'}</td>
-      </tr>
-    `).join('');
-    return header + rows;
-  };
-
-  tbody.innerHTML = [
-    section('Permanent Employees', groups.Employee),
-    section('Temporary Employees', groups.Temporary)
-  ].join('');
-
-  // Also render the printable payroll frame whenever table renders
-  renderPayrollFrame();
 }
 
 // Render a printable payroll frame
 function renderPayrollFrame() {
-  const frame = document.getElementById('payrollFrame');
-  if (!frame) return;
-  const monthEl = document.getElementById('payrollMonth');
-  const ym = monthEl && monthEl.value ? monthEl.value : '';
-  const [yr, mo] = ym ? ym.split('-') : ['',''];
+  payrollRenderFrame({
+    getEmployees: () => employees,
+    getTemporaryEmployees: () => temporaryEmployees,
+  });
+}
 
-  // Gather combined list, sorted by name
-  const combined = [
-    ...employees.map(e => ({ ...e, _type: 'Employee' })),
-    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
-  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+// Open Payroll Detail modal
+window.viewPayroll = function (id, which) {
+  const list = which === 'temporary' ? temporaryEmployees : employees;
+  const emp = list.find(e => e.id === id);
+  if (!emp) return;
 
-  const total = combined.reduce((sum, e) => sum + Number(e.salary || 0), 0);
+  const byId = (x) => document.getElementById(x);
+  const fmtCurrency = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  // Populate fields
+  const typeLabel = which === 'temporary' ? 'Temporary' : 'Permanent';
+  const maskAcc = (acc) => maskAccount(acc);
+  const setText = (id, text) => { const el = byId(id); if (el) el.textContent = text; };
+  setText('payrollViewName', emp.name || '—');
+  setText('payrollViewType', typeLabel);
+  setText('payrollViewDepartment', emp.department || '—');
+  setText('payrollViewPosition', emp.position || '—');
+  setText('payrollViewQid', emp.qid || '—');
+  setText('payrollViewSalary', fmtCurrency(emp.salary));
+  setText('payrollViewJoinDate', formatDate(emp.joinDate));
+  setText('payrollViewBankName', emp.bankName || '—');
+  setText('payrollViewAccount', maskAcc(emp.bankAccountNumber));
+  setText('payrollViewIban', emp.bankIban || '—');
+
+  // Save for payslip printing
+  currentPayrollView = { ...emp, _which: which === 'temporary' ? 'temporary' : 'employees' };
+
+  const modal = byId('payrollModal');
+  if (modal) {
+    modal.classList.add('show');
+    try { modal.querySelector('.modal-content')?.focus(); } catch {}
+  }
+};
+
+window.closePayrollModal = function () {
+  const modal = document.getElementById('payrollModal');
+  if (modal) modal.classList.remove('show');
+  currentPayrollView = null;
+};
+
+// Payslip Form modal controls
+window.openPayslipForm = function(id, which) {
+  const list = which === 'temporary' ? temporaryEmployees : employees;
+  const emp = list.find(e => e.id === id);
+  if (!emp) { showToast('Employee not found for payslip', 'error'); return; }
+
+  // Prefill form fields
+  const nameEl = document.getElementById('psEmployeeName');
+  const typeEl = document.getElementById('psEmployeeType');
+  const periodEl = document.getElementById('psPeriod');
+  const basicEl = document.getElementById('psBasic');
+  const allowEl = document.getElementById('psAllowances');
+  const dedEl = document.getElementById('psDeductions');
+  const notesEl = document.getElementById('psNotes');
+  if (nameEl) nameEl.value = emp.name || '';
+  if (typeEl) typeEl.value = which === 'temporary' ? 'Temporary' : 'Permanent';
+  if (basicEl) basicEl.value = Number(emp.salary || 0);
+  if (allowEl) allowEl.value = Number(allowEl?.value || 0);
+  if (dedEl) dedEl.value = Number(dedEl?.value || 0);
+  if (notesEl) notesEl.value = notesEl.value || '';
+  if (periodEl && !periodEl.value) {
+    const now = new Date();
+    periodEl.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  }
+
+  // Store context for printing
+  currentPayrollView = { ...emp, _which: which === 'temporary' ? 'temporary' : 'employees' };
+
+  // Show modal
+  const modal = document.getElementById('payslipModal');
+  if (modal) {
+    modal.classList.add('show');
+    try { modal.querySelector('.modal-content')?.focus(); } catch {}
+  }
+
+  // Update net pay preview
+  updatePayslipNet();
+};
+
+window.closePayslipModal = function() {
+  const modal = document.getElementById('payslipModal');
+  if (modal) modal.classList.remove('show');
+};
+
+// Payment Slip modal controls
+window.openPaymentForm = function(id, which) {
+  const list = which === 'temporary' ? temporaryEmployees : employees;
+  const emp = list.find(e => e.id === id);
+  if (!emp) { showToast('Employee not found for payment', 'error'); return; }
+
+  const nameEl = document.getElementById('payEmployeeName');
+  const typeEl = document.getElementById('payEmployeeType');
+  const dateEl = document.getElementById('payDate');
+  const amountEl = document.getElementById('payAmount');
+  const methodEl = document.getElementById('payMethod');
+  const refEl = document.getElementById('payRef');
+  const advEl = document.getElementById('payIsAdvance');
+  const deductEl = document.getElementById('payDeductFrom');
+  const notesEl = document.getElementById('payNotes');
+  if (nameEl) nameEl.value = emp.name || '';
+  if (typeEl) typeEl.value = which === 'temporary' ? 'Temporary' : 'Permanent';
+  if (dateEl) dateEl.valueAsDate = new Date();
+  if (amountEl) amountEl.value = '';
+  if (methodEl) methodEl.value = 'cash';
+  if (refEl) refEl.value = '';
+  if (advEl) advEl.value = 'no';
+  if (deductEl) deductEl.value = 'none';
+  if (notesEl) notesEl.value = '';
+
+  currentPayrollView = { ...emp, _which: which === 'temporary' ? 'temporary' : 'employees' };
+  const modal = document.getElementById('paymentModal');
+  if (modal) {
+    modal.classList.add('show');
+    try { modal.querySelector('.modal-content')?.focus(); } catch {}
+  }
+};
+
+window.closePaymentModal = function() {
+  const modal = document.getElementById('paymentModal');
+  if (modal) modal.classList.remove('show');
+};
+
+// Payslip net calculator
+function getPayslipNumbers() {
+  const basic = Number(document.getElementById('psBasic')?.value || 0);
+  const allowances = Number(document.getElementById('psAllowances')?.value || 0);
+  const deductions = Number(document.getElementById('psDeductions')?.value || 0);
+  const net = basic + allowances - deductions;
+  return { basic, allowances, deductions, net };
+}
+
+function updatePayslipNet() {
+  const { net } = getPayslipNumbers();
+  const el = document.getElementById('psNet');
+  if (el) el.textContent = `$${Number(net).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+}
+
+// Wire payslip input change handlers and print button
+document.addEventListener('input', (e) => {
+  const ids = ['psBasic','psAllowances','psDeductions'];
+  if (e.target && ids.includes(e.target.id)) {
+    updatePayslipNet();
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'payslipPrintBtn') {
+    e.preventDefault();
+    try { renderAndPrintPayslip(); } catch (err) { console.error(err); showToast('Failed to print payslip', 'error'); }
+  } else if (e.target && e.target.id === 'paymentPrintBtn') {
+    e.preventDefault();
+    try { renderAndPrintPaymentSlip(); } catch (err) { console.error(err); showToast('Failed to print payment slip', 'error'); }
+  }
+});
+
+function renderAndPrintPayslip() {
+  const emp = currentPayrollView;
+  if (!emp) { showToast('No employee selected', 'warning'); return; }
+  const period = document.getElementById('psPeriod')?.value || '';
+  const notes = document.getElementById('psNotes')?.value || '';
+  const { basic, allowances, deductions, net } = getPayslipNumbers();
   const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-  const monthTitle = ym ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
+  const area = document.getElementById('payslipPrintArea');
+  if (!area) { showToast('Print area missing in DOM', 'error'); return; }
 
-  const byType = {
-    Employee: combined.filter(e => e._type === 'Employee'),
-    Temporary: combined.filter(e => e._type === 'Temporary')
-  };
-
-  const badge = (t) => t === 'Temporary'
-    ? '<span class="px-2 py-1 rounded text-xs font-semibold bg-amber-100 text-amber-800">Temporary</span>'
-    : '<span class="px-2 py-1 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">Permanent</span>';
-
-  const renderGroup = (label, items) => {
-    if (!items.length) return '';
-    const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
-    const header = `<tr class="${tone}"><td colspan="9" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
-    const rows = items.map((e, i) => `
-      <tr class="border-b border-gray-100">
-        <td class="px-4 py-2 text-gray-600">${i + 1}</td>
-        <td class="px-4 py-2 font-semibold text-gray-900">${e.name || ''}</td>
-        <td class="px-4 py-2">${badge(e._type)}</td>
-        <td class="px-4 py-2">${e.department || '-'}</td>
-        <td class="px-4 py-2">${e.qid || '-'}</td>
-        <td class="px-4 py-2">${e.bankName || '-'}</td>
-        <td class="px-4 py-2">${maskAccount(e.bankAccountNumber)}</td>
-        <td class="px-4 py-2 break-all">${e.bankIban || '-'}</td>
-        <td class="px-4 py-2 text-right tabular-nums">${fmt(e.salary)}</td>
-      </tr>
-    `).join('');
-    return header + rows;
-  };
-
-  const rows = [
-    renderGroup('Permanent Employees', byType.Employee),
-    renderGroup('Temporary Employees', byType.Temporary)
-  ].join('');
-
-  frame.innerHTML = `
-    <div class="flex items-start justify-between mb-4">
-      <div>
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Payroll</div>
-        <div class="text-xl font-extrabold text-gray-900">${monthTitle}</div>
+  // Simple payslip template (A4-friendly)
+  const monthTitle = period ? new Date(Number(period.split('-')[0]), Number(period.split('-')[1]) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Period';
+  const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
+  area.innerHTML = `
+    <section class="payslip">
+      <header class="payslip-header">
+        <div>
+          <div class="title">Payslip</div>
+          <div class="subtitle">${monthTitle}</div>
+        </div>
+        <div class="brand">CRM</div>
+      </header>
+      <div class="payslip-grid">
+        <div>
+          <div class="label">Employee</div>
+          <div class="value">${emp.name || ''}</div>
+        </div>
+        <div>
+          <div class="label">Type</div>
+          <div class="value">${typeLabel}</div>
+        </div>
+        <div>
+          <div class="label">Department</div>
+          <div class="value">${emp.department || '-'}</div>
+        </div>
+        <div>
+          <div class="label">Position</div>
+          <div class="value">${emp.position || '-'}</div>
+        </div>
+        <div>
+          <div class="label">Join Date</div>
+          <div class="value">${formatDate(emp.joinDate)}</div>
+        </div>
+        <div>
+          <div class="label">QID</div>
+          <div class="value">${emp.qid || '-'}</div>
+        </div>
       </div>
-      <div class="text-right">
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Total</div>
-        <div class="text-xl font-extrabold text-gray-900">${fmt(total)}</div>
-      </div>
-    </div>
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
-          <tr>
-            <th class="text-left font-semibold px-4 py-2">#</th>
-            <th class="text-left font-semibold px-4 py-2">Name</th>
-            <th class="text-left font-semibold px-4 py-2">Type</th>
-            <th class="text-left font-semibold px-4 py-2">Department</th>
-            <th class="text-left font-semibold px-4 py-2">QID</th>
-            <th class="text-left font-semibold px-4 py-2">Bank</th>
-            <th class="text-left font-semibold px-4 py-2">Account</th>
-            <th class="text-left font-semibold px-4 py-2">IBAN</th>
-            <th class="text-right font-semibold px-4 py-2">Monthly Salary</th>
-          </tr>
+      <table class="payslip-table">
+        <thead>
+          <tr><th>Earning</th><th class="text-right">Amount</th></tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
-          ${rows}
+        <tbody>
+          <tr><td>Basic Salary</td><td class="text-right">${fmt(basic)}</td></tr>
+          <tr><td>Allowances</td><td class="text-right">${fmt(allowances)}</td></tr>
+          <tr><td>Deductions</td><td class="text-right">-${fmt(deductions)}</td></tr>
+          <tr class="total"><td>Net Pay</td><td class="text-right">${fmt(net)}</td></tr>
         </tbody>
       </table>
-    </div>
+      ${notes ? `<div class="payslip-notes"><div class="label">Notes</div><div class="value">${notes}</div></div>` : ''}
+      <footer class="payslip-footer">Generated by CRM • ${new Date().toLocaleString()}</footer>
+    </section>
   `;
-}
 
-// Toggle Payroll sub-tabs (Table vs Month Report)
-function setPayrollSubTab(which) {
-  const tablePane = document.getElementById('payrollTabTable');
-  const reportPane = document.getElementById('payrollTabReport');
-  const tableBtn = document.getElementById('payrollTabTableBtn');
-  const reportBtn = document.getElementById('payrollTabReportBtn');
-  if (!tablePane || !reportPane || !tableBtn || !reportBtn) return;
-
-  const activateBtn = (btn, active) => {
-    if (active) {
-      btn.classList.add('font-semibold', 'text-indigo-600', 'border-b-2', 'border-indigo-600');
-      btn.classList.remove('text-gray-600');
-    } else {
-      btn.classList.remove('font-semibold', 'text-indigo-600', 'border-b-2', 'border-indigo-600');
-      btn.classList.add('text-gray-600');
-    }
+  // Trigger print
+  const afterPrint = () => {
+    window.removeEventListener('afterprint', afterPrint);
+    // optional cleanup
   };
-
-  if (which === 'report') {
-    tablePane.style.display = 'none';
-    reportPane.style.display = '';
-    activateBtn(tableBtn, false);
-    activateBtn(reportBtn, true);
-    renderPayrollFrame();
-    currentPayrollSubTab = 'report';
-  } else {
-    // default to table
-    tablePane.style.display = '';
-    reportPane.style.display = 'none';
-    activateBtn(tableBtn, true);
-    activateBtn(reportBtn, false);
-    renderPayrollTable();
-    currentPayrollSubTab = 'table';
-  }
-  try { localStorage.setItem('payrollSubTab', currentPayrollSubTab); } catch {}
+  window.addEventListener('afterprint', afterPrint);
+  setTimeout(() => window.print(), 50);
 }
 
-function maskAccount(acc) {
-  if (!acc) return '-';
-  const s = String(acc).replace(/\s+/g, '');
-  if (s.length <= 4) return s;
-  return '•••• ' + s.slice(-4);
+function renderAndPrintPaymentSlip() {
+  const emp = currentPayrollView;
+  if (!emp) { showToast('No employee selected', 'warning'); return; }
+  const payDate = document.getElementById('payDate')?.value || '';
+  const amount = Number(document.getElementById('payAmount')?.value || 0);
+  const method = document.getElementById('payMethod')?.value || 'cash';
+  const ref = document.getElementById('payRef')?.value || '';
+  const isAdvance = document.getElementById('payIsAdvance')?.value === 'yes';
+  const deductFrom = document.getElementById('payDeductFrom')?.value || 'none';
+  const notes = document.getElementById('payNotes')?.value || '';
+
+  if (!amount || amount <= 0) { showToast('Enter a valid payment amount', 'warning'); return; }
+  if (!payDate) { showToast('Select a payment date', 'warning'); return; }
+
+  const area = document.getElementById('payslipPrintArea');
+  if (!area) { showToast('Print area missing in DOM', 'error'); return; }
+
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const dateStr = payDate ? new Date(payDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
+  const advText = isAdvance ? 'Yes (Advance)' : 'No';
+  const deductText = {
+    none: 'Do not deduct',
+    next: 'Deduct from next payroll',
+    installments: 'Deduct in 3 installments'
+  }[deductFrom] || '—';
+
+  area.innerHTML = `
+    <section class="payslip">
+      <header class="payslip-header">
+        <div>
+          <div class="title">Payment Slip</div>
+          <div class="subtitle">${dateStr}</div>
+        </div>
+        <div class="brand">CRM</div>
+      </header>
+      <div class="payslip-grid">
+        <div>
+          <div class="label">Employee</div>
+          <div class="value">${emp.name || ''}</div>
+        </div>
+        <div>
+          <div class="label">Type</div>
+          <div class="value">${typeLabel}</div>
+        </div>
+        <div>
+          <div class="label">Department</div>
+          <div class="value">${emp.department || '-'}</div>
+        </div>
+        <div>
+          <div class="label">Position</div>
+          <div class="value">${emp.position || '-'}</div>
+        </div>
+        <div>
+          <div class="label">Payment Method</div>
+          <div class="value">${method}</div>
+        </div>
+        <div>
+          <div class="label">Reference</div>
+          <div class="value">${ref || '-'}</div>
+        </div>
+      </div>
+      <table class="payslip-table">
+        <thead>
+          <tr><th>Detail</th><th class="text-right">Amount</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>${isAdvance ? 'Advance Paid' : 'Payment Made'}</td><td class="text-right">${fmt(amount)}</td></tr>
+          <tr><td>Deduction Plan</td><td class="text-right">${advText} • ${deductText}</td></tr>
+        </tbody>
+      </table>
+      ${notes ? `<div class="payslip-notes"><div class="label">Notes</div><div class="value">${notes}</div></div>` : ''}
+      <footer class="payslip-footer">Generated by CRM • ${new Date().toLocaleString()}</footer>
+    </section>
+  `;
+
+  setTimeout(() => window.print(), 50);
 }
+
+// Optional: swipe-to-close on small screens for Payroll modal
+(function setupPayrollSwipeToClose(){
+  const el = document.getElementById('payrollModal');
+  if (!el) return;
+  let startY = null, startX = null, tracking = false;
+  el.addEventListener('touchstart', (e) => {
+    if (!el.classList.contains('show')) return;
+    const t = e.touches[0]; startY = t.clientY; startX = t.clientX; tracking = true;
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (!tracking) return; tracking = false;
+    const t = e.changedTouches[0];
+    const dy = t.clientY - (startY ?? 0);
+    const dx = Math.abs(t.clientX - (startX ?? 0));
+    if (dy > 80 && dx < 60) closePayrollModal();
+  }, { passive: true });
+})();
+
+// Toggle Payroll sub-tabs (delegates to module)
+function setPayrollSubTab(which) {
+  payrollSetPayrollSubTab(which, {
+    getEmployees: () => employees,
+    getTemporaryEmployees: () => temporaryEmployees,
+    getSearchQuery: () => currentSearch,
+  });
+}
+
+// Note: maskAccount is also implemented in modules/utils for module use
 
 function exportPayrollCsv() {
-  const combined = [
-    ...employees.map(e => ({ ...e, _type: 'Employee' })),
-    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
-  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-  const headers = ['Name','Type','Department','QID','Bank Name','Account Number','IBAN','Monthly Salary'];
-  const rows = combined.map(e => [
-    quoteCsv(e.name || ''),
-    quoteCsv(e._type || ''),
-    quoteCsv(e.department || ''),
-    quoteCsv(e.qid || ''),
-    quoteCsv(e.bankName || ''),
-    quoteCsv(e.bankAccountNumber || ''),
-    quoteCsv(e.bankIban || ''),
-    String(Number(e.salary || 0))
-  ].join(','));
-
-  const csv = [headers.join(','), ...rows].join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  a.href = url;
-  a.download = `payroll-${ym}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  payrollExportPayrollCsv(employees, temporaryEmployees);
 }
 
 function quoteCsv(val) {
@@ -893,21 +1086,17 @@ window.clearForm = function() {
 // Sort handlers
 window.sortTable = function(column, which) {
   if (which === 'temporary') {
-    if (currentTempSortColumn === column) {
-      currentTempSortOrder = currentTempSortOrder === 'asc' ? 'desc' : 'asc';
-    } else {
-      currentTempSortColumn = column;
-      currentTempSortOrder = 'asc';
-    }
-    renderTemporaryTable();
+    sortTemporary(column, {
+      getTemporaryEmployees: () => temporaryEmployees,
+      getSearchQuery: () => currentSearch,
+      getDepartmentFilter: () => currentDepartmentFilter,
+    });
   } else {
-    if (currentSortColumn === column) {
-      currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-    } else {
-      currentSortColumn = column;
-      currentSortOrder = 'asc';
-    }
-    renderEmployeeTable();
+    sortEmployees(column, {
+      getEmployees: () => employees,
+      getSearchQuery: () => currentSearch,
+      getDepartmentFilter: () => currentDepartmentFilter,
+    });
   }
 }
 
@@ -936,159 +1125,21 @@ window.editEmployee = function(id, which) {
   setVal('bankAccountNumber', employee.bankAccountNumber || '');
   setVal('bankIban', employee.bankIban || '');
 
-    // PDF view buttons state
-    const qidBtn = document.getElementById('viewQidPdfBtn');
-    const passBtn = document.getElementById('viewPassportPdfBtn');
+    // PDF statuses (buttons removed from form)
     const qidStatus = document.getElementById('qidPdfStatus');
     const passStatus = document.getElementById('passportPdfStatus');
-    if (qidBtn) {
-      if (employee.qidPdfUrl) {
-        qidBtn.style.display = '';
-        qidBtn.onclick = async () => {
-          const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
-          try {
-            const ref = storageRef(storage, `${basePath}/${employee.id}/qidPdf.pdf`);
-            const url = await getDownloadURL(ref);
-            window.open(url, '_blank');
-          } catch (e) {
-            console.warn('Open QID via URL failed, trying blob', e?.code || e?.message || e);
-            try {
-              const ref = storageRef(storage, `${basePath}/${employee.id}/qidPdf.pdf`);
-              const blob = await getBlob(ref);
-              const blobUrl = URL.createObjectURL(blob);
-              window.open(blobUrl, '_blank');
-              // No revoke here since it opens in a new tab and browser clears on navigation
-            } catch (e2) {
-              console.warn('Open QID failed, falling back to stored URL', e2?.code || e2?.message || e2);
-              window.open(employee.qidPdfUrl, '_blank');
-            }
-          }
-        };
-        if (qidStatus) qidStatus.textContent = 'Uploaded';
-      } else {
-        qidBtn.style.display = 'none';
-        if (qidStatus) qidStatus.textContent = '';
-      }
-    }
-    if (passBtn) {
-      if (employee.passportPdfUrl) {
-        passBtn.style.display = '';
-        passBtn.onclick = async () => {
-          const basePath = which === 'temporary' ? 'temporaryEmployees' : 'employees';
-          try {
-            const ref = storageRef(storage, `${basePath}/${employee.id}/passportPdf.pdf`);
-            const url = await getDownloadURL(ref);
-            window.open(url, '_blank');
-          } catch (e) {
-            console.warn('Open Passport via URL failed, trying blob', e?.code || e?.message || e);
-            try {
-              const ref = storageRef(storage, `${basePath}/${employee.id}/passportPdf.pdf`);
-              const blob = await getBlob(ref);
-              const blobUrl = URL.createObjectURL(blob);
-              window.open(blobUrl, '_blank');
-            } catch (e2) {
-              console.warn('Open Passport failed, falling back to stored URL', e2?.code || e2?.message || e2);
-              window.open(employee.passportPdfUrl, '_blank');
-            }
-          }
-        };
-        if (passStatus) passStatus.textContent = 'Uploaded';
-      } else {
-        passBtn.style.display = 'none';
-        if (passStatus) passStatus.textContent = '';
-      }
-    }
+    if (qidStatus) qidStatus.textContent = employee.qidPdfUrl ? 'Uploaded' : '';
+    if (passStatus) passStatus.textContent = employee.passportPdfUrl ? 'Uploaded' : '';
   }
 }
 
 // Render employee table
 function renderEmployeeTable() {
-  const tbody = document.getElementById('employeeTableBody');
-  const emptyState = document.getElementById('emptyState');
-  if (!tbody || !emptyState) return;
-
-  const filtered = employees.filter(emp => {
-    const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
-
-    // Prioritize Qatar ID search when input is mostly digits
-    const query = (currentSearch || '').trim();
-    const queryDigits = query.replace(/\D/g, '');
-    const empQidDigits = String(emp.qid || '').replace(/\D/g, '');
-    let matchesSearch = true;
-    if (query) {
-      if (queryDigits.length >= 4) {
-        // If user enters at least 4 digits, match against QID digits specifically
-        matchesSearch = empQidDigits.includes(queryDigits);
-      } else {
-        // Fallback to generic text search across fields
-        const text = `${emp.name} ${emp.email} ${emp.qid || ''} ${emp.phone || ''} ${emp.position} ${emp.department}`.toLowerCase();
-        matchesSearch = text.includes(query);
-      }
-    }
-    return matchesDept && matchesSearch;
+  employeesRenderTable({
+    getEmployees: () => employees,
+    getSearchQuery: () => currentSearch,
+    getDepartmentFilter: () => currentDepartmentFilter,
   });
-
-  const sorted = [...filtered];
-  if (currentSortColumn) {
-    sorted.sort((a, b) => {
-      let va = a[currentSortColumn];
-      let vb = b[currentSortColumn];
-      if (currentSortColumn === 'salary') {
-        va = Number(va);
-        vb = Number(vb);
-      } else {
-        va = (va ?? '').toString().toLowerCase();
-        vb = (vb ?? '').toString().toLowerCase();
-      }
-      if (va < vb) return currentSortOrder === 'asc' ? -1 : 1;
-      if (va > vb) return currentSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }
-
-  if (sorted.length === 0) {
-    tbody.innerHTML = '';
-    emptyState.classList.remove('hidden');
-    return;
-  }
-
-  emptyState.classList.add('hidden');
-
-  function deptClass(dept) {
-    if (!dept) return '';
-    const normalized = dept.toLowerCase().replace(/\s+/g, '-');
-    switch (normalized) {
-      case 'hr':
-      case 'human-resources': return 'human-resources';
-      case 'engineering': return 'engineering';
-      case 'sales': return 'sales';
-      case 'marketing': return 'marketing';
-      case 'finance': return 'finance';
-      case 'operations': return 'operations';
-      default: return 'engineering';
-    }
-  }
-
-  tbody.innerHTML = sorted.map((employee) => `
-    <tr class="hover:bg-gray-50">
-  <td class="px-4 py-3 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">${employee.name}</td>
-      <td class="px-4 py-3">${employee.email}</td>
-      <td class="px-4 py-3">${employee.phone || '-'}</td>
-      <td class="px-4 py-3">${employee.qid || '-'}</td>
-      <td class="px-4 py-3">${employee.position}</td>
-      <td class="px-4 py-3">
-        <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
-      </td>
-  <td class="px-4 py-3 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      <td class="px-4 py-3 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-4 py-3 text-center">
-        <div class="action-buttons">
-          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}', 'employees')"><i class="fas fa-edit"></i></button>
-          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}', 'employees')"><i class="fas fa-trash"></i></button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
 }
 
 // View employee (read-only modal)
@@ -1101,6 +1152,8 @@ window.viewEmployee = async function(id, which) {
   // Open modal immediately to improve perceived performance
   const vm = document.getElementById('viewModal');
   if (vm) vm.classList.add('show');
+  // Focus the dialog for accessibility
+  try { document.querySelector('#viewModal .modal-content')?.focus(); } catch {}
 
   // Defer heavy DOM updates to the next animation frame
   requestAnimationFrame(() => {
@@ -1180,7 +1233,23 @@ window.viewEmployee = async function(id, which) {
     currentViewCtx = { id: emp.id, which: (which === 'temporary' ? 'temporary' : 'employees'), docsLoaded: false, revoke: [] };
 
     // Default to Info tab active
-    activateViewTab('info');
+    // Expand only Overview by default; collapse others
+    try {
+      const sections = ['#acc-overview', '#acc-contact', '#acc-employment', '#acc-bank', '#acc-docs'];
+      sections.forEach((sel, idx) => {
+        const pane = document.querySelector(sel);
+        if (!pane) return;
+        if (idx === 0) {
+          pane.classList.remove('hidden');
+          const chev = document.querySelector(`[data-acc-target="${sel}"] .fa-chevron-down`);
+          if (chev) chev.style.transform = 'rotate(180deg)';
+        } else {
+          pane.classList.add('hidden');
+          const chev = document.querySelector(`[data-acc-target="${sel}"] .fa-chevron-down`);
+          if (chev) chev.style.transform = '';
+        }
+      });
+    } catch {}
 
     try { console.timeEnd(perfLabel); } catch {}
   });
@@ -1204,6 +1273,33 @@ window.closeViewModal = function() {
     });
   } catch {}
   currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
+}
+
+// Enable swipe-to-close on small screens for the View modal
+function setupSwipeToClose() {
+  const el = document.getElementById('viewModal');
+  if (!el) return;
+  let startY = null;
+  let startX = null;
+  let tracking = false;
+  el.addEventListener('touchstart', (e) => {
+    if (!el.classList.contains('show')) return;
+    const t = e.touches[0];
+    startY = t.clientY; startX = t.clientX; tracking = true;
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    // no-op, we only need end delta
+  }, { passive: true });
+  el.addEventListener('touchend', (e) => {
+    if (!tracking) return; tracking = false;
+    const t = e.changedTouches[0];
+    const dy = t.clientY - (startY ?? 0);
+    const dx = Math.abs(t.clientX - (startX ?? 0));
+    if (dy > 80 && dx < 60) { // downward swipe
+      closeViewModal();
+    }
+  });
 }
 
 // View modal tab handling
@@ -1317,92 +1413,11 @@ async function loadCurrentViewDocuments() {
 
 // Render temporary employee table
 function renderTemporaryTable() {
-  const tbody = document.getElementById('tempEmployeeTableBody');
-  const emptyState = document.getElementById('tempEmptyState');
-  if (!tbody || !emptyState) return;
-
-  const filtered = temporaryEmployees.filter(emp => {
-    const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
-
-    // Prioritize Qatar ID search when input is mostly digits
-    const query = (currentSearch || '').trim();
-    const queryDigits = query.replace(/\D/g, '');
-    const empQidDigits = String(emp.qid || '').replace(/\D/g, '');
-    let matchesSearch = true;
-    if (query) {
-      if (queryDigits.length >= 4) {
-        // If user enters at least 4 digits, match against QID digits specifically
-        matchesSearch = empQidDigits.includes(queryDigits);
-      } else {
-        // Fallback to generic text search across fields
-        const text = `${emp.name} ${emp.email} ${emp.qid || ''} ${emp.phone || ''} ${emp.position} ${emp.department}`.toLowerCase();
-        matchesSearch = text.includes(query);
-      }
-    }
-    return matchesDept && matchesSearch;
+  temporaryRenderTable({
+    getTemporaryEmployees: () => temporaryEmployees,
+    getSearchQuery: () => currentSearch,
+    getDepartmentFilter: () => currentDepartmentFilter,
   });
-
-  const sorted = [...filtered];
-  if (currentTempSortColumn) {
-    sorted.sort((a, b) => {
-      let va = a[currentTempSortColumn];
-      let vb = b[currentTempSortColumn];
-      if (currentTempSortColumn === 'salary') {
-        va = Number(va);
-        vb = Number(vb);
-      } else {
-        va = (va ?? '').toString().toLowerCase();
-        vb = (vb ?? '').toString().toLowerCase();
-      }
-      if (va < vb) return currentTempSortOrder === 'asc' ? -1 : 1;
-      if (va > vb) return currentTempSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }
-
-  if (sorted.length === 0) {
-    tbody.innerHTML = '';
-    emptyState.classList.remove('hidden');
-    return;
-  }
-
-  emptyState.classList.add('hidden');
-
-  function deptClass(dept) {
-    if (!dept) return '';
-    const normalized = dept.toLowerCase().replace(/\s+/g, '-');
-    switch (normalized) {
-      case 'hr':
-      case 'human-resources': return 'human-resources';
-      case 'engineering': return 'engineering';
-      case 'sales': return 'sales';
-      case 'marketing': return 'marketing';
-      case 'finance': return 'finance';
-      case 'operations': return 'operations';
-      default: return 'engineering';
-    }
-  }
-
-  tbody.innerHTML = sorted.map((employee) => `
-    <tr class="hover:bg-gray-50">
-      <td class="px-4 py-3 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'temporary')">${employee.name}</td>
-      <td class="px-4 py-3">${employee.email}</td>
-      <td class="px-4 py-3">${employee.phone || '-'}</td>
-      <td class="px-4 py-3">${employee.qid || '-'}</td>
-      <td class="px-4 py-3">${employee.position}</td>
-      <td class="px-4 py-3">
-        <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
-      </td>
-      <td class="px-4 py-3 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      <td class="px-4 py-3 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-4 py-3 text-center">
-        <div class="action-buttons">
-          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}', 'temporary')"><i class="fas fa-edit"></i></button>
-          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}', 'temporary')"><i class="fas fa-trash"></i></button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
 }
 
 // Update statistics
@@ -1542,6 +1557,16 @@ function formatDate(dateString) {
   #viewModal .modal-body { background: linear-gradient(180deg, rgba(248,250,252,0.6), rgba(255,255,255,1)); }
   #viewModal .card { box-shadow: 0 0 0 1px rgba(226,232,240,0.7) inset; }
     #openDocsFromHeaderBtn:hover { background: rgba(99,102,241,0.06); }
+    /* Accordion chevron animation */
+    [data-acc-toggle] .fa-chevron-down { transition: transform 0.2s ease; }
+    /* Focus outline for modal content */
+    #viewModal .modal-content:focus { outline: 3px solid rgba(99,102,241,0.3); outline-offset: 2px; }
+    /* Tighter spacing for grid rows and labels */
+    #viewModal dl > div { align-items: start; }
+    #viewModal dt { line-height: 1rem; margin-top: 0.125rem; }
+    #viewModal dd { line-height: 1.25rem; }
+    #viewModal .modal-header { padding-left: 1.25rem; padding-right: 1.25rem; }
+    #viewModal .modal-footer { padding-left: 1.25rem; padding-right: 1.25rem; }
   `;
   document.head.appendChild(style);
 })();
