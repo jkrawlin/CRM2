@@ -542,6 +542,68 @@ body {
     justify-content: center;
 }
 
+.employee-header{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.06)}
+.employee-avatar-container{position:relative;width:88px;height:88px}
+.employee-avatar{width:88px;height:88px;border-radius:9999px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#EEF2FF,#F5F3FF)}
+.employee-avatar img{width:100%;height:100%;object-fit:cover}
+.avatar-initials{font-weight:700;color:#4F46E5}
+.online-indicator{position:absolute;right:4px;bottom:4px;width:14px;height:14px;border-radius:9999px;background:#22c55e;border:2px solid #fff}
+.employee-header-info{display:flex;flex-direction:column;gap:6px}
+.employee-name{font-size:20px;font-weight:700;color:#111827;margin:0}
+.employee-title{font-size:14px;color:#6b7280;margin:0}
+.employee-badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge{font-size:12px;padding:6px 10px;border-radius:9999px;background:#F3F4F6;color:#374151;font-weight:600;border:1px solid #E5E7EB}
+.badge-status{background:#ECFDF5;color:#065F46;border-color:#D1FAE5}
+.badge-sales{background:#FFF7ED;color:#9A3412;border-color:#FED7AA}
+.badge-engineering{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE}
+.badge-hr{background:#F5F3FF;color:#6D28D9;border-color:#E9D5FF}
+.badge-operations{background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE}
+
+.info-tabs{display:flex;gap:8px;margin-top:16px}
+.tab-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid #E5E7EB;background:#fff;color:#374151;font-weight:600}
+.tab-btn.active{background:#111827;color:#fff;border-color:#111827}
+
+.tab-content{margin-top:16px}
+.info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width: 900px){.info-grid{grid-template-columns:1fr}}
+.info-card{background:#fff;border-radius:12px;border:1px solid #E5E7EB;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.info-card-header{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #F3F4F6}
+.info-card-header h3{margin:0;font-size:14px;font-weight:700;color:#111827}
+.info-card-body{padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.info-row{display:grid;grid-template-columns:160px 1fr;gap:12px;align-items:center}
+@media (max-width: 900px){.info-row{grid-template-columns:120px 1fr}}
+.info-label{color:#6b7280;font-size:12px;font-weight:600}
+.info-value{color:#111827;font-size:14px;font-weight:600}
+
+.rating-stars{display:inline-flex;gap:4px;color:#F59E0B}
+.rating-value{margin-left:8px;color:#6b7280;font-weight:700}
+.progress-bar{position:relative;height:8px;background:#F3F4F6;border-radius:9999px;overflow:hidden;flex:1}
+.progress-fill{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a)}
+.performance-metric{display:flex;align-items:center;gap:12px}
+.metric-label{min-width:140px;color:#6b7280;font-size:12px;font-weight:600}
+.metric-value{color:#111827;font-size:14px;font-weight:700}
+
+.salary-display{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+.salary-label{color:#6b7280;font-size:12px;font-weight:600}
+.salary-amount{color:#111827;font-size:22px;font-weight:800}
+
+.department-chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:9999px;font-weight:700;font-size:12px;border:1px solid}
+.department-chip.engineering{background:#EEF2FF;color:#3730A3;border-color:#C7D2FE}
+.department-chip.sales{background:#FFF7ED;color:#9A3412;border-color:#FED7AA}
+.department-chip.hr{background:#F5F3FF;color:#6D28D9;border-color:#E9D5FF}
+.department-chip.operations{background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE}
+
+.documents-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width: 900px){.documents-grid{grid-template-columns:1fr}}
+.document-card{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px dashed #E5E7EB;border-radius:12px;padding:16px;background:#fff}
+.doc-icon{font-size:22px;color:#6b7280}
+.doc-name{font-weight:700;color:#111827}
+.doc-action{font-weight:700;color:#1D4ED8;text-decoration:none}
+.doc-action:hover{text-decoration:underline}
+.no-documents{grid-column:1/-1;text-align:center;color:#6b7280;padding:16px}
+
+.link{color:#1D4ED8;text-decoration:none}
+.link:hover{text-decoration:underline}
 .modal-content {
     background: white;
     padding: var(--spacing-2xl);
