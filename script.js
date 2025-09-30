@@ -119,6 +119,15 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch {}
   // Expose setter for modules to update accounts shadow
   window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
+
+  // Stronger modal fix: ensure #editFundModal is appended to body to avoid stacking/scope issues
+  try {
+    const efm = document.getElementById('editFundModal');
+    if (efm && efm.parentElement !== document.body) {
+      document.body.appendChild(efm);
+      try { console.debug('[Fund] editFundModal moved to body'); } catch {}
+    }
+  } catch {}
   // When accounts update, refresh cashflow/ledger dropdowns if visible
   window.addEventListener('accounts:updated', () => {
     try { renderCashflowTable?.(); } catch {}
@@ -467,11 +476,33 @@ function setupEventListeners() {
     });
   });
 
-  // Edit Fund button (informational modal)
+  // Edit Fund button
   const editFundBtn = document.getElementById('editFundBtn');
-  if (editFundBtn) editFundBtn.addEventListener('click', () => openEditFundModal());
+  if (editFundBtn) {
+    editFundBtn.addEventListener('click', (ev) => {
+      try { console.debug('[Fund] Set Current Fund button clicked', { target: ev?.target?.id }); } catch {}
+      openEditFundModal();
+    });
+  } else {
+    try { console.warn('[Fund] editFundBtn not found in DOM at startup'); } catch {}
+  }
+  // Delegated fallback: capture clicks anywhere for #editFundBtn
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('#editFundBtn') : null;
+    if (!btn) return;
+    e.preventDefault();
+    try { console.debug('[Fund] Delegated click for Set Current Fund'); } catch {}
+    openEditFundModal();
+  }, true);
   const editFundForm = document.getElementById('editFundForm');
-  if (editFundForm) editFundForm.addEventListener('submit', handleEditFundSubmit);
+  if (editFundForm) {
+    editFundForm.addEventListener('submit', (e) => {
+      try { console.debug('[Fund] editFundForm submit'); } catch {}
+      handleEditFundSubmit(e);
+    });
+  } else {
+    try { console.warn('[Fund] editFundForm not found in DOM at startup'); } catch {}
+  }
 
   // Sidebar collapse/expand controls
   const sidebarEl = document.getElementById('sidebar');
@@ -619,7 +650,7 @@ function setupEventListeners() {
   // Track modal visibility to toggle body.modal-open for overlay/scroll control
   try {
     const body = document.body;
-  const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','editFundModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
+    const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','editFundModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
     const isAnyOpen = () => modalIds.some(id => {
       const el = document.getElementById(id);
       return !!(el && el.classList && el.classList.contains('show'));
@@ -1162,7 +1193,7 @@ function updateAccountsFundCard() {
   if (el) el.textContent = fmt(total);
   const asOf = document.getElementById('accountsFundAsOf');
   if (asOf) asOf.textContent = `as of ${new Date().toLocaleString()}`;
-  // Update computed label in Edit Fund modal if present
+  // Update modal computed label if open
   const comp = document.getElementById('computedFundLabel');
   if (comp) comp.textContent = fmt(total);
 }
@@ -1260,29 +1291,197 @@ async function ensureAssetAccount(keyword, fallbackName) {
   }
 }
 
-// Edit Fund Modal controls (informational; fund changes are transaction-only)
-window.openEditFundModal = function() {
-  const modal = document.getElementById('editFundModal');
-  if (!modal) return;
-  // Prefill desired with current computed (strip $ and commas)
-  const currentText = document.getElementById('accountsFundValue')?.textContent || '$0';
-  const desiredEl = document.getElementById('desiredFund');
-  const numeric = Number((currentText || '').replace(/[^0-9.\-]/g, '')) || 0;
-  if (desiredEl) desiredEl.value = numeric;
+// Edit Fund Modal controls
+// Compute current fund total from caches (opening + net(cashflows))
+function __getCurrentFundTotal() {
+  try {
+    const openingTotal = Number(__fundOpening || 0);
+    const flows = (__fundCashflowsCache && __fundCashflowsCache.length)
+      ? __fundCashflowsCache
+      : ((Array.isArray(window.__cashflowAll) && window.__cashflowAll.length) ? window.__cashflowAll : []);
+    let inSum = 0, outSum = 0;
+    for (const t of flows) {
+      if (!t) continue;
+      const typeStr = String(t.type || '').toLowerCase();
+      const amt = Math.abs(Number(t.amount || 0)) || 0;
+      if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
+      else if (typeStr === 'out' || typeStr === 'expense' || typeStr === 'debit') outSum += amt;
+    }
+    return openingTotal + (inSum - outSum);
+  } catch { return 0; }
+}
+
+async function __saveFundDesired(desired) {
+  // Calculate required opening and persist to stats/fund
+  let inSum = 0, outSum = 0;
+  try {
+    const flows = Array.isArray(__fundCashflowsCache) && __fundCashflowsCache.length ? __fundCashflowsCache : (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []);
+    for (const t of flows) {
+      if (!t) continue;
+      const amt = Math.abs(Number(t.amount || 0)) || 0;
+      const typeStr = String(t.type || '').toLowerCase();
+      if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt; else if (typeStr === 'out' || typeStr === 'expense' || typeStr === 'debit') outSum += amt;
+    }
+  } catch {}
+  const requiredOpening = Number(desired) - (inSum - outSum);
+  await setDoc(doc(db, 'stats', 'fund'), cleanData({
+    opening: Number(requiredOpening),
+    value: Number(desired),
+    inSum: Number(inSum),
+    outSum: Number(outSum),
+    asOf: new Date().toISOString(),
+    setBy: auth?.currentUser?.uid || undefined,
+    setByEmail: auth?.currentUser?.email || undefined,
+    setReason: 'manual-reconciliation'
+  }));
+  __fundOpening = Number(requiredOpening);
   try { updateAccountsFundCard(); } catch {}
-  modal.classList.add('show');
+}
+
+// Portal-based Set Fund dialog (independent of existing DOM)
+function openSetFundDialog() {
+  const existing = document.getElementById('setFundPortal');
+  if (existing) { try { existing.remove(); } catch {} }
+  const portal = document.createElement('div');
+  portal.id = 'setFundPortal';
+  portal.setAttribute('role','dialog');
+  portal.setAttribute('aria-modal','true');
+  portal.style.position = 'fixed';
+  portal.style.inset = '0';
+  portal.style.zIndex = '100000';
+  portal.innerHTML = `
+    <div data-backdrop style="position:fixed;inset:0;background:rgba(17,24,39,0.78);"></div>
+    <div data-modal style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+      <div style="pointer-events:auto;background:#fff;border-radius:12px;max-width:520px;width:95%;padding:20px;box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-sack-dollar" style="color:#4f46e5"></i>
+            <h3 style="margin:0;font-size:18px;font-weight:700;">Set Current Fund</h3>
+          </div>
+          <button type="button" data-close class="btn btn-ghost" aria-label="Close"><i class="fas fa-times"></i></button>
+        </div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:12px;">
+          <div style="font-size:14px;color:#334155;">Computed Fund: <span data-computed style="font-weight:600">$0</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <label style="font-weight:600;color:#334155;font-size:14px;"><i class="fas fa-dollar-sign" style="color:#4f46e5;margin-right:6px;"></i> Set Current Fund To</label>
+          <input data-input type="number" step="any" class="input" style="width:100%" />
+          <p style="font-size:12px;color:#64748b;margin:4px 0 0;">This updates the Fund opening so that opening + net cashflows = this amount. No transactions are modified.</p>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button type="button" data-cancel class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</button>
+          <button type="button" data-save class="btn btn-primary"><i class="fas fa-save"></i> <span>Save</span></button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(portal);
   try { document.body.classList.add('modal-open'); } catch {}
+  const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const computedEl = portal.querySelector('[data-computed]');
+  if (computedEl) computedEl.textContent = fmt(__getCurrentFundTotal());
+  const input = portal.querySelector('[data-input]');
+  if (input) {
+    const currentText = document.getElementById('accountsFundValue')?.textContent || '';
+    const numeric = currentText ? Number(currentText.replace(/[^0-9.\-]/g,'')) : __getCurrentFundTotal();
+    input.value = String(Number(numeric||0));
+    setTimeout(()=>{ try { input.focus({ preventScroll:true }); input.select(); } catch {} }, 0);
+  }
+  const dispose = () => { try { document.body.classList.remove('modal-open'); } catch {} try { portal.remove(); } catch {} };
+  portal.addEventListener('click', (e)=>{
+    if (e.target && e.target.hasAttribute && (e.target.hasAttribute('data-backdrop') || e.target.getAttribute('data-backdrop')!==null)) {
+      dispose();
+    }
+  });
+  portal.querySelector('[data-close]')?.addEventListener('click', dispose);
+  portal.querySelector('[data-cancel]')?.addEventListener('click', dispose);
+  portal.querySelector('[data-save]')?.addEventListener('click', async () => {
+    try {
+      const val = Number((portal.querySelector('[data-input]')?.value)||0);
+      if (!isFinite(val)) { showToast('Enter a valid amount', 'warning'); return; }
+      await __saveFundDesired(val);
+      showToast('Fund updated', 'success');
+      dispose();
+    } catch (e) {
+      console.error('Set fund failed', e);
+      showToast('Failed to update fund', 'error');
+    }
+  });
+}
+
+// Public open function used by UI
+window.openEditFundModal = function() {
+  try { console.debug('[Fund] openEditFundModal (portal)'); } catch {}
+  openSetFundDialog();
 }
 
 window.closeEditFundModal = function() {
   const modal = document.getElementById('editFundModal');
   if (modal) modal.classList.remove('show');
+  try { document.body.classList.remove('modal-open'); } catch {}
 }
 
 async function handleEditFundSubmit(e) {
   e.preventDefault();
-  showToast('To change the Current Fund, record an Income or Expense transaction.', 'info');
-  closeEditFundModal();
+  try {
+    // Busy indicator
+    const btn = document.getElementById('editFundSaveBtn');
+    const btnText = btn?.querySelector('.btn-text');
+    const btnBusy = btn?.querySelector('.btn-busy');
+    if (btn) { btn.disabled = true; }
+    if (btnText) btnText.classList.add('hidden');
+    if (btnBusy) btnBusy.classList.remove('hidden');
+
+    const desired = Number(document.getElementById('desiredFund')?.value || 0);
+    if (!isFinite(desired)) { showToast('Enter a valid amount', 'warning'); return; }
+    // Bank-style: set opening in stats/fund so that opening + net(cashflows) = desired
+    // Compute current net flows to calculate required opening
+    let inSum = 0, outSum = 0;
+    try {
+      // Prefer live cache to avoid extra reads
+      const flows = Array.isArray(__fundCashflowsCache) && __fundCashflowsCache.length ? __fundCashflowsCache : (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []);
+      for (const t of flows) {
+        if (!t) continue;
+        const amt = Math.abs(Number(t.amount || 0)) || 0;
+        const typeStr = String(t.type || '').toLowerCase();
+        if (typeStr === 'in' || typeStr === 'income') inSum += amt; else if (typeStr === 'out' || typeStr === 'expense') outSum += amt;
+      }
+    } catch {}
+    const requiredOpening = Number(desired) - (inSum - outSum);
+    try {
+      await setDoc(doc(db, 'stats', 'fund'), cleanData({
+        opening: Number(requiredOpening),
+        value: Number(desired),
+        inSum: Number(inSum),
+        outSum: Number(outSum),
+        asOf: new Date().toISOString(),
+        // Audit: track who set the opening and when. This is not a transaction; it only affects opening.
+        setBy: auth?.currentUser?.uid || undefined,
+        setByEmail: auth?.currentUser?.email || undefined,
+        setReason: 'manual-reconciliation'
+      }));
+      __fundOpening = Number(requiredOpening);
+      try { updateAccountsFundCard(); } catch {}
+    } catch (err2) {
+      console.warn('Failed to set fund opening', err2);
+      showToast('Failed to update fund', 'error');
+      return;
+    }
+    showToast('Fund updated', 'success');
+    closeEditFundModal();
+  } catch (err) {
+    console.error('Edit fund failed', err);
+    showToast('Failed to update fund', 'error');
+  }
+  finally {
+    try {
+      const btn = document.getElementById('editFundSaveBtn');
+      const btnText = btn?.querySelector('.btn-text');
+      const btnBusy = btn?.querySelector('.btn-busy');
+      if (btn) { btn.disabled = false; }
+      if (btnText) btnText.classList.remove('hidden');
+      if (btnBusy) btnBusy.classList.add('hidden');
+    } catch {}
+  }
 }
 
 // Provide accounts to cashflow (kept in shadow from realtime listener)

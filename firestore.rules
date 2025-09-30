@@ -307,6 +307,29 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Stats: holds deterministic fund opening/value summary
+    function fundAllowedKeys(d) {
+      return d.keys().hasOnly(['opening','value','inSum','outSum','asOf','setBy','setByEmail','setReason']);
+    }
+    function validateFund(d) {
+      return fundAllowedKeys(d)
+        && ((d.opening is int || d.opening is float))
+        && ((d.value is int || d.value is float))
+        && ((d.inSum is int || d.inSum is float))
+        && ((d.outSum is int || d.outSum is float))
+        && isValidISODateTime(d.asOf)
+        && (!('setBy' in d) || d.setBy is string)
+        && (!('setByEmail' in d) || isValidEmail(d.setByEmail))
+        && (!('setReason' in d) || (d.setReason is string && d.setReason.size() <= 200));
+    }
+    match /stats/{docId} {
+      // Allow authenticated users to read stats documents
+      allow read: if isSignedIn();
+      // Allow creating/updating the fund doc with strict validation
+      allow create, update: if isSignedIn() && docId == 'fund' && validateFund(request.resource.data);
+      allow delete: if false;
+    }
+
     // Everything else is denied by default
     match /{document=**} {
       allow read, write: if false;
