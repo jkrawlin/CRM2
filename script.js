@@ -467,7 +467,11 @@ function setupEventListeners() {
     });
   });
 
-  // Edit Fund removed: no manual adjustments; fund is transaction-driven
+  // Edit Fund button (informational modal)
+  const editFundBtn = document.getElementById('editFundBtn');
+  if (editFundBtn) editFundBtn.addEventListener('click', () => openEditFundModal());
+  const editFundForm = document.getElementById('editFundForm');
+  if (editFundForm) editFundForm.addEventListener('submit', handleEditFundSubmit);
 
   // Sidebar collapse/expand controls
   const sidebarEl = document.getElementById('sidebar');
@@ -508,7 +512,7 @@ function setupEventListeners() {
   if (loginGoogleBtn) loginGoogleBtn.style.display = 'none';
 
   // Close modals when clicking outside the dialog
-  ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal'].forEach((id) => {
+  ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal', 'editFundModal'].forEach((id) => {
   // include payslipPreviewModal later via global fallback
     const modal = document.getElementById(id);
     if (modal) {
@@ -535,8 +539,9 @@ function setupEventListeners() {
   const payslipModalEl = document.getElementById('payslipModal');
   const paymentModalEl = document.getElementById('paymentModal');
   const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
+  const editFundModalEl = document.getElementById('editFundModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl)) return;
 
     // If the click landed on an overlay (exact target is the overlay div), close it
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -551,6 +556,8 @@ function setupEventListeners() {
       closePayslipModal();
     } else if (anyOpen(payslipPreviewModalEl) && e.target === payslipPreviewModalEl) {
       closePayslipPreviewModal();
+    } else if (anyOpen(editFundModalEl) && e.target === editFundModalEl) {
+      closeEditFundModal();
     }
   }, true);
 
@@ -563,8 +570,9 @@ function setupEventListeners() {
   const payslipModalEl = document.getElementById('payslipModal');
   const paymentModalEl = document.getElementById('paymentModal');
   const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
+  const editFundModalEl = document.getElementById('editFundModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl)) return;
 
     // Close when pointerdown lands on overlay element itself
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -581,6 +589,8 @@ function setupEventListeners() {
       closePaymentModal();
     } else if (anyOpen(payslipPreviewModalEl) && e.target === payslipPreviewModalEl) {
       closePayslipPreviewModal();
+    } else if (anyOpen(editFundModalEl) && e.target === editFundModalEl) {
+      closeEditFundModal();
     }
   }, true);
 
@@ -594,6 +604,7 @@ function setupEventListeners() {
       const payslipModalEl = document.getElementById('payslipModal');
   const paymentModalEl2 = document.getElementById('paymentModal');
   const payslipPreviewModalEl2 = document.getElementById('payslipPreviewModal');
+  const editFundModalEl2 = document.getElementById('editFundModal');
       if (deleteModalEl && deleteModalEl.classList.contains('show')) closeModal();
       if (employeeModalEl && employeeModalEl.classList.contains('show')) closeEmployeeModal();
       if (viewModalEl && viewModalEl.classList.contains('show')) closeViewModal();
@@ -601,13 +612,14 @@ function setupEventListeners() {
       if (payslipModalEl && payslipModalEl.classList.contains('show')) closePayslipModal();
       if (paymentModalEl2 && paymentModalEl2.classList.contains('show')) closePaymentModal();
       if (payslipPreviewModalEl2 && payslipPreviewModalEl2.classList.contains('show')) closePayslipPreviewModal();
+      if (editFundModalEl2 && editFundModalEl2.classList.contains('show')) closeEditFundModal();
     }
   });
 
   // Track modal visibility to toggle body.modal-open for overlay/scroll control
   try {
     const body = document.body;
-  const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
+  const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','editFundModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
     const isAnyOpen = () => modalIds.some(id => {
       const el = document.getElementById(id);
       return !!(el && el.classList && el.classList.contains('show'));
@@ -1150,7 +1162,9 @@ function updateAccountsFundCard() {
   if (el) el.textContent = fmt(total);
   const asOf = document.getElementById('accountsFundAsOf');
   if (asOf) asOf.textContent = `as of ${new Date().toLocaleString()}`;
-  // computedFundLabel removed with Edit Fund modal
+  // Update computed label in Edit Fund modal if present
+  const comp = document.getElementById('computedFundLabel');
+  if (comp) comp.textContent = fmt(total);
 }
 
 // Dedicated snapshot-based fund updater
@@ -1246,7 +1260,30 @@ async function ensureAssetAccount(keyword, fallbackName) {
   }
 }
 
-// Edit Fund modal removed: manual fund adjustments disabled
+// Edit Fund Modal controls (informational; fund changes are transaction-only)
+window.openEditFundModal = function() {
+  const modal = document.getElementById('editFundModal');
+  if (!modal) return;
+  // Prefill desired with current computed (strip $ and commas)
+  const currentText = document.getElementById('accountsFundValue')?.textContent || '$0';
+  const desiredEl = document.getElementById('desiredFund');
+  const numeric = Number((currentText || '').replace(/[^0-9.\-]/g, '')) || 0;
+  if (desiredEl) desiredEl.value = numeric;
+  try { updateAccountsFundCard(); } catch {}
+  modal.classList.add('show');
+  try { document.body.classList.add('modal-open'); } catch {}
+}
+
+window.closeEditFundModal = function() {
+  const modal = document.getElementById('editFundModal');
+  if (modal) modal.classList.remove('show');
+}
+
+async function handleEditFundSubmit(e) {
+  e.preventDefault();
+  showToast('To change the Current Fund, record an Income or Expense transaction.', 'info');
+  closeEditFundModal();
+}
 
 // Provide accounts to cashflow (kept in shadow from realtime listener)
 function __getLocalAccounts() { return __accountsShadow.slice(); }

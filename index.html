@@ -282,6 +282,7 @@
                         <button id="openIncomeTxnBtn" class="btn btn-primary" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'in' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('in'))"><i class="fas fa-arrow-down"></i> Income</button>
                         <button id="openExpenseTxnBtn" class="btn btn-danger" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'out' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('out'))"><i class="fas fa-arrow-up"></i> Expense</button>
                         <button id="openTransferBtn" class="btn btn-secondary" onclick="window.openTransferModal && window.openTransferModal()"><i class="fas fa-right-left"></i> Transfer</button>
+                        <button id="editFundBtn" class="btn btn-secondary"><i class="fas fa-pen"></i> Edit Fund</button>
                     </div>
                 </div>
 
@@ -1486,6 +1487,40 @@
             <div class="modal-footer flex items-center justify-end gap-2">
                 <button type="button" class="btn btn-secondary" onclick="closePayslipPreviewModal()"><i class="fas fa-times"></i> Close</button>
                 <button type="button" class="btn btn-primary" id="payslipPreviewPrintBtn"><i class="fas fa-print"></i> Print</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Fund Modal (informational; fund changes via transactions only) -->
+    <div class="modal" id="editFundModal" role="dialog" aria-modal="true" aria-labelledby="editFundModalTitle">
+        <div class="modal-content max-w-md w-full">
+            <div class="modal-header flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-sack-dollar text-indigo-600"></i>
+                    <h3 id="editFundModalTitle" class="modal-title">Edit Fund</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closeEditFundModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="editFundForm" class="space-y-4">
+                    <div class="p-3 rounded border border-amber-200 bg-amber-50 text-amber-800 text-sm">
+                        Current Fund Available is driven by transactions. To change it, add Income or Expense. This dialog shows the current computed total.
+                    </div>
+                    <div class="grid grid-cols-1 gap-4">
+                        <div>
+                            <label class="label"><i class="fas fa-calculator label-icon"></i> Computed Fund</label>
+                            <div id="computedFundLabel" class="text-xl font-extrabold">$0.00</div>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-dollar-sign label-icon"></i> Desired (read-only)</label>
+                            <input id="desiredFund" type="number" step="any" class="input" disabled placeholder="Enter amount via transactions" />
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer flex items-center justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeEditFundModal()"><i class="fas fa-times"></i> Close</button>
+                <button type="submit" form="editFundForm" class="btn btn-primary"><i class="fas fa-info-circle"></i> How to Adjust</button>
             </div>
         </div>
     </div>
