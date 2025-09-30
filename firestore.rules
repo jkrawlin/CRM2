@@ -27,6 +27,15 @@ service cloud.firestore {
       return v is string && v.matches('^\\d{4}-\\d{2}-\\d{2}$');
     }
 
+    function isValidYearMonth(v) {
+      // Expecting YYYY-MM from the month input
+      return v is string && v.matches('^\\d{4}-\\d{2}$');
+    }
+
+    function isTimestamp(v) {
+      return v is timestamp;
+    }
+
     // ISO 8601 date-time such as 2025-09-26T12:34:56.789Z
     function isValidISODateTime(v) {
       return v is string && v.matches('^\\d{4}-\\d{2}-\\d{2}T[0-9:.-]+Z$');
@@ -38,6 +47,7 @@ service cloud.firestore {
         'name','email','position','department','salary','joinDate',
         'qid','phone','qidPdfUrl','passportPdfUrl',
         'bankName','bankAccountNumber','bankIban','profileImageUrl'
+        ,'terminated','terminatedAt'
       ]);
     }
 
@@ -57,7 +67,9 @@ service cloud.firestore {
         && (!('bankName' in d) || (d.bankName is string && d.bankName.size() <= 200))
         && (!('bankAccountNumber' in d) || (d.bankAccountNumber is string && d.bankAccountNumber.size() <= 40))
         && (!('bankIban' in d) || (d.bankIban is string && d.bankIban.size() <= 40))
-        && (!('profileImageUrl' in d) || (d.profileImageUrl is string && d.profileImageUrl.size() <= 2048));
+  && (!('profileImageUrl' in d) || (d.profileImageUrl is string && d.profileImageUrl.size() <= 2048))
+        && (!('terminated' in d) || (d.terminated is bool))
+        && (!('terminatedAt' in d) || isTimestamp(d.terminatedAt));
     }
 
     match /employees/{docId} {
@@ -75,9 +87,122 @@ service cloud.firestore {
       allow delete: if isSignedIn();
     }
 
+    // Payslips collection: records generated slips with amounts
+    function payslipAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'employeeId','employeeType','employeeName','department','position','qid',
+        'period','basic','advance','net','notes','isAdvance',
+        'createdAt','createdBy','createdByEmail'
+      ]);
+    }
+
+    function validatePayslip(d) {
+      return payslipAllowedKeys(d)
+        && isNonEmptyString(d.employeeId)
+        && (d.employeeType in ['Temporary','Permanent'])
+        && isNonEmptyString(d.employeeName)
+        && (!('department' in d) || d.department is string)
+        && (!('position' in d) || d.position is string)
+        && (!('qid' in d) || d.qid is string)
+        && isValidYearMonth(d.period)
+        && (d.basic is int || d.basic is float)
+  && (d.advance is int || d.advance is float)
+        && (d.net is int || d.net is float)
+        && (!('notes' in d) || d.notes is string && d.notes.size() <= 1000)
+        && (!('isAdvance' in d) || d.isAdvance is bool)
+        && isTimestamp(d.createdAt)
+        && (!('createdBy' in d) || d.createdBy is string)
+        && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail));
+    }
+
+    match /payslips/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validatePayslip(request.resource.data);
+      // Allow deletes for signed-in users (audited by security rules and UI confirmation)
+      allow delete: if isSignedIn();
+      // Still disallow updates
+      allow update: if false;
+    }
+
+    // Payments collection: records payments/advances
+    function paymentsAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'employeeId','employeeType','employeeName','department','position','qid',
+        'amount','overtime','overtimeHours','method','reference','isAdvance','deductFrom','notes','date',
+        'createdAt','createdBy','createdByEmail'
+      ]);
+    }
+
+    function validatePayment(d) {
+      return paymentsAllowedKeys(d)
+        && isNonEmptyString(d.employeeId)
+        && (d.employeeType in ['Temporary','Permanent'])
+        && isNonEmptyString(d.employeeName)
+        && (!('department' in d) || d.department is string)
+        && (!('position' in d) || d.position is string)
+        && (!('qid' in d) || d.qid is string)
+        && (d.amount is int || d.amount is float) && d.amount >= 0
+  && (!('overtime' in d) || ((d.overtime is int || d.overtime is float) && d.overtime >= 0))
+  && (!('overtimeHours' in d) || ((d.overtimeHours is int || d.overtimeHours is float) && d.overtimeHours >= 0))
+        && (d.method in ['cash','bank','cheque'])
+        && (!('reference' in d) || d.reference is string && d.reference.size() <= 200)
+        && (d.isAdvance is bool)
+        && (d.deductFrom in ['none','next','installments'])
+        && (!('notes' in d) || d.notes is string && d.notes.size() <= 1000)
+        && isValidISODate(d.date)
+        && isTimestamp(d.createdAt)
+        && (!('createdBy' in d) || d.createdBy is string)
+        && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail));
+    }
+
+    match /payments/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validatePayment(request.resource.data);
+      // No updates/deletes for payments at this time
+      allow update, delete: if false;
+    }
+
+    // Balances collection: denormalized per-employee monthly balances
+    function balancesAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'employeeId','employeeType','employeeName','department','position','qid',
+        'month','carryover','basic','advances','payments','balance',
+        'updatedAt','updatedBy','updatedByEmail'
+      ]);
+    }
+
+    function isValidYearMonthStrict(v) { return isValidYearMonth(v); }
+
+    function validateBalance(d) {
+      return balancesAllowedKeys(d)
+        && isNonEmptyString(d.employeeId)
+        && (d.employeeType in ['Temporary','Permanent'])
+        && isNonEmptyString(d.employeeName)
+        && (!('department' in d) || d.department is string)
+        && (!('position' in d) || d.position is string)
+        && (!('qid' in d) || d.qid is string)
+        && isValidYearMonthStrict(d.month)
+  && (!('carryover' in d) || (d.carryover is int || d.carryover is float))
+        && (d.basic is int || d.basic is float)
+        && (d.advances is int || d.advances is float)
+        && (d.payments is int || d.payments is float)
+        && (d.balance is int || d.balance is float)
+        && isTimestamp(d.updatedAt)
+        && (!('updatedBy' in d) || d.updatedBy is string)
+        && (!('updatedByEmail' in d) || isValidEmail(d.updatedByEmail));
+    }
+
+    match /balances/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateBalance(request.resource.data);
+      allow update: if isSignedIn() && validateBalance(request.resource.data);
+      // Disallow deletes for now
+      allow delete: if false;
+    }
+
     // Customers collection used by the web app (no auth required for demo)
     function customersAllowedKeys(d) {
-      return d.keys().hasOnly(['name','email','phone','company','createdAt']);
+      return d.keys().hasOnly(['name','email','phone','company','address','createdAt']);
     }
 
     function validateCustomer(d) {
@@ -86,6 +211,7 @@ service cloud.firestore {
         && isValidEmail(d.email)
         && (!('phone' in d) || (d.phone is string && d.phone.size() <= 30))
         && (!('company' in d) || (d.company is string && d.company.size() <= 200))
+        && isNonEmptyString(d.address) && (d.address.size() <= 500)
         && isValidISODateTime(d.createdAt);
     }
 
@@ -96,6 +222,88 @@ service cloud.firestore {
       allow create: if validateCustomer(request.resource.data);
       allow update: if validateCustomer(request.resource.data);
       // Disallow deletes for safety in this demo setup
+      allow delete: if false;
+    }
+
+    // Assignments/Placements: link employees to clients for manpower supply
+    function assignmentsAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'employeeId','employeeType','employeeName','department','position','qid',
+        'clientId','clientName','clientEmail',
+        'startDate','endDate','rate','rateType','notes',
+        'createdAt','createdBy','createdByEmail','updatedAt'
+      ]);
+    }
+
+    function validateAssignment(d) {
+      return assignmentsAllowedKeys(d)
+        && isNonEmptyString(d.employeeId)
+        && (d.employeeType in ['Temporary','Permanent'])
+        && isNonEmptyString(d.employeeName)
+        && (!('department' in d) || d.department is string)
+        && (!('position' in d) || d.position is string)
+        && (!('qid' in d) || d.qid is string)
+        && isNonEmptyString(d.clientId)
+        && isNonEmptyString(d.clientName)
+        && (!('clientEmail' in d) || isValidEmail(d.clientEmail))
+        && isValidISODate(d.startDate)
+        && (!('endDate' in d) || isValidISODate(d.endDate))
+        && (!('endDate' in d) || d.endDate >= d.startDate)
+        && (!('rate' in d) || (d.rate is int || d.rate is float) && d.rate >= 0)
+        && (!('rateType' in d) || (d.rateType in ['hourly','daily','monthly']))
+        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
+        && isTimestamp(d.createdAt)
+        && (!('createdBy' in d) || d.createdBy is string)
+        && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail))
+        && (!('updatedAt' in d) || isTimestamp(d.updatedAt));
+    }
+
+    match /assignments/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateAssignment(request.resource.data);
+      allow update: if isSignedIn() && validateAssignment(request.resource.data);
+      // No deletes for safety
+      allow delete: if false;
+    }
+
+    // Accounts (Chart of Accounts)
+    function accountsAllowedKeys(d) {
+      return d.keys().hasOnly(['name','type','opening','createdAt']);
+    }
+    function validateAccount(d) {
+      return accountsAllowedKeys(d)
+        && isNonEmptyString(d.name)
+        && (d.type in ['Asset','Liability','Equity','Income','Expense'])
+        && ((d.opening is int || d.opening is float))
+        && isValidISODateTime(d.createdAt);
+    }
+    match /accounts/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateAccount(request.resource.data);
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Cashflows: simple cash in/out transactions
+    function cashflowAllowedKeys(d) {
+      return d.keys().hasOnly(['date','type','accountId','accountName','amount','category','notes','createdAt','createdBy']);
+    }
+    function validateCashflow(d) {
+      return cashflowAllowedKeys(d)
+        && isValidISODate(d.date)
+        && (d.type in ['in','out'])
+        && isNonEmptyString(d.accountId)
+        && (!('accountName' in d) || (d.accountName is string && d.accountName.size() <= 200))
+        && ((d.amount is int || d.amount is float) && d.amount > 0)
+        && (!('category' in d) || (d.category is string && d.category.size() <= 200))
+        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
+        && isValidISODateTime(d.createdAt)
+        && (!('createdBy' in d) || d.createdBy is string);
+    }
+    match /cashflows/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateCashflow(request.resource.data);
+      allow update: if false;
       allow delete: if false;
     }
 

@@ -14,7 +14,7 @@ export function sortEmployees(column, deps) {
   renderEmployeeTable(deps);
 }
 
-export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmentFilter }) {
+export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmentFilter, getShowTerminated }) {
   const tbody = document.getElementById('employeeTableBody');
   const emptyState = document.getElementById('emptyState');
   if (!tbody || !emptyState) return;
@@ -22,6 +22,7 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   const employees = getEmployees();
   const currentSearch = (getSearchQuery && getSearchQuery()) || '';
   const currentDepartmentFilter = (getDepartmentFilter && getDepartmentFilter()) || '';
+  const showTerminated = (getShowTerminated && getShowTerminated()) || true;
 
   const filtered = employees.filter(emp => {
     const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
@@ -37,7 +38,8 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
         matchesSearch = text.includes(query.toLowerCase());
       }
     }
-    return matchesDept && matchesSearch;
+    const matchesTerm = showTerminated ? true : !emp.terminated;
+    return matchesDept && matchesSearch && matchesTerm;
   });
 
   const sorted = [...filtered];
@@ -81,18 +83,21 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   }
 
   tbody.innerHTML = sorted.map((employee) => `
-    <tr class="hover:bg-gray-50">
-      <td class="px-4 py-3 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">${employee.name}</td>
-      <td class="px-4 py-3">${employee.email}</td>
-      <td class="px-4 py-3">${employee.phone || '-'}</td>
-      <td class="px-4 py-3">${employee.qid || '-'}</td>
-      <td class="px-4 py-3">${employee.position}</td>
-      <td class="px-4 py-3">
+    <tr class="hover:bg-gray-50 ${employee.terminated ? 'terminated-row' : ''}" ${employee.terminated ? 'style="background-color:#fff1f2;"' : ''}>
+      <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">
+        ${employee.name}
+        ${employee.terminated ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class="fas fa-user-slash"></i> Terminated</span>' : ''}
+      </td>
+      <td class="px-3 py-2">${employee.email}</td>
+      <td class="px-3 py-2">${employee.phone || '-'}</td>
+      <td class="px-3 py-2">${employee.qid || '-'}</td>
+      <td class="px-3 py-2">${employee.position}</td>
+      <td class="px-3 py-2">
         <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
       </td>
-      <td class="px-4 py-3 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      <td class="px-4 py-3 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-4 py-3 text-center">
+      <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+      <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
+      <td class="px-3 py-2 text-center">
         <div class="action-buttons">
           <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}', 'employees')"><i class="fas fa-edit"></i></button>
           <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}', 'employees')"><i class="fas fa-trash"></i></button>

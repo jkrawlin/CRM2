@@ -1,13 +1,18 @@
-import { db, auth, storage } from './firebase-config.js?v=20250929-04';
+import { db, auth, storage } from './firebase-config.js?v=20250929-05';
 import {
   collection,
+  getDocs,
+  getDoc,
   addDoc,
+  setDoc,
   doc,
   updateDoc,
   deleteDoc,
   onSnapshot,
   query,
-  orderBy
+  where,
+  orderBy,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import {
   onAuthStateChanged,
@@ -31,20 +36,29 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20250929-07';
+} from './modules/payroll.js?v=20250929-12';
+// bump cache
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { maskAccount } from './modules/utils.js?v=20250929-07';
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-07';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-07';
+import { maskAccount } from './modules/utils.js?v=20250929-08';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
+import { initClients, subscribeClients, renderClientsTable, getClients } from './modules/clients.js?v=20250930-05';
+import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20250930-03';
+import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
+import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
+import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20250929-01';
 
 let employees = [];
 let temporaryEmployees = [];
+// Clients and Assignments state moved into modules; keep thin getters
 // Sorting is handled by modules (employees/temporary)
 let deleteEmployeeId = null;
 let currentSearch = '';
 let currentDepartmentFilter = '';
+// Removed per UX decision: always show terminated with visual cue
 let unsubscribeEmployees = null;
 let unsubscribeTemporary = null;
+// Subscriptions for clients/assignments are managed by their modules
 let authed = false;
 let authInitialized = false;
 let payrollInited = false;
@@ -54,6 +68,18 @@ let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: 
 let currentPayrollSubTab = 'table';
 // Track current payroll view data for payslip
 let currentPayrollView = null;
+// Track last month we ensured balances snapshot to avoid redundant writes
+let lastBalanceEnsureMonth = null;
+// Shadow accounts list for cashflow module filters
+let __accountsShadow = [];
+// Fund computation caches and unsubscribers (snapshot-based, independent of UI filters)
+let __fundAccountsCache = [];
+let __fundCashflowsCache = [];
+let __unsubFundAccounts = null;
+let __unsubFundCashflows = null;
+// Bank-style fund: opening is stored in stats/fund; keep a live cache and unsub
+let __fundOpening = 0;
+let __unsubFundStats = null;
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
@@ -66,6 +92,65 @@ document.addEventListener('DOMContentLoaded', () => {
   // Theme toggle removed
   setupEventListeners();
   setDefaultJoinDate();
+  // Wire Accounts sub-tab buttons explicitly (in addition to delegated handler)
+  try { wireAccountsTabButtons(); } catch {}
+  // Always-available fallback to open cash txn modal even if module wiring hasn't attached yet
+  try {
+    window.__openCashTxnFallback = function(kind) {
+      // Ensure cashflow tab is visible
+      try { setAccountsSubTab('transactions'); } catch {}
+      const modal = document.getElementById('cashTxnModal');
+      if (!modal) return false;
+      const form = document.getElementById('cashTxnForm');
+      if (form) try { form.reset(); } catch {}
+      const d = document.getElementById('cfDate');
+      if (d) { try { d.valueAsDate = new Date(); } catch {} }
+      const typeSel = document.getElementById('cfType');
+      if (typeSel) {
+        const v = (kind === 'out') ? 'out' : 'in';
+        typeSel.value = v;
+        typeSel.disabled = true;
+      }
+      // Focus amount quickly
+      setTimeout(() => { try { document.getElementById('cfAmount')?.focus(); } catch {} }, 0);
+      modal.classList.add('show');
+      return true;
+    }
+  } catch {}
+  // Expose setter for modules to update accounts shadow
+  window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
+  // When accounts update, refresh cashflow/ledger dropdowns if visible
+  window.addEventListener('accounts:updated', () => {
+    try { renderCashflowTable?.(); } catch {}
+    try { refreshLedgerAccounts?.(); } catch {}
+    try { updateAccountsFundCard(); } catch {}
+    // If Overview tab is active, refresh it to reflect account name changes
+    try {
+      const ovBtn = document.getElementById('accountsSubTabOverviewBtn');
+      const ovTab = document.getElementById('accountsTabOverview');
+      if ((ovBtn && ovBtn.classList.contains('border-b-2')) || (ovTab && ovTab.style.display !== 'none')) {
+        renderAccountsOverview();
+      }
+    } catch {}
+  });
+  // Keep a cashflow shadow array to compute fund total
+  window.addEventListener('cashflow:updated', (e) => {
+    try { __cashflowShadow = Array.isArray(e.detail) ? e.detail.slice() : []; } catch { __cashflowShadow = []; }
+    try { updateAccountsFundCard(); } catch {}
+    // Update Overview metrics and Transactions filters/live table if those tabs are visible
+    try {
+      const ovTab = document.getElementById('accountsTabOverview');
+      if (ovTab && ovTab.style.display !== 'none') renderAccountsOverview();
+    } catch {}
+    try {
+      const trTab = document.getElementById('accountsTabTransactions');
+      if (trTab && trTab.style.display !== 'none') {
+        populateCategoryFilter?.(document.getElementById('cashflowCategoryFilter'));
+        renderCashflowTable?.();
+        postFilterCashflowTable?.();
+      }
+    } catch {}
+  });
 
   // Auth state listener
   onAuthStateChanged(auth, (user) => {
@@ -82,6 +167,35 @@ document.addEventListener('DOMContentLoaded', () => {
   setActiveSection('dashboard');
   loadEmployeesRealtime();
   loadTemporaryRealtime();
+  // Init clients/assignments modules and subscribe
+  try {
+    initClients({ db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData });
+    subscribeClients();
+  } catch (e) { console.warn('Clients init failed', e); }
+  try {
+    initAssignments({ db, collection, query, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, showToast, cleanData,
+      getEmployees: () => employees,
+      getTemporaryEmployees: () => temporaryEmployees,
+      getClients: () => getClients(),
+    });
+    subscribeAssignments();
+  } catch (e) { console.warn('Assignments init failed', e); }
+  try {
+    initAccounts({ db, collection, query, onSnapshot, addDoc, showToast, cleanData });
+    subscribeAccounts();
+  } catch (e) { console.warn('Accounts init failed', e); }
+  try {
+    // Provide accounts to cashflow for dropdowns
+  initCashflow({ db, collection, query, onSnapshot, addDoc, orderBy, where, showToast, cleanData, getAccounts: () => __getLocalAccounts(), ensureAssetAccount });
+    subscribeCashflow();
+  } catch (e) { console.warn('Cashflow init failed', e); }
+  // Start dedicated fund watchers (accounts + cashflows snapshots) to keep fund card in sync
+  try { subscribeFundCardSnapshots(); } catch (e) { console.warn('Fund snapshot subscribe failed', e); }
+  try {
+    // Provide accounts to ledger as well
+    initLedger({ db, collection, query, onSnapshot, orderBy, where, showToast, cleanData, getAccounts: () => __getLocalAccounts() });
+    subscribeLedger();
+  } catch (e) { console.warn('Ledger init failed', e); }
   // Initialize payroll module and initial render
   if (!payrollInited) {
     try {
@@ -94,6 +208,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) { console.warn('Payroll init failed', e); }
   }
   renderPayrollTable();
+  // Ensure monthly balances snapshot exists for the current month
+  try { ensureCurrentMonthBalances(); } catch {}
     } else {
       // User is signed out
       if (loginPage) loginPage.style.display = '';
@@ -108,15 +224,22 @@ document.addEventListener('DOMContentLoaded', () => {
         unsubscribeTemporary();
         unsubscribeTemporary = null;
       }
-      employees = [];
-      temporaryEmployees = [];
+      // Cleanup fund snapshot listeners
+      try { if (__unsubFundAccounts) { __unsubFundAccounts(); __unsubFundAccounts = null; } } catch {}
+      try { if (__unsubFundCashflows) { __unsubFundCashflows(); __unsubFundCashflows = null; } } catch {}
+      try { if (__unsubFundStats) { __unsubFundStats(); __unsubFundStats = null; } } catch {}
+    employees = [];
+    temporaryEmployees = [];
       renderEmployeeTable();
       renderTemporaryTable();
+    try { renderClientsTable(); } catch {}
+    try { renderAssignmentsTable(); } catch {}
   renderPayrollTable();
       updateStats();
       updateDepartmentFilter();
       // Reset section visibility for next sign-in
       setActiveSection('dashboard');
+      try { ensureCurrentMonthBalances(); } catch {}
     }
   });
 });
@@ -134,6 +257,7 @@ function loadEmployeesRealtime() {
       updateDepartmentFilter();
       // Keep payroll in sync as data arrives
       renderPayrollTable();
+      try { ensureCurrentMonthBalances(); } catch {}
     },
     (error) => {
       console.error("Error loading employees: ", error);
@@ -141,6 +265,7 @@ function loadEmployeesRealtime() {
     }
   );
 }
+
 
 // Real-time listener for temporary employees
 function loadTemporaryRealtime() {
@@ -153,6 +278,7 @@ function loadTemporaryRealtime() {
       renderTemporaryTable();
       // Keep payroll in sync as data arrives
       renderPayrollTable();
+      try { ensureCurrentMonthBalances(); } catch {}
     },
     (error) => {
       console.error("Error loading temporary employees: ", error);
@@ -161,13 +287,53 @@ function loadTemporaryRealtime() {
   );
 }
 
+
 // Remove keys with undefined values (Firestore does not allow undefined)
 function cleanData(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (v !== undefined) out[k] = v;
+    // Firestore rules often expect either a valid value or the key omitted entirely.
+    // Drop undefined and null so optional fields don't violate validators.
+    if (v !== undefined && v !== null) out[k] = v;
   }
   return out;
+}
+
+// Normalize various joinDate shapes into strict YYYY-MM-DD to satisfy rules
+function toYMD(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function normalizeJoinDate(jd) {
+  try {
+    if (!jd) return null;
+    if (typeof jd === 'string') {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(jd)) return jd; // already correct
+      const d = new Date(jd);
+      if (!isNaN(d.getTime())) return toYMD(d);
+      return null;
+    }
+    if (jd instanceof Date) {
+      if (!isNaN(jd.getTime())) return toYMD(jd);
+      return null;
+    }
+    if (typeof jd === 'object') {
+      if (typeof jd.seconds === 'number') {
+        const d = new Date(jd.seconds * 1000);
+        if (!isNaN(d.getTime())) return toYMD(d);
+      }
+      if (typeof jd.toDate === 'function') {
+        try {
+          const d = jd.toDate();
+          if (d instanceof Date && !isNaN(d.getTime())) return toYMD(d);
+        } catch {}
+      }
+    }
+  } catch {}
+  return null;
 }
 
 // Add or update employee in Firestore
@@ -255,6 +421,7 @@ function setupEventListeners() {
   // Department filter removed from UI
   const confirmDeleteEl = document.getElementById('confirmDelete');
   if (confirmDeleteEl) confirmDeleteEl.addEventListener('click', handleConfirmDelete);
+  // No terminated toggles; terminated are always visible with a visual indicator
 
   // Header sign-out button removed; sidebar sign-out remains
   const signOutBtnSidebar = document.getElementById('signOutBtnSidebar');
@@ -273,8 +440,60 @@ function setupEventListeners() {
       setActiveSection(target);
       if (target === 'payroll') {
         renderPayrollTable();
+      } else if (target === 'clients') {
+        renderClientsTable();
+      } else if (target === 'clients-billing') {
+        // Default month to current if empty and render client transactions view
+        try {
+          const m = document.getElementById('clientBillingMonth');
+          if (m && !m.value) {
+            const now = new Date();
+            m.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+          }
+        } catch {}
+        try { renderClientTransactions(); } catch {}
+      } else if (target === 'assignments') {
+        renderAssignmentsTable();
+      } else if (target === 'accounts') {
+        renderAccountsTable();
+        renderCashflowTable?.();
+        try { renderLedgerTable?.(); } catch {}
+        // ensure default sub-tab shown and controls visibility updated
+        setAccountsSubTab('overview');
+        // re-wire in case this section was hidden before
+        try { wireAccountsTabButtons(); } catch {}
+        try { updateAccountsFundCard(); } catch {}
       }
     });
+  });
+
+  // Edit Fund removed: no manual adjustments; fund is transaction-driven
+
+  // Sidebar collapse/expand controls
+  const sidebarEl = document.getElementById('sidebar');
+  const collapseBtn = document.getElementById('collapseSidebarBtn');
+  const openSidebarBtn = document.getElementById('openSidebarBtn');
+  const applySidebarState = (hidden) => {
+    const body = document.body;
+    if (!body) return;
+    if (hidden) {
+      body.classList.add('sidebar-collapsed');
+    } else {
+      body.classList.remove('sidebar-collapsed');
+    }
+  };
+  // Load persisted state
+  try {
+    const saved = localStorage.getItem('crm_sidebar_hidden');
+    applySidebarState(saved === '1');
+  } catch {}
+  if (collapseBtn) collapseBtn.addEventListener('click', () => {
+    applySidebarState(true);
+    try { localStorage.setItem('crm_sidebar_hidden', '1'); } catch {}
+  });
+  if (openSidebarBtn) openSidebarBtn.addEventListener('click', () => {
+    applySidebarState(false);
+    try { localStorage.setItem('crm_sidebar_hidden', '0'); } catch {}
   });
 
   // Login page controls
@@ -290,6 +509,7 @@ function setupEventListeners() {
 
   // Close modals when clicking outside the dialog
   ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal'].forEach((id) => {
+  // include payslipPreviewModal later via global fallback
     const modal = document.getElementById(id);
     if (modal) {
       modal.addEventListener('click', (e) => {
@@ -314,8 +534,9 @@ function setupEventListeners() {
   const payrollModalEl = document.getElementById('payrollModal');
   const payslipModalEl = document.getElementById('payslipModal');
   const paymentModalEl = document.getElementById('paymentModal');
+  const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl2) && !anyOpen(paymentModalEl)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl)) return;
 
     // If the click landed on an overlay (exact target is the overlay div), close it
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -328,6 +549,8 @@ function setupEventListeners() {
       closePayrollModal();
     } else if (anyOpen(payslipModalEl) && e.target === payslipModalEl) {
       closePayslipModal();
+    } else if (anyOpen(payslipPreviewModalEl) && e.target === payslipPreviewModalEl) {
+      closePayslipPreviewModal();
     }
   }, true);
 
@@ -337,9 +560,11 @@ function setupEventListeners() {
   const deleteModalEl = document.getElementById('deleteModal');
   const viewModalEl = document.getElementById('viewModal');
   const payrollModalEl = document.getElementById('payrollModal');
-  const payslipModalEl2 = document.getElementById('payslipModal');
+  const payslipModalEl = document.getElementById('payslipModal');
+  const paymentModalEl = document.getElementById('paymentModal');
+  const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl2)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl)) return;
 
     // Close when pointerdown lands on overlay element itself
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -350,10 +575,12 @@ function setupEventListeners() {
       closeViewModal();
     } else if (anyOpen(payrollModalEl) && e.target === payrollModalEl) {
       closePayrollModal();
-    } else if (anyOpen(payslipModalEl2) && e.target === payslipModalEl2) {
+    } else if (anyOpen(payslipModalEl) && e.target === payslipModalEl) {
       closePayslipModal();
     } else if (anyOpen(paymentModalEl) && e.target === paymentModalEl) {
       closePaymentModal();
+    } else if (anyOpen(payslipPreviewModalEl) && e.target === payslipPreviewModalEl) {
+      closePayslipPreviewModal();
     }
   }, true);
 
@@ -365,15 +592,43 @@ function setupEventListeners() {
       const viewModalEl = document.getElementById('viewModal');
       const payrollModalEl = document.getElementById('payrollModal');
       const payslipModalEl = document.getElementById('payslipModal');
-      const paymentModalEl2 = document.getElementById('paymentModal');
+  const paymentModalEl2 = document.getElementById('paymentModal');
+  const payslipPreviewModalEl2 = document.getElementById('payslipPreviewModal');
       if (deleteModalEl && deleteModalEl.classList.contains('show')) closeModal();
       if (employeeModalEl && employeeModalEl.classList.contains('show')) closeEmployeeModal();
       if (viewModalEl && viewModalEl.classList.contains('show')) closeViewModal();
       if (payrollModalEl && payrollModalEl.classList.contains('show')) closePayrollModal();
       if (payslipModalEl && payslipModalEl.classList.contains('show')) closePayslipModal();
       if (paymentModalEl2 && paymentModalEl2.classList.contains('show')) closePaymentModal();
+      if (payslipPreviewModalEl2 && payslipPreviewModalEl2.classList.contains('show')) closePayslipPreviewModal();
     }
   });
+
+  // Track modal visibility to toggle body.modal-open for overlay/scroll control
+  try {
+    const body = document.body;
+  const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
+    const isAnyOpen = () => modalIds.some(id => {
+      const el = document.getElementById(id);
+      return !!(el && el.classList && el.classList.contains('show'));
+    });
+    const syncBodyClass = () => {
+      if (!body) return;
+      if (isAnyOpen()) body.classList.add('modal-open'); else body.classList.remove('modal-open');
+      const scrim = document.getElementById('globalBackdrop');
+      if (scrim) scrim.style.display = isAnyOpen() ? 'block' : 'none';
+    };
+    // Observe class changes on each modal
+    const obs = new MutationObserver(syncBodyClass);
+    modalIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+    // Also run on window focus/blur and after any click to be safe
+    document.addEventListener('click', syncBodyClass, true);
+    document.addEventListener('keydown', syncBodyClass, true);
+    setInterval(syncBodyClass, 1000); // safety net
+  } catch {}
 
   // Payroll Frame controls
   const payrollMonthEl = document.getElementById('payrollMonth');
@@ -384,6 +639,31 @@ function setupEventListeners() {
     payrollMonthEl.value = payrollMonthEl.value || ym;
     payrollMonthEl.addEventListener('change', () => renderPayrollFrame());
   }
+  // Client Transactions controls
+  const clientBillingMonthEl = document.getElementById('clientBillingMonth');
+  if (clientBillingMonthEl && !clientBillingMonthEl.__wired) {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    clientBillingMonthEl.value = clientBillingMonthEl.value || ym;
+    clientBillingMonthEl.addEventListener('change', () => {
+      try { renderClientTransactions(); } catch {}
+    });
+    clientBillingMonthEl.__wired = true;
+  }
+
+  // Auto-refresh Client Transactions when clients/assignments change
+  document.addEventListener('clients:updated', () => {
+    const sec = document.getElementById('clientsBillingSection');
+    if (sec && sec.style.display !== 'none') {
+      try { renderClientTransactions(); } catch {}
+    }
+  });
+  document.addEventListener('assignments:updated', () => {
+    const sec = document.getElementById('clientsBillingSection');
+    if (sec && sec.style.display !== 'none') {
+      try { renderClientTransactions(); } catch {}
+    }
+  });
   // Export/Print and tab buttons are wired by the payroll module during init
 
   // Accordion toggles inside View modal
@@ -406,6 +686,23 @@ function setupEventListeners() {
     if (isHidden && targetSel === '#acc-docs' && currentViewCtx && currentViewCtx.id && !currentViewCtx.docsLoaded) {
       loadCurrentViewDocuments().catch(() => {});
     }
+  });
+
+  // Global delegated handlers for quick Income/Expense buttons (robust to rewiring)
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('#openIncomeTxnBtn, #openExpenseTxnBtn, #openIncomeTxnBtn2, #openExpenseTxnBtn2');
+    if (!btn) return;
+    e.preventDefault();
+    const isIncome = btn.id.includes('Income');
+    try {
+      // Ensure cashflow tab is visible for context
+      setAccountsSubTab('transactions');
+    } catch {}
+    try {
+      if (window.openCashTxnModal) {
+        window.openCashTxnModal({ type: isIncome ? 'in' : 'out' });
+      }
+    } catch {}
   });
 
   // Removed: header quick access button to open Documents section
@@ -448,6 +745,82 @@ function setupEventListeners() {
     closeViewModal();
     openDeleteModal(id, which);
   });
+  const viewActionTerminate = document.getElementById('viewActionTerminate');
+  if (viewActionTerminate) viewActionTerminate.addEventListener('click', async () => {
+    const id = currentViewCtx?.id;
+    const which = currentViewCtx?.which === 'temporary' ? 'temporary' : 'employees';
+    if (!id) return;
+    const ok = confirm('Terminate this employee? This will disable payroll actions but keep their record.');
+    if (!ok) return;
+    try {
+      const base = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+      // Normalize joinDate robustly (string variants, timestamp, Date)
+      const list = which === 'temporary' ? temporaryEmployees : employees;
+      const emp = list.find(e => e.id === id);
+      const joinDateNorm = normalizeJoinDate(emp?.joinDate);
+      const payload = cleanData({ terminated: true, terminatedAt: serverTimestamp(), joinDate: joinDateNorm ?? undefined });
+      await updateDoc(doc(db, base, id), payload);
+      showToast('Employee terminated', 'success');
+      closeViewModal();
+      // Refresh payroll UI
+      renderPayrollTable();
+      // Immediate local update for instant visual feedback
+      try {
+        if (which === 'temporary') {
+          const idx = temporaryEmployees.findIndex(e => e.id === id);
+          if (idx !== -1) temporaryEmployees[idx] = { ...temporaryEmployees[idx], terminated: true };
+          renderTemporaryTable();
+        } else {
+          const idx = employees.findIndex(e => e.id === id);
+          if (idx !== -1) employees[idx] = { ...employees[idx], terminated: true };
+          renderEmployeeTable();
+        }
+      } catch {}
+    } catch (e) {
+      console.error('Terminate failed', e);
+      const msg = (e && e.code === 'permission-denied')
+        ? 'Failed to terminate: Start Date format is invalid. Please edit the employee, re-select a valid Start Date, and try again.'
+        : 'Failed to terminate employee';
+      showToast(msg, 'error');
+    }
+  });
+  const viewActionReinstate = document.getElementById('viewActionReinstate');
+  if (viewActionReinstate) viewActionReinstate.addEventListener('click', async () => {
+    const id = currentViewCtx?.id;
+    const which = currentViewCtx?.which === 'temporary' ? 'temporary' : 'employees';
+    if (!id) return;
+    const ok = confirm('Reinstate this employee? This will enable payroll actions again.');
+    if (!ok) return;
+    try {
+      const base = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+      // Normalize joinDate robustly
+      const list = which === 'temporary' ? temporaryEmployees : employees;
+      const emp = list.find(e => e.id === id);
+      const joinDateNorm = normalizeJoinDate(emp?.joinDate);
+      await updateDoc(doc(db, base, id), cleanData({ terminated: false, joinDate: joinDateNorm ?? undefined }));
+      showToast('Employee reinstated', 'success');
+      closeViewModal();
+      renderPayrollTable();
+      // Immediate local update for instant visual feedback
+      try {
+        if (which === 'temporary') {
+          const idx = temporaryEmployees.findIndex(e => e.id === id);
+          if (idx !== -1) temporaryEmployees[idx] = { ...temporaryEmployees[idx], terminated: false };
+          renderTemporaryTable();
+        } else {
+          const idx = employees.findIndex(e => e.id === id);
+          if (idx !== -1) employees[idx] = { ...employees[idx], terminated: false };
+          renderEmployeeTable();
+        }
+      } catch {}
+    } catch (e) {
+      console.error('Reinstate failed', e);
+      const msg = (e && e.code === 'permission-denied')
+        ? 'Failed to reinstate: Start Date format is invalid. Please edit the employee, re-select a valid Start Date, and try again.'
+        : 'Failed to reinstate employee';
+      showToast(msg, 'error');
+    }
+  });
 
   // Mobile swipe-to-close for View modal
   setupSwipeToClose();
@@ -476,27 +849,407 @@ function setActiveSection(key) {
   // Toggle which add button shows based on section
   const addBtn = document.getElementById('openEmployeeModalBtn');
   const addTempBtn = document.getElementById('openTempEmployeeModalBtn');
+  const addClientBtn = document.getElementById('openClientModalBtn');
   if (addBtn && addTempBtn) {
     if (key === 'temporary') {
       addBtn.style.display = 'none';
       addTempBtn.style.display = '';
+      if (addClientBtn) addClientBtn.style.display = 'none';
     } else if (key === 'employees') {
       addBtn.style.display = '';
       addTempBtn.style.display = 'none';
+      if (addClientBtn) addClientBtn.style.display = 'none';
+    } else if (key === 'clients') {
+      addBtn.style.display = 'none';
+      addTempBtn.style.display = 'none';
+      if (addClientBtn) addClientBtn.style.display = '';
     } else {
       // On dashboard, hide both
       addBtn.style.display = 'none';
       addTempBtn.style.display = 'none';
+      if (addClientBtn) addClientBtn.style.display = 'none';
     }
   }
+
+  // Clients: open modal
+  // Clients/Assignments events are managed in their modules during init
 
   // When navigating to Payroll, ensure the table/frame are freshly rendered
   if (key === 'payroll') {
     // Always open Payroll on the Table sub-tab
     setPayrollSubTab('table');
     renderPayrollTable();
+    try { ensureCurrentMonthBalances(); } catch {}
   }
 }
+
+// Clients/Assignments logic moved into modules
+
+// Accounts sub-tabs (redesigned) — Overview, Transactions, Ledger, Settings
+document.addEventListener('click', (e) => {
+  const btn = e.target && e.target.closest && e.target.closest('#accountsSubTabOverviewBtn, #accountsSubTabTransactionsBtn, #accountsSubTabLedgerBtn, #accountsSubTabSettingsBtn');
+  if (!btn) return;
+  let which = 'overview';
+  if (btn.id === 'accountsSubTabTransactionsBtn') which = 'transactions';
+  if (btn.id === 'accountsSubTabLedgerBtn') which = 'ledger';
+  if (btn.id === 'accountsSubTabSettingsBtn') which = 'settings';
+  setAccountsSubTab(which);
+});
+
+function setAccountsSubTab(which) {
+  const tabs = {
+    overview: document.getElementById('accountsTabOverview'),
+    transactions: document.getElementById('accountsTabTransactions'),
+    ledger: document.getElementById('accountsTabLedger'),
+    settings: document.getElementById('accountsTabSettings'),
+  };
+  const btns = {
+    overview: document.getElementById('accountsSubTabOverviewBtn'),
+    transactions: document.getElementById('accountsSubTabTransactionsBtn'),
+    ledger: document.getElementById('accountsSubTabLedgerBtn'),
+    settings: document.getElementById('accountsSubTabSettingsBtn'),
+  };
+  const activate = (btn) => { if (!btn) return; btn.classList.add('font-semibold','text-indigo-600','border-b-2','border-indigo-600'); btn.classList.remove('text-gray-600'); };
+  const deactivate = (btn) => { if (!btn) return; btn.classList.remove('font-semibold','text-indigo-600','border-b-2','border-indigo-600'); btn.classList.add('text-gray-600'); };
+  // Toggle visibility
+  Object.entries(tabs).forEach(([k, el]) => { if (el) el.style.display = (k === which ? '' : 'none'); });
+  Object.entries(btns).forEach(([k, el]) => { if (k === which) activate(el); else deactivate(el); });
+  // Render content per tab
+  if (which === 'overview') {
+    renderAccountsOverview();
+  } else if (which === 'transactions') {
+    try { renderCashflowTable?.(); } catch {}
+    try { wireTransactionsFilters(); } catch {}
+    try { postFilterCashflowTable(); } catch {}
+  } else if (which === 'ledger') {
+    try { refreshLedgerAccounts?.(); } catch {}
+    try { renderLedgerTable?.(); } catch {}
+  } else if (which === 'settings') {
+    renderAccountsTable();
+  }
+}
+
+// (no-op placeholder removed)
+
+// Expose for inline handlers (fallback)
+// Note: module-scoped functions are not global; attach explicitly
+try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
+
+// Robust wiring for Accounts sub-tab buttons (direct listeners)
+function wireAccountsTabButtons() {
+  const ids = ['accountsSubTabOverviewBtn','accountsSubTabTransactionsBtn','accountsSubTabLedgerBtn','accountsSubTabSettingsBtn'];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el && !el.__wired) {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const which = id.includes('Overview') ? 'overview' : id.includes('Transactions') ? 'transactions' : id.includes('Ledger') ? 'ledger' : 'settings';
+        setAccountsSubTab(which);
+      });
+      el.__wired = true;
+    }
+  });
+}
+
+// Overview renderer: totals for today/this month and recent 10 transactions
+function renderAccountsOverview() {
+  try { updateAccountsFundCard(); } catch {}
+  const flows = (Array.isArray(window.__cashflowAll) ? window.__cashflowAll.slice() : (__fundCashflowsCache||[])).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const todayYmd = (()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})()
+  const monthYm = todayYmd.slice(0,7);
+  let tIn=0,tOut=0,mIn=0,mOut=0;
+  for (const t of flows) {
+    const typ = String(t.type||'').toLowerCase();
+    const amt = Math.abs(Number(t.amount||0))||0;
+    const d = String(t.date||'');
+    if (d === todayYmd) { if (typ==='in'||typ==='income'||typ==='credit') tIn+=amt; else if (typ==='out'||typ==='expense'||typ==='debit') tOut+=amt; }
+    if (d.startsWith(monthYm+'-')) { if (typ==='in'||typ==='income'||typ==='credit') mIn+=amt; else if (typ==='out'||typ==='expense'||typ==='debit') mOut+=amt; }
+  }
+  const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const byId = (x)=>document.getElementById(x);
+  const setText=(id,val)=>{const el=byId(id); if (el) el.textContent = fmt(val)};
+  setText('overviewTodayIn', tIn);
+  setText('overviewTodayOut', tOut);
+  setText('overviewMonthIn', mIn);
+  setText('overviewMonthOut', mOut);
+  // Recent transactions table
+  const recentEmpty = byId('accountsRecentEmpty');
+  const tbl = byId('accountsRecentTable');
+  const tbody = byId('accountsRecentTbody');
+  if (!tbody) return;
+  const rows = flows.slice(0, 10);
+  if (!rows.length) {
+    if (recentEmpty) recentEmpty.style.display = '';
+    if (tbl) tbl.style.display = 'none';
+    tbody.innerHTML = '';
+    return;
+  }
+  if (recentEmpty) recentEmpty.style.display = 'none';
+  if (tbl) tbl.style.display = '';
+  const accs = __getLocalAccounts();
+  const accName = (id)=> (accs.find(a=>a.id===id)?.name) || '';
+  tbody.innerHTML = rows.map(t=>{
+    const typ = String(t.type||'').toLowerCase();
+    const amt = Math.abs(Number(t.amount||0))||0;
+    return `<tr class="hover:bg-gray-50">
+      <td class="px-4 py-2">${escapeHtml(t.date||'')}</td>
+      <td class="px-4 py-2">${escapeHtml(accName(t.accountId) || t.accountName || '')}</td>
+      <td class="px-4 py-2">${(typ==='in'||typ==='income'||typ==='credit')?'In':'Out'}</td>
+      <td class="px-4 py-2">${escapeHtml(t.category||'')}</td>
+      <td class="px-4 py-2 text-right">${fmt(amt)}</td>
+      <td class="px-4 py-2">${escapeHtml(t.notes||'')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Transactions tab: date range and category filters + export CSV
+function wireTransactionsFilters() {
+  const startEl = document.getElementById('cashflowStartDate');
+  const endEl = document.getElementById('cashflowEndDate');
+  const catEl = document.getElementById('cashflowCategoryFilter');
+  const exportBtn = document.getElementById('exportCashflowCsvBtn');
+  if (startEl && !startEl.__wired) { startEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); startEl.__wired = true; }
+  if (endEl && !endEl.__wired) { endEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); endEl.__wired = true; }
+  if (catEl && !catEl.__wired) { catEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); catEl.__wired = true; populateCategoryFilter(catEl); }
+  if (exportBtn && !exportBtn.__wired) { exportBtn.addEventListener('click', exportCashflowCsv); exportBtn.__wired = true; }
+}
+
+function populateCategoryFilter(selectEl) {
+  const flows = Array.isArray(window.__cashflowAll) ? window.__cashflowAll : [];
+  const cats = Array.from(new Set(flows.map(f => (f.category||'').trim()).filter(Boolean))).sort();
+  const opts = ['<option value="">All Categories</option>'].concat(cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
+  selectEl.innerHTML = opts.join('');
+}
+
+// Post-filter cashflow table rows in DOM based on date range/category filters
+function postFilterCashflowTable() {
+  try {
+    const start = document.getElementById('cashflowStartDate')?.value || '';
+    const end = document.getElementById('cashflowEndDate')?.value || '';
+    const cat = document.getElementById('cashflowCategoryFilter')?.value || '';
+    const tbody = document.getElementById('cashflowTableBody');
+    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
+    let inSum = 0, outSum = 0;
+    rows.forEach(tr => {
+      const tds = tr.querySelectorAll('td');
+      const d = tds[0]?.textContent || '';
+      const typ = (tds[2]?.textContent || '').toLowerCase();
+      const catTxt = (tds[3]?.textContent || '').trim();
+      const amtTxt = (tds[4]?.textContent || '').replace(/[^0-9.\-]/g,'');
+      const amt = Math.abs(Number(amtTxt)||0);
+      let ok = true;
+      if (start && d < start) ok = false;
+      if (end && d > end) ok = false;
+      if (cat && catTxt !== cat) ok = false;
+      tr.style.display = ok ? '' : 'none';
+      if (ok) { if (typ==='in') inSum += amt; else if (typ==='out') outSum += amt; }
+    });
+    const sumEl = document.getElementById('cashflowSummary');
+    if (sumEl) {
+      const fmt=(n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+      sumEl.textContent = `In: ${fmt(inSum)} • Out: ${fmt(outSum)} • Net: ${fmt(inSum-outSum)}`;
+    }
+  } catch {}
+}
+
+function exportCashflowCsv() {
+  const flows = Array.isArray(window.__cashflowAll) ? window.__cashflowAll.slice() : [];
+  const start = document.getElementById('cashflowStartDate')?.value || '';
+  const end = document.getElementById('cashflowEndDate')?.value || '';
+  const accId = document.getElementById('cashflowAccountFilter')?.value || '';
+  const cat = document.getElementById('cashflowCategoryFilter')?.value || '';
+  const rows = flows.filter(f => {
+    if (start && (f.date||'') < start) return false;
+    if (end && (f.date||'') > end) return false;
+    if (accId && (f.accountId||'') !== accId) return false;
+    if (cat && (f.category||'') !== cat) return false;
+    return true;
+  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const head = ['Date','Account','Type','Category','Amount','Notes'];
+  const accs = __getLocalAccounts();
+  const accName = (id)=> (accs.find(a=>a.id===id)?.name || '');
+  const csv = [head].concat(rows.map(r=>[
+    r.date||'',
+    accName(r.accountId),
+    (String(r.type||'').toLowerCase()==='in'?'In':'Out'),
+    r.category||'',
+    Number(r.amount||0),
+    (r.notes||'').replace(/\n/g,' ')
+  ])).map(cols=>cols.map(quoteCsv).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download=`cashflows_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+// Transfer modal: open/close and submit
+window.openTransferModal = function() {
+  try { populateTransferAccounts(); } catch {}
+  const d = document.getElementById('tfDate'); if (d) d.valueAsDate = new Date();
+  const m = document.getElementById('transferModal'); if (m) m.classList.add('show');
+}
+window.closeTransferModal = function() { const m = document.getElementById('transferModal'); if (m) m.classList.remove('show'); }
+
+function populateTransferAccounts() {
+  const fromSel = document.getElementById('tfFromAccount');
+  const toSel = document.getElementById('tfToAccount');
+  const accs = __getLocalAccounts().filter(a => (String(a.type||'').toLowerCase() === 'asset'));
+  const opts = accs.map(a => `<option value="${a.id}">${escapeHtml(a.name||'')}</option>`);
+  if (fromSel) fromSel.innerHTML = opts.join('');
+  if (toSel) toSel.innerHTML = opts.join('');
+}
+
+document.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'transferForm') {
+    e.preventDefault();
+    const date = document.getElementById('tfDate')?.value || '';
+    const from = document.getElementById('tfFromAccount')?.value || '';
+    const to = document.getElementById('tfToAccount')?.value || '';
+    const amount = Math.abs(Number(document.getElementById('tfAmount')?.value || 0)) || 0;
+    const notes = document.getElementById('tfNotes')?.value || '';
+    if (!date || !from || !to || !(amount > 0)) { showToast('Fill all fields with a positive amount', 'warning'); return; }
+    if (from === to) { showToast('Choose two different accounts', 'warning'); return; }
+    try {
+      // Create two cashflow entries: OUT from source, IN to destination
+      await addDoc(collection(db, 'cashflows'), cleanData({ date, type:'out', accountId: from, amount, category: 'Transfer', notes: `Transfer to ${to}. ${notes}`||undefined, createdAt: new Date().toISOString() }));
+      await addDoc(collection(db, 'cashflows'), cleanData({ date, type:'in', accountId: to, amount, category: 'Transfer', notes: `Transfer from ${from}. ${notes}`||undefined, createdAt: new Date().toISOString() }));
+      showToast('Transfer saved', 'success');
+      try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
+      closeTransferModal();
+    } catch (err) {
+      console.warn('Transfer failed', err);
+      showToast('Failed to save transfer', 'error');
+    }
+  }
+});
+
+// Compute and render Current Fund Available
+let __cashflowShadow = [];
+function updateAccountsFundCard() {
+  // Prefer dedicated caches; fallback to module-provided shadows
+  // Opening fund comes from stats/fund (bank-style)
+  const openingTotal = Number(__fundOpening || 0);
+  // Net cashflow across all cashflows (asset account filtering removed)
+  const flows = (__fundCashflowsCache && __fundCashflowsCache.length)
+    ? __fundCashflowsCache
+    : ((Array.isArray(__cashflowShadow) && __cashflowShadow.length)
+      ? __cashflowShadow
+      : (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []));
+  let inSum = 0, outSum = 0;
+  for (const t of flows) {
+    if (!t) continue;
+    const typeStr = String(t.type || '').toLowerCase();
+    const amt = Math.abs(Number(t.amount || 0)) || 0;
+    if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
+    else if (typeStr === 'out' || typeStr === 'expense' || typeStr === 'debit') outSum += amt;
+  }
+  const net = inSum - outSum;
+  const total = openingTotal + net;
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const el = document.getElementById('accountsFundValue');
+  if (el) el.textContent = fmt(total);
+  const asOf = document.getElementById('accountsFundAsOf');
+  if (asOf) asOf.textContent = `as of ${new Date().toLocaleString()}`;
+  // computedFundLabel removed with Edit Fund modal
+}
+
+// Dedicated snapshot-based fund updater
+function subscribeFundCardSnapshots() {
+  // Cashflows snapshot
+  try {
+    if (__unsubFundCashflows) { __unsubFundCashflows(); __unsubFundCashflows = null; }
+  } catch {}
+  __unsubFundCashflows = onSnapshot(collection(db, 'cashflows'), (snap) => {
+    __fundCashflowsCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Also keep the global cache in sync for other listeners
+    try { window.__cashflowAll = __fundCashflowsCache.slice(); } catch {}
+    try { updateAccountsFundCard(); } catch {}
+  }, (err) => { console.warn('Fund cashflows snapshot error', err); });
+
+  // Stats/fund snapshot (opening)
+  try {
+    if (__unsubFundStats) { __unsubFundStats(); __unsubFundStats = null; }
+  } catch {}
+  __unsubFundStats = onSnapshot(doc(db, 'stats', 'fund'), (snap) => {
+    if (snap && snap.exists()) {
+      const d = snap.data();
+      __fundOpening = Number(d.opening || d.value || 0) || 0; // prefer explicit opening; fallback to value for legacy
+    } else {
+      __fundOpening = 0;
+    }
+    try { updateAccountsFundCard(); } catch {}
+  }, (err) => { console.warn('Fund stats snapshot error', err); });
+}
+
+// Deterministic recompute: read stats/fund opening + cashflows from Firestore, compute total, and persist to stats/fund
+async function recomputeFundFromFirestoreAndPersist() {
+  try {
+    // Ensure stats/fund exists; read opening
+    let openingTotal = 0;
+    try {
+      const fundSnap = await getDoc(doc(db, 'stats', 'fund'));
+      if (fundSnap.exists()) {
+        const d = fundSnap.data();
+        openingTotal = Number(d.opening || d.value || 0) || 0; // backward compatible
+      } else {
+        // initialize with opening=0
+        await setDoc(doc(db, 'stats', 'fund'), cleanData({ opening: 0, value: 0, inSum: 0, outSum: 0, asOf: new Date().toISOString() }));
+        openingTotal = 0;
+      }
+    } catch {}
+    const cfSnap = await getDocs(collection(db, 'cashflows'));
+    const flows = cfSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let inSum = 0, outSum = 0;
+    for (const t of flows) {
+      const amt = Math.abs(Number(t?.amount || 0)) || 0;
+      const typeStr = String(t?.type || '').toLowerCase();
+      if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
+      else if (typeStr === 'out' || typeStr === 'expense' || typeStr === 'debit') outSum += amt;
+    }
+    const total = openingTotal + (inSum - outSum);
+    // Persist a small summary doc for robustness and quick reads if needed
+    const payload = cleanData({
+      opening: Number(openingTotal),
+      value: Number(total),
+      inSum: Number(inSum),
+      outSum: Number(outSum),
+      asOf: new Date().toISOString()
+    });
+    try { await setDoc(doc(db, 'stats', 'fund'), payload); } catch {}
+    // Update UI now
+    try { updateAccountsFundCard(); } catch {}
+    return total;
+  } catch (e) {
+    console.warn('Fund recompute failed', e);
+    // Still attempt to update UI from current caches
+    try { updateAccountsFundCard(); } catch {}
+    return null;
+  }
+}
+
+// Expose for modules
+try { window.__recomputeFund = recomputeFundFromFirestoreAndPersist; } catch {}
+
+// Ensure a default Asset account exists (e.g., Cash/Bank) and return its id
+async function ensureAssetAccount(keyword, fallbackName) {
+  const list = __getLocalAccounts();
+  const match = (list || []).find(a => (a.type || '').toLowerCase() === 'asset' && (a.name || '').toLowerCase().includes(keyword.toLowerCase()));
+  if (match) return match.id;
+  // Create new
+  try {
+    const payload = cleanData({ name: fallbackName, type: 'Asset', opening: 0, createdAt: new Date().toISOString() });
+    const ref = await addDoc(collection(db, 'accounts'), payload);
+    return ref.id;
+  } catch (e) {
+    console.warn('Failed to create default asset account', fallbackName, e);
+    return '';
+  }
+}
+
+// Edit Fund modal removed: manual fund adjustments disabled
+
+// Provide accounts to cashflow (kept in shadow from realtime listener)
+function __getLocalAccounts() { return __accountsShadow.slice(); }
 
 async function handleSignOut() {
   try {
@@ -698,6 +1451,20 @@ function renderPayrollTable() {
   });
 }
 
+// Ensure monthly balances snapshot for current month
+function ensureCurrentMonthBalances() {
+  const now = new Date();
+  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if (lastBalanceEnsureMonth === ym) return;
+  // Only proceed if we have some employees loaded
+  const all = [...employees, ...temporaryEmployees];
+  if (!all.length) return;
+  lastBalanceEnsureMonth = ym;
+  // Fire-and-forget upserts; they compute basic/advances/payments for this month
+  for (const emp of all) {
+    upsertMonthlyBalanceFor(emp.id, now).catch(() => {});
+  }
+}
 // Render a printable payroll frame
 function renderPayrollFrame() {
   payrollRenderFrame({
@@ -738,33 +1505,177 @@ window.viewPayroll = function (id, which) {
     modal.classList.add('show');
     try { modal.querySelector('.modal-content')?.focus(); } catch {}
   }
+
+  // Default to Overview tab on open
+  setPayrollViewActiveTab('overview');
+
+  // Load payslips for this employee into the Payroll Details modal
+  loadPayslipsForPayrollModal(emp.id).catch(() => {});
 };
 
 window.closePayrollModal = function () {
   const modal = document.getElementById('payrollModal');
   if (modal) modal.classList.remove('show');
   currentPayrollView = null;
+  // Clear payslips list on close
+  const l = document.getElementById('payrollPayslipsList');
+  const e = document.getElementById('payrollPayslipsEmpty');
+  const g = document.getElementById('payrollPayslipsLoading');
+  if (l) l.innerHTML = '';
+  if (e) e.style.display = '';
+  if (g) g.style.display = 'none';
 };
+
+// Helper to switch tabs in Payroll Details modal
+function setPayrollViewActiveTab(which) {
+  const btnOv = document.getElementById('payrollViewTabOverviewBtn');
+  const btnPs = document.getElementById('payrollViewTabPayslipsBtn');
+  const tabOv = document.getElementById('payrollViewTabOverview');
+  const tabPs = document.getElementById('payrollViewTabPayslips');
+  if (!btnOv || !btnPs || !tabOv || !tabPs) return;
+
+  const activate = (btn) => {
+    btn.classList.add('font-semibold', 'text-indigo-600');
+    btn.classList.add('border-b-2', 'border-indigo-600');
+    btn.classList.remove('text-gray-600');
+  };
+  const deactivate = (btn) => {
+    btn.classList.remove('font-semibold', 'text-indigo-600');
+    btn.classList.remove('border-b-2', 'border-indigo-600');
+    btn.classList.add('text-gray-600');
+  };
+
+  if (which === 'payslips') {
+    tabOv.style.display = 'none';
+    tabPs.style.display = '';
+    deactivate(btnOv); activate(btnPs);
+    // Ensure list is populated/refreshed when switching
+    if (currentPayrollView?.id) {
+      loadPayslipsForPayrollModal(currentPayrollView.id).catch(() => {});
+    }
+  } else {
+    tabPs.style.display = 'none';
+    tabOv.style.display = '';
+    deactivate(btnPs); activate(btnOv);
+  }
+}
+
+// Wire tab buttons for Payroll Details modal
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'payrollViewTabOverviewBtn') {
+    setPayrollViewActiveTab('overview');
+  } else if (e.target && e.target.id === 'payrollViewTabPayslipsBtn') {
+    setPayrollViewActiveTab('payslips');
+  }
+});
+async function loadPayslipsForPayrollModal(employeeId) {
+  const listEl = document.getElementById('payrollPayslipsList');
+  // New split sections
+  const advListEl = document.getElementById('payrollPayslipsAdvList');
+  const advEmptyEl = document.getElementById('payrollPayslipsAdvEmpty');
+  const advLoadingEl = document.getElementById('payrollPayslipsAdvLoading');
+  const salListEl = document.getElementById('payrollPayslipsSalList');
+  const salEmptyEl = document.getElementById('payrollPayslipsSalEmpty');
+  const salLoadingEl = document.getElementById('payrollPayslipsSalLoading');
+  // Backward compatibility: if new elements are missing, fall back to old
+  const emptyEl = document.getElementById('payrollPayslipsEmpty');
+  const loadingEl = document.getElementById('payrollPayslipsLoading');
+  if (!employeeId) return;
+  try {
+    // Initialize new sections
+    if (advLoadingEl) advLoadingEl.style.display = '';
+    if (salLoadingEl) salLoadingEl.style.display = '';
+    if (advEmptyEl) advEmptyEl.style.display = 'none';
+    if (salEmptyEl) salEmptyEl.style.display = 'none';
+    if (advListEl) advListEl.innerHTML = '';
+    if (salListEl) salListEl.innerHTML = '';
+    // Clear legacy area if present
+    if (loadingEl) loadingEl.style.display = '';
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (listEl) listEl.innerHTML = '';
+    // Avoid requiring a composite index by removing orderBy and sorting client-side
+    const q2 = query(collection(db, 'payslips'), where('employeeId', '==', employeeId));
+    const snap2 = await getDocs(q2);
+    if (snap2.empty) {
+      if (advLoadingEl) advLoadingEl.style.display = 'none';
+      if (salLoadingEl) salLoadingEl.style.display = 'none';
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (advEmptyEl) advEmptyEl.style.display = '';
+      if (salEmptyEl) salEmptyEl.style.display = '';
+      if (emptyEl) emptyEl.style.display = '';
+      return;
+    }
+    const docs = snap2.docs.map(docu => {
+      const d = docu.data();
+      const dt = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt && d.createdAt.seconds ? new Date(d.createdAt.seconds * 1000) : null);
+      return { id: docu.id, data: d, createdAt: dt };
+    }).sort((a, b) => {
+      const ta = a.createdAt ? a.createdAt.getTime() : 0;
+      const tb = b.createdAt ? b.createdAt.getTime() : 0;
+      return tb - ta; // desc
+    });
+    const renderItem = ({ id, data: d, createdAt: dt }) => {
+      const created = dt ? dt.toLocaleString() : '';
+      const ym = d.period || '';
+      const monthTitle = ym ? new Date(Number(ym.split('-')[0]), Number(ym.split('-')[1]) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : '';
+      const amount = Number(d.net || d.advance || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      return `
+        <div class="border border-gray-200 rounded-md p-3 flex items-center justify-between">
+          <div>
+            <div class="font-semibold text-gray-900">${monthTitle || 'Payslip'}</div>
+            <div class="text-xs text-gray-500">${created}</div>
+            <div class="text-sm text-gray-700">${d.isAdvance ? 'Advance' : 'Salary'}: $${amount}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-ghost btn-sm" data-preview data-id="${id}"><i class="fas fa-eye"></i> View</button>
+            <button class="btn btn-secondary btn-sm" data-reprint data-id="${id}"><i class="fas fa-print"></i> Reprint</button>
+            <button class="btn btn-danger btn-sm" data-delete data-id="${id}"><i class="fas fa-trash"></i> Delete</button>
+          </div>
+        </div>
+      `;
+    };
+    // Split docs
+    const advDocs = docs.filter(x => Boolean(x.data.isAdvance));
+    const salDocs = docs.filter(x => !Boolean(x.data.isAdvance));
+    if (advListEl) advListEl.innerHTML = advDocs.map(renderItem).join('');
+    if (salListEl) salListEl.innerHTML = salDocs.map(renderItem).join('');
+    // Legacy fill (if new elements not found)
+    if ((!advListEl || !salListEl) && listEl) listEl.innerHTML = docs.map(renderItem).join('');
+    // Empty states
+    if (advEmptyEl) advEmptyEl.style.display = advDocs.length ? 'none' : '';
+    if (salEmptyEl) salEmptyEl.style.display = salDocs.length ? 'none' : '';
+  } catch (e) {
+    console.warn('Failed to load payslips (payroll modal)', e);
+    if (advEmptyEl) { advEmptyEl.textContent = 'Failed to load payslips'; advEmptyEl.style.display = ''; }
+    if (salEmptyEl) { salEmptyEl.textContent = 'Failed to load payslips'; salEmptyEl.style.display = ''; }
+    if (emptyEl) { emptyEl.textContent = 'Failed to load payslips'; emptyEl.style.display = ''; }
+  } finally {
+    if (advLoadingEl) advLoadingEl.style.display = 'none';
+    if (salLoadingEl) salLoadingEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+}
 
 // Payslip Form modal controls
 window.openPayslipForm = function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
   const emp = list.find(e => e.id === id);
   if (!emp) { showToast('Employee not found for payslip', 'error'); return; }
+  if (emp.terminated) { showToast('This employee is terminated. Payslips are disabled.', 'warning'); return; }
 
   // Prefill form fields
   const nameEl = document.getElementById('psEmployeeName');
   const typeEl = document.getElementById('psEmployeeType');
   const periodEl = document.getElementById('psPeriod');
   const basicEl = document.getElementById('psBasic');
-  const allowEl = document.getElementById('psAllowances');
-  const dedEl = document.getElementById('psDeductions');
+  const advAmtEl = document.getElementById('psAdvanceAmount');
+  // removed: psIsAdvance control
   const notesEl = document.getElementById('psNotes');
   if (nameEl) nameEl.value = emp.name || '';
   if (typeEl) typeEl.value = which === 'temporary' ? 'Temporary' : 'Permanent';
   if (basicEl) basicEl.value = Number(emp.salary || 0);
-  if (allowEl) allowEl.value = Number(allowEl?.value || 0);
-  if (dedEl) dedEl.value = Number(dedEl?.value || 0);
+  if (advAmtEl) advAmtEl.value = Number(advAmtEl?.value || 0);
+  // removed default for psIsAdvance
   if (notesEl) notesEl.value = notesEl.value || '';
   if (periodEl && !periodEl.value) {
     const now = new Date();
@@ -794,7 +1705,8 @@ window.closePayslipModal = function() {
 window.openPaymentForm = function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
   const emp = list.find(e => e.id === id);
-  if (!emp) { showToast('Employee not found for payment', 'error'); return; }
+  if (!emp) { showToast('Employee not found for salary payment', 'error'); return; }
+  if (emp.terminated) { showToast('This employee is terminated. Payments are disabled.', 'warning'); return; }
 
   const nameEl = document.getElementById('payEmployeeName');
   const typeEl = document.getElementById('payEmployeeType');
@@ -805,6 +1717,8 @@ window.openPaymentForm = function(id, which) {
   const advEl = document.getElementById('payIsAdvance');
   const deductEl = document.getElementById('payDeductFrom');
   const notesEl = document.getElementById('payNotes');
+  const overtimeEl = document.getElementById('payOvertime');
+  const overtimeHoursEl = document.getElementById('payOvertimeHours');
   if (nameEl) nameEl.value = emp.name || '';
   if (typeEl) typeEl.value = which === 'temporary' ? 'Temporary' : 'Permanent';
   if (dateEl) dateEl.valueAsDate = new Date();
@@ -814,6 +1728,8 @@ window.openPaymentForm = function(id, which) {
   if (advEl) advEl.value = 'no';
   if (deductEl) deductEl.value = 'none';
   if (notesEl) notesEl.value = '';
+  if (overtimeEl) overtimeEl.value = '';
+  if (overtimeHoursEl) overtimeHoursEl.value = '';
 
   currentPayrollView = { ...emp, _which: which === 'temporary' ? 'temporary' : 'employees' };
   const modal = document.getElementById('paymentModal');
@@ -831,10 +1747,10 @@ window.closePaymentModal = function() {
 // Payslip net calculator
 function getPayslipNumbers() {
   const basic = Number(document.getElementById('psBasic')?.value || 0);
-  const allowances = Number(document.getElementById('psAllowances')?.value || 0);
-  const deductions = Number(document.getElementById('psDeductions')?.value || 0);
-  const net = basic + allowances - deductions;
-  return { basic, allowances, deductions, net };
+  const advance = Number(document.getElementById('psAdvanceAmount')?.value || 0);
+  // For advance slip, the paid amount equals the advance value; net here is simply the advance amount shown
+  const net = advance;
+  return { basic, advance, net };
 }
 
 function updatePayslipNet() {
@@ -845,7 +1761,7 @@ function updatePayslipNet() {
 
 // Wire payslip input change handlers and print button
 document.addEventListener('input', (e) => {
-  const ids = ['psBasic','psAllowances','psDeductions'];
+  const ids = ['psBasic','psAdvanceAmount'];
   if (e.target && ids.includes(e.target.id)) {
     updatePayslipNet();
   }
@@ -854,28 +1770,262 @@ document.addEventListener('input', (e) => {
 document.addEventListener('click', (e) => {
   if (e.target && e.target.id === 'payslipPrintBtn') {
     e.preventDefault();
-    try { renderAndPrintPayslip(); } catch (err) { console.error(err); showToast('Failed to print payslip', 'error'); }
+    const ok = confirm('Confirm generating this payslip and updating the current salary balance?');
+    if (!ok) return;
+    savePayslipThenPrint().then(() => {
+      try { window.__payrollBalancesInvalidate?.(); } catch {}
+    }).catch(err => {
+      console.error(err);
+      showToast('Failed to save payslip; printing anyway', 'warning');
+      try { renderAndPrintPayslip(); } catch (err2) { console.error(err2); showToast('Failed to print payslip', 'error'); }
+    });
   } else if (e.target && e.target.id === 'paymentPrintBtn') {
     e.preventDefault();
-    try { renderAndPrintPaymentSlip(); } catch (err) { console.error(err); showToast('Failed to print payment slip', 'error'); }
+    savePaymentThenPrint().catch(err => {
+      console.error(err);
+      showToast('Failed to save salary payment; printing anyway', 'warning');
+      try { renderAndPrintPaymentSlip(); } catch (err2) { console.error(err2); showToast('Failed to print salary slip', 'error'); }
+    });
   }
 });
+
+async function savePaymentThenPrint() {
+  const emp = currentPayrollView;
+  if (!emp) { showToast('No employee selected', 'warning'); return; }
+  const payDate = document.getElementById('payDate')?.value || '';
+  const amount = Number(document.getElementById('payAmount')?.value || 0);
+  const method = document.getElementById('payMethod')?.value || 'cash';
+  const ref = document.getElementById('payRef')?.value || '';
+  // Payment modal no longer supports advances here; treat as non-advance salary payment
+  const isAdvance = false;
+  const deductFrom = document.getElementById('payDeductFrom')?.value || 'none';
+  const notes = document.getElementById('payNotes')?.value || '';
+  const overtime = Number(document.getElementById('payOvertime')?.value || 0);
+  const overtimeHours = Number(document.getElementById('payOvertimeHours')?.value || 0);
+  const totalEntered = Number(amount) + Number(overtime || 0);
+  if (totalEntered <= 0) { showToast('Enter a valid payment amount or overtime', 'warning'); return; }
+  if (overtime < 0) { showToast('Overtime amount cannot be negative', 'warning'); return; }
+  if (overtimeHours < 0) { showToast('Overtime hours cannot be negative', 'warning'); return; }
+  if (!payDate) { showToast('Select a payment date', 'warning'); return; }
+
+  const record = cleanData({
+    employeeId: emp.id,
+    employeeType: emp._which === 'temporary' ? 'Temporary' : 'Permanent',
+    employeeName: emp.name || '',
+    department: emp.department || '',
+    position: emp.position || '',
+    qid: emp.qid || '',
+    amount,
+  overtime,
+  overtimeHours,
+    method,
+    reference: ref,
+  isAdvance, // always false for salary payments
+    deductFrom,
+    notes,
+    date: payDate,
+    createdAt: serverTimestamp(),
+    createdBy: auth?.currentUser?.uid || undefined,
+    createdByEmail: auth?.currentUser?.email || undefined,
+  });
+
+  try {
+    await addDoc(collection(db, 'payments'), record);
+    showToast('Salary payment saved', 'success');
+    try { window.__payrollBalancesInvalidate?.(); } catch {}
+    // Also update the payroll table immediately if it's on screen
+    try {
+      const payrollSection = document.getElementById('payrollSection');
+      if (payrollSection && payrollSection.style.display !== 'none') {
+        renderPayrollTable();
+      }
+    } catch {}
+    // Persist the monthly balance snapshot for this employee and month
+    try { await upsertMonthlyBalanceFor(emp.id, new Date(payDate)); } catch (e) { console.warn('Balance upsert failed (payment)', e); }
+    // Also create a non-advance payslip entry for this payment so it appears under Salary Payslips
+    try {
+      const dObj = new Date(payDate);
+      const ym = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}`;
+      // Determine basic for the month (prefer latest payslip basic if exists)
+      let basicForMonth = Number(emp.salary || 0);
+      try {
+        const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
+        const all = psSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const thisMonth = all.filter(p => (p.period || '') === ym);
+        if (thisMonth.length) {
+          const latest = thisMonth.sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))[0];
+          if (latest && Number(latest.basic)) basicForMonth = Number(latest.basic);
+        }
+      } catch {}
+      const totalPaid = Number(amount) + Number(overtime || 0);
+      const notesParts = [
+        `Payment: ${method}`,
+        ref ? `Ref: ${ref}` : null,
+        overtime > 0 ? `OT: $${Number(overtime).toLocaleString(undefined,{maximumFractionDigits:2})}${overtimeHours>0?` (${overtimeHours}h)`:''}` : null,
+      ].filter(Boolean);
+      const slip = cleanData({
+        employeeId: emp.id,
+        employeeType: emp._which === 'temporary' ? 'Temporary' : 'Permanent',
+        employeeName: emp.name || '',
+        department: emp.department || '',
+        position: emp.position || '',
+        qid: emp.qid || '',
+        period: ym,
+        basic: Number(basicForMonth),
+        advance: 0,
+        net: Number(totalPaid),
+        notes: notesParts.join(' • '),
+        isAdvance: false,
+        createdAt: serverTimestamp(),
+        createdBy: auth?.currentUser?.uid || undefined,
+        createdByEmail: auth?.currentUser?.email || undefined,
+      });
+      await addDoc(collection(db, 'payslips'), slip);
+      // If Payroll Details is open for this employee, refresh the payslips tab
+      try {
+        const modal = document.getElementById('payrollModal');
+        if (modal && modal.classList.contains('show') && currentPayrollView?.id === emp.id) {
+          await loadPayslipsForPayrollModal(emp.id);
+        }
+      } catch {}
+    } catch (e) {
+      console.warn('Failed to create payslip from salary payment (non-fatal)', e);
+    }
+  } catch (e) {
+    console.error('Save payment failed', e);
+    showToast('Failed to save salary payment', 'error');
+    throw e;
+  }
+  // Post a cashflow OUT entry to reduce fund (amount + overtime)
+  try {
+    const dObj = new Date(document.getElementById('payDate')?.value || new Date());
+    const totalPaid = Number(document.getElementById('payAmount')?.value || 0) + Number(document.getElementById('payOvertime')?.value || 0);
+    if (totalPaid > 0) {
+      const accId = await ensureAssetAccount('cash', 'Cash');
+      if (accId) {
+        await addDoc(collection(db, 'cashflows'), cleanData({
+          date: `${dObj.getFullYear()}-${String(dObj.getMonth()+1).padStart(2,'0')}-${String(dObj.getDate()).padStart(2,'0')}`,
+          type: 'out',
+          accountId: accId,
+          amount: Math.abs(Number(totalPaid) || 0),
+          category: 'Salary',
+          notes: `Salary payment for ${currentPayrollView?.name || ''}`,
+          createdAt: new Date().toISOString(),
+        }));
+        try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
+      }
+    }
+  } catch (cfErr) {
+    console.warn('Failed to post cashflow for salary payment (non-fatal)', cfErr);
+  }
+  await renderAndPrintPaymentSlip();
+}
+
+async function savePayslipThenPrint() {
+  const emp = currentPayrollView;
+  if (!emp) { showToast('No employee selected', 'warning'); return; }
+  const period = document.getElementById('psPeriod')?.value || '';
+  const notes = document.getElementById('psNotes')?.value || '';
+  const { basic, advance, net } = getPayslipNumbers();
+  const isAdvance = Number(advance) > 0;
+  if (!period) { showToast('Select a pay period', 'warning'); return; }
+
+  const record = cleanData({
+    employeeId: emp.id,
+    employeeType: emp._which === 'temporary' ? 'Temporary' : 'Permanent',
+    employeeName: emp.name || '',
+    department: emp.department || '',
+    position: emp.position || '',
+    qid: emp.qid || '',
+    period,
+    basic,
+    advance,
+    net,
+    notes,
+    isAdvance,
+    createdAt: serverTimestamp(),
+    createdBy: auth?.currentUser?.uid || null,
+    createdByEmail: auth?.currentUser?.email || null,
+  });
+  try {
+    await addDoc(collection(db, 'payslips'), record);
+    showToast('Payslip saved', 'success');
+    // If Payroll Details modal is open for this employee, refresh the payslips tab
+    try {
+      const modal = document.getElementById('payrollModal');
+      if (modal && modal.classList.contains('show') && currentPayrollView?.id === emp.id) {
+        await loadPayslipsForPayrollModal(emp.id);
+      }
+    } catch {}
+    // Persist the monthly balance snapshot for this employee and selected period
+    try {
+      const [y,m] = (record.period || '').split('-');
+      const when = (y && m) ? new Date(Number(y), Number(m)-1, 1) : new Date();
+      await upsertMonthlyBalanceFor(emp.id, when);
+      try { window.__payrollBalancesInvalidate?.(); } catch {}
+    } catch (e) { console.warn('Balance upsert failed (payslip)', e); }
+  } catch (e) {
+    console.error('Save payslip failed', e);
+    showToast('Failed to save payslip', 'error');
+    throw e;
+  }
+  // If this was an advance, post a cashflow OUT entry
+  try {
+    if (isAdvance && Number(advance) > 0) {
+      const [yy, mm] = (period || '').split('-');
+      const dt = (yy && mm) ? new Date(Number(yy), Number(mm)-1, 1) : new Date();
+      const accId = await ensureAssetAccount('cash', 'Cash');
+      if (accId) {
+        await addDoc(collection(db, 'cashflows'), cleanData({
+          date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
+          type: 'out',
+          accountId: accId,
+          amount: Math.abs(Number(advance) || 0),
+          category: 'Advance',
+          notes: `Salary advance for ${emp.name || ''}`,
+          createdAt: new Date().toISOString(),
+        }));
+        try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
+      }
+    }
+  } catch (cfErr) {
+    console.warn('Failed to post cashflow for advance (non-fatal)', cfErr);
+  }
+  renderAndPrintPayslip();
+}
 
 function renderAndPrintPayslip() {
   const emp = currentPayrollView;
   if (!emp) { showToast('No employee selected', 'warning'); return; }
   const period = document.getElementById('psPeriod')?.value || '';
   const notes = document.getElementById('psNotes')?.value || '';
-  const { basic, allowances, deductions, net } = getPayslipNumbers();
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-
+  const { basic, advance, net } = getPayslipNumbers();
   const area = document.getElementById('payslipPrintArea');
   if (!area) { showToast('Print area missing in DOM', 'error'); return; }
 
-  // Simple payslip template (A4-friendly)
+  // Use shared HTML builder so preview and print match
+  const html = renderPayslipHtml({ emp, period, notes, basic, advance, net });
+  const prevDisplay = area.style.display;
+  area.innerHTML = html;
+  // Ensure the area is visible for printing
+  area.style.display = 'block';
+  // Trigger print
+  const afterPrint = () => {
+    window.removeEventListener('afterprint', afterPrint);
+    // Restore previous display (hide in screen context per CSS)
+    area.style.display = prevDisplay || '';
+  };
+  window.addEventListener('afterprint', afterPrint);
+  setTimeout(() => window.print(), 50);
+}
+
+// Build payslip HTML so it can be reused by print and preview
+function renderPayslipHtml({ emp, period, notes, basic, advance, net }) {
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const monthTitle = period ? new Date(Number(period.split('-')[0]), Number(period.split('-')[1]) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Period';
   const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
-  area.innerHTML = `
+  const balanceAfterAdvance = Math.max(0, Number(basic || 0) - Number(advance || 0));
+  return `
     <section class="payslip">
       <header class="payslip-header">
         <div>
@@ -894,7 +2044,7 @@ function renderAndPrintPayslip() {
           <div class="value">${typeLabel}</div>
         </div>
         <div>
-          <div class="label">Department</div>
+          <div class="label">Company</div>
           <div class="value">${emp.department || '-'}</div>
         </div>
         <div>
@@ -912,41 +2062,38 @@ function renderAndPrintPayslip() {
       </div>
       <table class="payslip-table">
         <thead>
-          <tr><th>Earning</th><th class="text-right">Amount</th></tr>
+          <tr><th>Detail</th><th class="text-right">Amount</th></tr>
         </thead>
         <tbody>
-          <tr><td>Basic Salary</td><td class="text-right">${fmt(basic)}</td></tr>
-          <tr><td>Allowances</td><td class="text-right">${fmt(allowances)}</td></tr>
-          <tr><td>Deductions</td><td class="text-right">-${fmt(deductions)}</td></tr>
-          <tr class="total"><td>Net Pay</td><td class="text-right">${fmt(net)}</td></tr>
+          <tr><td>Basic Salary (Monthly)</td><td class="text-right">${fmt(basic)}</td></tr>
+          <tr><td>Advance Amount</td><td class="text-right">${fmt(advance)}</td></tr>
+          <tr class="total"><td>Balance Salary (after advance)</td><td class="text-right">${fmt(balanceAfterAdvance)}</td></tr>
+          <tr><td>Total Paid</td><td class="text-right">${fmt(net)}</td></tr>
         </tbody>
       </table>
       ${notes ? `<div class="payslip-notes"><div class="label">Notes</div><div class="value">${notes}</div></div>` : ''}
       <footer class="payslip-footer">Generated by CRM • ${new Date().toLocaleString()}</footer>
     </section>
   `;
-
-  // Trigger print
-  const afterPrint = () => {
-    window.removeEventListener('afterprint', afterPrint);
-    // optional cleanup
-  };
-  window.addEventListener('afterprint', afterPrint);
-  setTimeout(() => window.print(), 50);
 }
 
-function renderAndPrintPaymentSlip() {
+async function renderAndPrintPaymentSlip() {
   const emp = currentPayrollView;
   if (!emp) { showToast('No employee selected', 'warning'); return; }
   const payDate = document.getElementById('payDate')?.value || '';
   const amount = Number(document.getElementById('payAmount')?.value || 0);
   const method = document.getElementById('payMethod')?.value || 'cash';
   const ref = document.getElementById('payRef')?.value || '';
-  const isAdvance = document.getElementById('payIsAdvance')?.value === 'yes';
+  // Advances are not handled in this modal; treat as salary payment
+  const isAdvance = false;
   const deductFrom = document.getElementById('payDeductFrom')?.value || 'none';
   const notes = document.getElementById('payNotes')?.value || '';
-
-  if (!amount || amount <= 0) { showToast('Enter a valid payment amount', 'warning'); return; }
+  const overtime = Number(document.getElementById('payOvertime')?.value || 0);
+  const overtimeHours = Number(document.getElementById('payOvertimeHours')?.value || 0);
+  const totalEntered = Number(amount) + Number(overtime || 0);
+  if (totalEntered <= 0) { showToast('Enter a valid payment amount or overtime', 'warning'); return; }
+  if (overtime < 0) { showToast('Overtime amount cannot be negative', 'warning'); return; }
+  if (overtimeHours < 0) { showToast('Overtime hours cannot be negative', 'warning'); return; }
   if (!payDate) { showToast('Select a payment date', 'warning'); return; }
 
   const area = document.getElementById('payslipPrintArea');
@@ -955,18 +2102,35 @@ function renderAndPrintPaymentSlip() {
   const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const dateStr = payDate ? new Date(payDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
   const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
-  const advText = isAdvance ? 'Yes (Advance)' : 'No';
-  const deductText = {
-    none: 'Do not deduct',
-    next: 'Deduct from next payroll',
-    installments: 'Deduct in 3 installments'
-  }[deductFrom] || '—';
+  // Deduction plan display removed per request
+
+  // Compute monthly advances and balance after advances for the payment month
+  const d = new Date(payDate);
+  const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  let advancesThisPeriod = 0;
+  let basicForMonth = Number(emp.salary || 0);
+  try {
+    const snap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
+    const all = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const thisMonth = all.filter(p => (p.period || '') === ym);
+    if (thisMonth.length) {
+      const latest = thisMonth.sort((a,b) => {
+        const ta = a.createdAt?.seconds || 0; const tb = b.createdAt?.seconds || 0; return tb - ta;
+      })[0];
+      if (latest && Number(latest.basic)) basicForMonth = Number(latest.basic);
+      advancesThisPeriod = thisMonth.reduce((sum, p) => sum + Number(p.advance || 0), 0);
+    }
+  } catch (e) {
+    console.warn('Failed to compute monthly advances', e);
+  }
+  const balanceAfterAdvances = Math.max(0, Number(basicForMonth) - Number(advancesThisPeriod));
+  const totalPaid = Number(amount) + Number(overtime || 0);
 
   area.innerHTML = `
     <section class="payslip">
       <header class="payslip-header">
         <div>
-          <div class="title">Payment Slip</div>
+          <div class="title">Salary Slip</div>
           <div class="subtitle">${dateStr}</div>
         </div>
         <div class="brand">CRM</div>
@@ -981,7 +2145,7 @@ function renderAndPrintPaymentSlip() {
           <div class="value">${typeLabel}</div>
         </div>
         <div>
-          <div class="label">Department</div>
+          <div class="label">Company</div>
           <div class="value">${emp.department || '-'}</div>
         </div>
         <div>
@@ -1002,15 +2166,27 @@ function renderAndPrintPaymentSlip() {
           <tr><th>Detail</th><th class="text-right">Amount</th></tr>
         </thead>
         <tbody>
-          <tr><td>${isAdvance ? 'Advance Paid' : 'Payment Made'}</td><td class="text-right">${fmt(amount)}</td></tr>
-          <tr><td>Deduction Plan</td><td class="text-right">${advText} • ${deductText}</td></tr>
+          <tr><td>Basic Salary (Monthly)</td><td class="text-right">${fmt(basicForMonth)}</td></tr>
+          <tr><td>Advances This Period (${ym})</td><td class="text-right">${fmt(advancesThisPeriod)}</td></tr>
+          <tr class="total"><td>Balance Salary (after advances)</td><td class="text-right">${fmt(balanceAfterAdvances)}</td></tr>
+          <tr><td>${isAdvance ? 'Advance Paid' : 'Salary Paid'}</td><td class="text-right">${fmt(amount)}</td></tr>
+          ${overtime > 0 ? `<tr><td>Overtime</td><td class="text-right">${fmt(overtime)}</td></tr>` : ''}
+          ${overtimeHours > 0 ? `<tr><td>Overtime Hours</td><td class="text-right">${Number(overtimeHours).toLocaleString()}</td></tr>` : ''}
+          ${overtime > 0 ? `<tr class="total"><td>Total Paid</td><td class="text-right">${fmt(totalPaid)}</td></tr>` : ''}
+          
         </tbody>
       </table>
       ${notes ? `<div class="payslip-notes"><div class="label">Notes</div><div class="value">${notes}</div></div>` : ''}
       <footer class="payslip-footer">Generated by CRM • ${new Date().toLocaleString()}</footer>
     </section>
   `;
-
+  const prevDisplay = area.style.display;
+  area.style.display = 'block';
+  const afterPrint = () => {
+    window.removeEventListener('afterprint', afterPrint);
+    area.style.display = prevDisplay || '';
+  };
+  window.addEventListener('afterprint', afterPrint);
   setTimeout(() => window.print(), 50);
 }
 
@@ -1041,6 +2217,14 @@ function setPayrollSubTab(which) {
   });
 }
 
+// Allow payroll module to request balance recompute after transactions
+window.__payrollBalancesInvalidate = function() {
+  try {
+    const evt = new CustomEvent('payroll:recompute-balances');
+    document.dispatchEvent(evt);
+  } catch {}
+}
+
 // Note: maskAccount is also implemented in modules/utils for module use
 
 function exportPayrollCsv() {
@@ -1053,6 +2237,15 @@ function quoteCsv(val) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 window.closeEmployeeModal = function() {
@@ -1139,6 +2332,7 @@ function renderEmployeeTable() {
     getEmployees: () => employees,
     getSearchQuery: () => currentSearch,
     getDepartmentFilter: () => currentDepartmentFilter,
+    getShowTerminated: () => true,
   });
 }
 
@@ -1172,6 +2366,17 @@ window.viewEmployee = async function(id, which) {
   if (deptChip) deptChip.textContent = deptText || '—';
   const typeChip = byId('viewTypeChip');
   if (typeChip) typeChip.textContent = (list === temporaryEmployees) ? 'Temporary' : 'Permanent';
+  const termBadge = byId('viewTerminatedBadge');
+  if (termBadge) {
+    if (emp.terminated) termBadge.classList.remove('hidden'); else termBadge.classList.add('hidden');
+  }
+    // Show Reinstate when terminated; show Terminate otherwise
+    try {
+      const termBtn = byId('viewActionTerminate');
+      const reinBtn = byId('viewActionReinstate');
+      if (termBtn) termBtn.style.display = emp.terminated ? 'none' : '';
+      if (reinBtn) reinBtn.style.display = emp.terminated ? '' : 'none';
+    } catch {}
     setText('viewEmail', emp.email || '');
     setText('viewQid', emp.qid || '-');
     setText('viewPhone', emp.phone || '-');
@@ -1254,6 +2459,221 @@ window.viewEmployee = async function(id, which) {
     try { console.timeEnd(perfLabel); } catch {}
   });
 }
+// (Removed) Employee View payslips loader
+
+// Reprint handler
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-reprint]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  if (!id) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'payslips'), where('__name__', '==', id)));
+    if (snap.empty) return;
+    const d = snap.docs[0].data();
+    // Populate transient state and fields used by print template
+    currentPayrollView = {
+      id: d.employeeId,
+      name: d.employeeName,
+      department: d.department,
+      position: d.position,
+      qid: d.qid,
+      joinDate: '',
+      _which: d.employeeType === 'Temporary' ? 'temporary' : 'employees'
+    };
+    // Inject into form inputs so render routine can read values
+    const periodEl = document.getElementById('psPeriod');
+    const basicEl = document.getElementById('psBasic');
+    const notesEl = document.getElementById('psNotes');
+  // removed: psIsAdvance element
+    const advAmtEl = document.getElementById('psAdvanceAmount');
+    if (periodEl) periodEl.value = d.period || '';
+    if (basicEl) basicEl.value = d.basic || 0;
+    if (notesEl) notesEl.value = d.notes || '';
+  // no psIsAdvance; isAdvance derived from amount when printing/saving
+    if (advAmtEl) advAmtEl.value = d.advance || d.net || 0;
+    renderAndPrintPayslip();
+  } catch (err) {
+    console.warn('Reprint failed', err);
+    showToast('Failed to reprint payslip', 'error');
+  }
+});
+
+// Preview handler: open payslip in a view modal (same template as print)
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-preview]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  if (!id) return;
+  try {
+    const snap = await getDocs(query(collection(db, 'payslips'), where('__name__', '==', id)));
+    if (snap.empty) return;
+    const d = snap.docs[0].data();
+    // Build a minimal emp context for template rendering
+    const emp = {
+      id: d.employeeId,
+      name: d.employeeName,
+      department: d.department,
+      position: d.position,
+      qid: d.qid,
+      joinDate: '',
+      _which: d.employeeType === 'Temporary' ? 'temporary' : 'employees'
+    };
+    // Render the payslip HTML fragment
+    const html = renderPayslipHtml({
+      emp,
+      period: d.period || '',
+      notes: d.notes || '',
+      basic: Number(d.basic || 0),
+      advance: Number(d.advance || d.net || 0),
+      net: Number(d.net || d.advance || 0)
+    });
+    const container = document.getElementById('payslipPreviewContent');
+    if (container) container.innerHTML = html;
+    const modal = document.getElementById('payslipPreviewModal');
+    if (modal) modal.classList.add('show');
+  } catch (err) {
+    console.warn('Preview failed', err);
+    showToast('Failed to load payslip preview', 'error');
+  }
+});
+
+// Delete payslip handler
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete]');
+  if (!btn) return;
+  const id = btn.getAttribute('data-id');
+  if (!id) return;
+  const ok = confirm('Delete this payslip? This action cannot be undone.');
+  if (!ok) return;
+  try {
+    // Load the document first to capture month and employee id
+    let delEmpId = currentPayrollView?.id || '';
+    let delYmDate = new Date();
+    try {
+      const snap = await getDocs(query(collection(db, 'payslips'), where('__name__','==', id)));
+      if (!snap.empty) {
+        const d = snap.docs[0].data();
+        delEmpId = d.employeeId || delEmpId;
+        const ym = d.period || '';
+        if (ym && /^\d{4}-\d{2}$/.test(ym)) {
+          const [yy,mm] = ym.split('-');
+          delYmDate = new Date(Number(yy), Number(mm)-1, 1);
+        }
+      }
+    } catch {}
+
+    await deleteDoc(doc(db, 'payslips', id));
+    showToast('Payslip deleted', 'success');
+    // Refresh the list if payroll modal is still open
+    if (currentPayrollView?.id) {
+      await loadPayslipsForPayrollModal(currentPayrollView.id);
+    }
+    try { window.__payrollBalancesInvalidate?.(); } catch {}
+    // Recompute and upsert balance for the month of the deleted slip
+    try { await upsertMonthlyBalanceFor(delEmpId, delYmDate); } catch (e) { console.warn('Balance upsert failed (payslip delete)', e); }
+  } catch (err) {
+    console.error('Delete payslip failed', err);
+    showToast('Failed to delete payslip', 'error');
+  }
+});
+
+// Upsert the monthly balance snapshot into 'balances' collection
+async function upsertMonthlyBalanceFor(employeeId, dateObj) {
+  try {
+    if (!employeeId) return;
+    const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    // Previous month for carryover
+    const prevDate = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const prevYm = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+    // Gather employee basics
+    const list = [...employees, ...temporaryEmployees];
+    const emp = list.find(e => e.id === employeeId);
+    if (!emp) return;
+    const isTemp = temporaryEmployees.some(e => e.id === employeeId);
+
+    // Compute month metrics similarly to table logic
+    const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', employeeId)));
+    const slips = psSnap.docs.map(docu => ({ id: docu.id, ...docu.data() }));
+    const slipsThisMonth = slips.filter(s => (s.period || '') === ym);
+    const basic = slipsThisMonth.length
+      ? Number(slipsThisMonth.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))[0].basic || emp.salary || 0)
+      : Number(emp.salary || 0);
+    const advances = slipsThisMonth.reduce((sum, s) => sum + Number(s.advance || 0), 0);
+
+    const paySnap = await getDocs(query(collection(db, 'payments'), where('employeeId', '==', employeeId)));
+    const payments = paySnap.docs
+      .map(docu => ({ id: docu.id, ...docu.data() }))
+      .filter(p => (p.date || '').startsWith(ym + '-') && !Boolean(p.isAdvance))
+      .reduce((sum, p) => sum + Number(p.amount || 0) + Number(p.overtime || 0), 0);
+
+    // Carryover: previous month's remaining balance (if any)
+    let carryover = 0;
+    try {
+      const prevDocRef = doc(db, 'balances', `${employeeId}_${prevYm}`);
+      const prevSnap = await getDoc(prevDocRef);
+      if (prevSnap.exists()) {
+        const prev = prevSnap.data();
+        carryover = Number(prev.balance || 0) || 0;
+      }
+    } catch {}
+
+    const balance = Math.max(0, Number(carryover) + Number(basic) - Number(advances) - Number(payments));
+
+    const payload = cleanData({
+      employeeId,
+      employeeType: isTemp ? 'Temporary' : 'Permanent',
+      employeeName: emp.name || '',
+      department: emp.department || '',
+      position: emp.position || '',
+      qid: emp.qid || '',
+      month: ym,
+      carryover: Number(carryover),
+      basic: Number(basic),
+      advances: Number(advances),
+      payments: Number(payments),
+      balance: Number(balance),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth?.currentUser?.uid || null,
+      updatedByEmail: auth?.currentUser?.email || null,
+    });
+
+    // Use stable document id: `${employeeId}_${ym}`
+    const docId = `${employeeId}_${ym}`;
+    const ref = doc(db, 'balances', docId);
+    await setDoc(ref, payload);
+  } catch (e) {
+    console.warn('upsertMonthlyBalanceFor failed', e);
+  }
+}
+
+// Print from preview: copy preview HTML into print area and trigger print
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'payslipPreviewPrintBtn') {
+    const container = document.getElementById('payslipPreviewContent');
+    const area = document.getElementById('payslipPrintArea');
+    if (!container || !area) return;
+    const prevDisplay = area.style.display;
+    area.innerHTML = container.innerHTML;
+    area.style.display = 'block';
+    const afterPrint = () => {
+      window.removeEventListener('afterprint', afterPrint);
+      area.style.display = prevDisplay || '';
+    };
+    window.addEventListener('afterprint', afterPrint);
+    setTimeout(() => window.print(), 50);
+  }
+});
+
+// Close preview modal
+window.closePayslipPreviewModal = function () {
+  const modal = document.getElementById('payslipPreviewModal');
+  if (modal) modal.classList.remove('show');
+};
+
+// Use overlay/escape to close preview as well (reuse existing global handlers)
 
 window.closeViewModal = function() {
   const vm = document.getElementById('viewModal');
@@ -1417,6 +2837,7 @@ function renderTemporaryTable() {
     getTemporaryEmployees: () => temporaryEmployees,
     getSearchQuery: () => currentSearch,
     getDepartmentFilter: () => currentDepartmentFilter,
+    getShowTerminated: () => true,
   });
 }
 
@@ -1679,4 +3100,71 @@ function prettyAuthError(e) {
     default:
       return 'Authentication error. Please try again.';
   }
+}
+
+// =====================
+// Client Transactions (Monthly)
+// =====================
+function renderClientTransactions() {
+  const monthEl = document.getElementById('clientBillingMonth');
+  const tbody = document.getElementById('clientBillingTableBody');
+  const empty = document.getElementById('clientBillingEmpty');
+  if (!monthEl || !tbody || !empty) return;
+  const ym = monthEl.value || '';
+  const clients = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+  const assignments = (typeof getAssignments === 'function') ? getAssignments() : (window.getAssignments ? window.getAssignments() : []);
+  // Filter assignments that are active within selected Ym
+  const parseYmd = (s) => {
+    if (!s) return null;
+    try { const d = new Date(s); return isNaN(d.getTime()) ? null : d; } catch { return null; }
+  };
+  const monthStart = ym && /^\d{4}-\d{2}$/.test(ym) ? new Date(Number(ym.slice(0,4)), Number(ym.slice(5,7)) - 1, 1) : null;
+  const monthEnd = monthStart ? new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0) : null; // last day of month
+
+  const activeForMonth = (a) => {
+    if (!monthStart || !monthEnd) return true; // if not set, count all
+    const s = parseYmd(a.startDate);
+    const e = a.endDate ? parseYmd(a.endDate) : null;
+    // active if assignment overlaps any day in [monthStart, monthEnd]
+    const startsBeforeOrOnEnd = s ? (s <= monthEnd) : true;
+    const endsAfterOrOnStart = e ? (e >= monthStart) : true; // null end -> ongoing
+    return startsBeforeOrOnEnd && endsAfterOrOnStart;
+  };
+
+  const byClient = new Map();
+  for (const c of clients) {
+    byClient.set(c.id, { client: c, count: 0 });
+  }
+  for (const a of assignments) {
+    if (!a || !a.clientId) continue;
+    if (!activeForMonth(a)) continue;
+    if (!byClient.has(a.clientId)) {
+      byClient.set(a.clientId, { client: { id: a.clientId, name: a.clientName, email: a.clientEmail, phone: '' }, count: 0 });
+    }
+    byClient.get(a.clientId).count += 1;
+  }
+
+  const rows = Array.from(byClient.values()).sort((A,B)=> (A.client.name||'').localeCompare(B.client.name||''));
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  const fmt = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  tbody.innerHTML = rows.map(({ client, count }) => {
+    // Placeholder for Monthly Amount until rate/invoice logic is defined
+    const monthly = 0;
+    const notes = '';
+    return `
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(client.name || '')}</td>
+        <td class="px-4 py-2">${escapeHtml(client.email || '')}</td>
+        <td class="px-4 py-2">${escapeHtml(client.phone || '-')}</td>
+        <td class="px-4 py-2">${Number(count).toLocaleString()}</td>
+        <td class="px-4 py-2 text-right">${monthly ? fmt(monthly) : '-'}</td>
+        <td class="px-4 py-2">${escapeHtml(notes)}</td>
+      </tr>
+    `;
+  }).join('');
 }

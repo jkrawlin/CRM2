@@ -43,8 +43,8 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
   const totalEl = document.getElementById('totalPayroll');
   if (!tbody || !emptyState) return;
 
-  const employees = getEmployees();
-  const temporaryEmployees = getTemporaryEmployees();
+  const employees = getEmployees().filter(e => !e.terminated);
+  const temporaryEmployees = getTemporaryEmployees().filter(e => !e.terminated);
 
   const combined = [
     ...employees.map(e => ({ ...e, _type: 'Employee' })),
@@ -105,26 +105,27 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
     const isTemp = t === 'Temporary';
     const cls = isTemp ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
     const label = isTemp ? 'Temporary' : 'Permanent';
-    return `<span class="px-2 py-1 rounded text-xs font-semibold ${cls}">${label}</span>`;
+    return `<span class="px-1.5 py-0.5 rounded text-xs font-semibold ${cls}">${label}</span>`;
   };
 
   const rows = sorted.map(emp => `
       <tr class="hover:bg-gray-50">
-        <td class="px-4 py-3 font-semibold text-gray-900">${emp.name}</td>
-        <td class="px-4 py-3">${typeBadge(emp._type)}</td>
-        <td class="px-4 py-3">${emp.department || '-'}</td>
-        <td class="px-4 py-3 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-        <td class="px-4 py-3 whitespace-nowrap">${formatDate(emp.joinDate)}</td>
-        <td class="px-4 py-3">${emp.qid || '-'}</td>
-        <td class="px-4 py-3 text-center">
-          <div class="flex flex-wrap items-center justify-center gap-2">
-            <button class="btn btn-primary btn-sm" onclick="openPayslipForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
+        <td class="px-2 py-1 font-semibold text-gray-900 truncate">${emp.name}</td>
+        <td class="px-2 py-1">${typeBadge(emp._type)}</td>
+        <td class="px-2 py-1 truncate">${emp.department || '-'}</td>
+        <td class="px-2 py-1 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+        <td class="px-2 py-1 text-right tabular-nums" data-balance-for="${emp.id}">—</td>
+  <td class="px-2 py-1 whitespace-nowrap w-[130px] min-w-[130px]">${formatDate(emp.joinDate)}</td>
+        <td class="px-2 py-1">${emp.qid || '-'}</td>
+        <td class="px-2 py-1 text-center">
+          <div class="flex flex-wrap items-center justify-center gap-1">
+            <button class="btn btn-primary btn-compact" onclick="openPayslipForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
               <i class="fas fa-file-invoice"></i> Generate Payslip
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="openPaymentForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
-              <i class="fas fa-money-bill-wave"></i> Payment
+            <button class="btn btn-secondary btn-compact" onclick="openPaymentForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
+              <i class="fas fa-money-bill-wave"></i> Pay Salary
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="viewPayroll('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
+            <button class="btn btn-secondary btn-compact" onclick="viewPayroll('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
               <i class="fas fa-eye"></i> View
             </button>
           </div>
@@ -132,6 +133,62 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
       </tr>
     `).join('');
   tbody.innerHTML = rows;
+
+  // After rendering, populate current salary balance values
+  computeAndFillCurrentBalances(sorted).catch(err => console.warn('Balance compute failed', err));
+
+  // Recompute on demand
+  const handler = () => computeAndFillCurrentBalances(sorted).catch(()=>{});
+  document.removeEventListener('payroll:recompute-balances', handler);
+  document.addEventListener('payroll:recompute-balances', handler, { once: true });
+}
+
+// Compute current salary balance for each employee based on payslips minus payments of the current month
+async function computeAndFillCurrentBalances(list) {
+  try {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    // Lazy-load Firestore API from global (script.js imports the SDK in the main bundle)
+  const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { db } = await import('../firebase-config.js');
+    const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    for (const emp of list) {
+      try {
+        // Payslips for the employee (used to determine basic for the period and advances)
+        const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
+        const slipsThisMonth = psSnap.docs.map(d => d.data()).filter(d => (d.period || '') === ym);
+        const basic = slipsThisMonth.length
+          ? Number(slipsThisMonth.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0].basic || emp.salary || 0)
+          : Number(emp.salary || 0);
+        const advances = slipsThisMonth.reduce((s, p) => s + Number(p.advance || 0), 0);
+
+        // Salary payments for the employee within the current month (exclude advances if any)
+        const paySnap = await getDocs(query(collection(db, 'payments'), where('employeeId', '==', emp.id)));
+        const paymentsThisMonth = paySnap.docs
+          .map(d => d.data())
+          .filter(p => (p.date || '').startsWith(ym + '-') && !Boolean(p.isAdvance))
+          .reduce((s, p) => s + Number(p.amount || 0) + Number(p.overtime || 0), 0);
+        // Carryover from previous month (balances collection snapshot)
+        let carryover = 0;
+        try {
+          const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const prevYm = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+          const prevRef = doc(db, 'balances', `${emp.id}_${prevYm}`);
+          const prevDoc = await getDoc(prevRef);
+          if (prevDoc.exists()) carryover = Number(prevDoc.data().balance || 0) || 0;
+        } catch {}
+
+        const balance = Math.max(0, Number(carryover) + basic - advances - paymentsThisMonth);
+        const cell = document.querySelector(`[data-balance-for="${emp.id}"]`);
+        if (cell) cell.textContent = fmt(balance);
+      } catch (e) {
+        const cell = document.querySelector(`[data-balance-for="${emp.id}"]`);
+        if (cell) cell.textContent = '—';
+      }
+    }
+  } catch (e) {
+    console.warn('computeAndFillCurrentBalances overall failure', e);
+  }
 }
 
 export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
@@ -203,7 +260,7 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
             <th class="text-left font-semibold px-4 py-2">#</th>
             <th class="text-left font-semibold px-4 py-2">Name</th>
             <th class="text-left font-semibold px-4 py-2">Type</th>
-            <th class="text-left font-semibold px-4 py-2">Department</th>
+            <th class="text-left font-semibold px-4 py-2">Company</th>
             <th class="text-left font-semibold px-4 py-2">QID</th>
             <th class="text-left font-semibold px-4 py-2">Bank</th>
             <th class="text-left font-semibold px-4 py-2">Account</th>
@@ -259,7 +316,7 @@ export function exportPayrollCsv(employees, temporaryEmployees) {
     ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
   ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
-  const headers = ['Name','Type','Department','QID','Bank Name','Account Number','IBAN','Monthly Salary'];
+  const headers = ['Name','Type','Company','QID','Bank Name','Account Number','IBAN','Monthly Salary'];
   const rows = combined.map(e => [
     quoteCsv(e.name || ''),
     quoteCsv(e._type || ''),

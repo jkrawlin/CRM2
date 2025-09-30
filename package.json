@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Employee Management System with Firebase",
   "scripts": {
-    "deploy": "firebase deploy --only hosting",
+    "deploy": "firebase deploy --only hosting,firestore:rules",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:all": "firebase deploy --only hosting,firestore:rules",
     "serve": "firebase serve",
