@@ -202,7 +202,7 @@ service cloud.firestore {
 
     // Customers collection used by the web app (no auth required for demo)
     function customersAllowedKeys(d) {
-      return d.keys().hasOnly(['name','email','phone','company','address','createdAt']);
+      return d.keys().hasOnly(['name','email','phone','company','address','createdAt','monthly']);
     }
 
     function validateCustomer(d) {
@@ -212,6 +212,7 @@ service cloud.firestore {
         && (!('phone' in d) || (d.phone is string && d.phone.size() <= 30))
         && (!('company' in d) || (d.company is string && d.company.size() <= 200))
         && isNonEmptyString(d.address) && (d.address.size() <= 500)
+        && (!('monthly' in d) || ((d.monthly is int || d.monthly is float) && d.monthly >= 0))
         && isValidISODateTime(d.createdAt);
     }
 
@@ -286,7 +287,7 @@ service cloud.firestore {
 
     // Cashflows: simple cash in/out transactions
     function cashflowAllowedKeys(d) {
-      return d.keys().hasOnly(['date','type','accountId','accountName','amount','category','notes','createdAt','createdBy']);
+      return d.keys().hasOnly(['date','type','accountId','accountName','amount','category','notes','createdAt','createdBy','createdByEmail','clientId','month']);
     }
     function validateCashflow(d) {
       return cashflowAllowedKeys(d)
@@ -297,8 +298,11 @@ service cloud.firestore {
         && ((d.amount is int || d.amount is float) && d.amount > 0)
         && (!('category' in d) || (d.category is string && d.category.size() <= 200))
         && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
-        && isValidISODateTime(d.createdAt)
-        && (!('createdBy' in d) || d.createdBy is string);
+    && isValidISODateTime(d.createdAt)
+    && (!('createdBy' in d) || d.createdBy is string)
+    && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail))
+        && (!('clientId' in d) || isNonEmptyString(d.clientId))
+        && (!('month' in d) || isValidYearMonth(d.month));
     }
     match /cashflows/{docId} {
       allow read: if isSignedIn();

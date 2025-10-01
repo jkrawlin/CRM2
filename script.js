@@ -42,19 +42,11 @@ import {
 import { maskAccount } from './modules/utils.js?v=20250929-08';
 import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
 import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
-import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-03';
+import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20250930-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
 import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20250929-01';
-
-// Safe helper: always return an array of clients
-function __getSafeClientsList() {
-  try {
-    const list = (typeof getClients === 'function') ? getClients() : (Array.isArray(window.getClients) ? window.getClients() : []);
-    return Array.isArray(list) ? list : [];
-  } catch { return []; }
-}
 
 let employees = [];
 let temporaryEmployees = [];
@@ -200,7 +192,13 @@ function makeTableGrid(tbody, opts) {
       if (e.key==='ArrowRight'){ e.preventDefault(); __grid_setActive(sr, sc+1); return; }
       if (e.key==='ArrowUp'){ e.preventDefault(); __grid_setActive(sr-1, sc); return; }
       if (e.key==='ArrowDown'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
-      if (e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) { if (__grid_isEditableCol(sc)) { __grid_startEdit(sr,sc); setTimeout(()=>{ try { if (__gridEditing?.cell) __gridEditing.cell.textContent = e.key; } catch {} }, 0); e.preventDefault(); } }
+      if (typeof e.key === 'string' && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (__grid_isEditableCol(sc)) {
+          __grid_startEdit(sr,sc);
+          setTimeout(()=>{ try { if (__gridEditing?.cell) __gridEditing.cell.textContent = e.key; } catch {} }, 0);
+          e.preventDefault();
+        }
+      }
     });
     document.addEventListener('copy', (e) => { if (!__gridActive || !__gridSel) return; const {sr,sc,er,ec}=__gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec); const out=[]; for(let r=r0;r<=r1;r++){const row=[]; for(let c=c0;c<=c1;c++){const cell=__grid_getCell(r,c); row.push(cell ? (cell.getAttribute('data-raw')||cell.textContent||'') : '');} out.push(row.join('\t'));} try{ e.clipboardData.setData('text/plain', out.join('\n')); e.preventDefault(); }catch{} });
     document.addEventListener('paste', (e) => { if (!__gridActive || !__gridSel) return; const text=e.clipboardData?.getData('text/plain'); if (!text) return; const {sr,sc}=__gridSel; const rows=text.split(/\r?\n/); for (let i=0;i<rows.length;i++){ if (rows[i]==='') continue; const cols=rows[i].split('\t'); for (let j=0;j<cols.length;j++){ const r=sr+i, c=sc+j; if (!__grid_isEditableCol(c)) continue; const cell=__grid_getCell(r,c); if (!cell) continue; const field=cell.getAttribute('data-field'); const key=__gridCtx.opts.getRowKey(r); const bucket=(__gridCache[__gridCtx.tableId] ||= {}); const row=(bucket[key] ||= {}); const val=cols[j]; if (__grid_isNumericCol(c)) { const num=__grid_parseNumber(val); row[field]=num; cell.setAttribute('data-raw', String(num)); cell.textContent=__grid_fmtCurrency(num); } else { row[field]=val; cell.setAttribute('data-raw', val); cell.textContent=val; } if (typeof __gridCtx.opts.recompute==='function') { try { __gridCtx.opts.recompute(r,{rowKey:key,row}); } catch {} } } } e.preventDefault(); });
@@ -211,13 +209,6 @@ function makeTableGrid(tbody, opts) {
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
-  // Apply compact density to reduce overall UI scale
-  try {
-    const root = document.documentElement;
-    const pref = (localStorage.getItem('crm_density') || 'compact');
-    if (pref === 'compact') root.classList.add('density-compact');
-  } catch {}
-
   // IMPORTANT: Hide app and show login immediately on load
   const loginPage = document.getElementById('loginPage');
   const appRoot = document.getElementById('appRoot');
@@ -303,11 +294,62 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTemporaryRealtime();
   // Init clients/assignments modules and subscribe
   try {
-    initClients({ db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData, getAssignments: () => getAssignments() });
+  initClients({ db, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, showToast, cleanData,
+    getAssignments: () => getAssignments(),
+    getEmployees: () => employees,
+    getTemporaryEmployees: () => temporaryEmployees,
+  });
     subscribeClients();
-    // Use the custom dropdown built within clients module; ensure it rebuilds after first snapshot
+    // Independent controller for Clients filter to avoid timing issues
     try {
-      document.addEventListener('clients:updated', () => { try { forceRebuildClientsFilter?.(); } catch {} }, { once: true });
+      if (!window.__clientsFilterControllerWired) {
+        window.__clientsFilterId = '';
+        // When first clients update arrives, populate and enable the dropdown
+        document.addEventListener('clients:updated', (e) => {
+          const sel = document.getElementById('clientsFilterSelect');
+          if (!sel) return;
+          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
+          const prev = window.__clientsFilterId || sel.value || '';
+          if (!list.length) {
+            sel.innerHTML = '<option value="" disabled selected>No clients available</option>';
+            sel.disabled = true;
+          } else {
+            sel.disabled = false;
+            const opts = ['<option value="">All clients…</option>']
+              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+            sel.innerHTML = opts.join('');
+            if (prev) { try { sel.value = prev; } catch {} }
+          }
+        }, { once: true });
+        const sel = document.getElementById('clientsFilterSelect');
+        if (sel && !sel.__wired2) {
+          sel.addEventListener('change', () => {
+            window.__clientsFilterId = sel.value || '';
+            try { renderClientsTable(); } catch {}
+          });
+          sel.__wired2 = true;
+        }
+        // Also keep options updated on subsequent clients updates (preserving selection)
+        document.addEventListener('clients:updated', (e) => {
+          const sel2 = document.getElementById('clientsFilterSelect');
+          if (!sel2) return;
+          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
+          const prev = window.__clientsFilterId || sel2.value || '';
+          if (!list.length) {
+            sel2.innerHTML = '<option value="" disabled selected>No clients available</option>';
+            sel2.disabled = true;
+          } else {
+            sel2.disabled = false;
+            const opts = ['<option value="">All clients…</option>']
+              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+            sel2.innerHTML = opts.join('');
+            if (prev) { try { sel2.value = prev; } catch {} }
+          }
+        });
+        window.__clientsFilterControllerWired = true;
+      }
     } catch {}
   } catch (e) { console.warn('Clients init failed', e); }
   try {
@@ -579,8 +621,8 @@ function setupEventListeners() {
       if (target === 'payroll') {
         renderPayrollTable();
       } else if (target === 'clients') {
-        renderClientsTable();
-        try { forceRebuildClientsFilter?.(); } catch {}
+        // Render live clients table
+        try { renderClientsTable(); } catch {}
       } else if (target === 'clients-billing') {
         // Default month to current if empty and render client transactions view
         try {
@@ -702,7 +744,7 @@ function setupEventListeners() {
   if (loginGoogleBtn) loginGoogleBtn.style.display = 'none';
 
   // Close modals when clicking outside the dialog
-  ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal', 'editFundModal'].forEach((id) => {
+  ['employeeModal', 'deleteModal', 'viewModal', 'payrollModal', 'payslipModal', 'paymentModal', 'editFundModal', 'clientViewModal'].forEach((id) => {
   // include payslipPreviewModal later via global fallback
     const modal = document.getElementById(id);
     if (modal) {
@@ -730,8 +772,9 @@ function setupEventListeners() {
   const paymentModalEl = document.getElementById('paymentModal');
   const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
   const editFundModalEl = document.getElementById('editFundModal');
+  const clientViewModalEl = document.getElementById('clientViewModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl) && !anyOpen(clientViewModalEl)) return;
 
     // If the click landed on an overlay (exact target is the overlay div), close it
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -748,6 +791,8 @@ function setupEventListeners() {
       closePayslipPreviewModal();
     } else if (anyOpen(editFundModalEl) && e.target === editFundModalEl) {
       closeEditFundModal();
+    } else if (anyOpen(clientViewModalEl) && e.target === clientViewModalEl) {
+      try { window.closeClientViewModal && window.closeClientViewModal(); } catch {}
     }
   }, true);
 
@@ -761,8 +806,9 @@ function setupEventListeners() {
   const paymentModalEl = document.getElementById('paymentModal');
   const payslipPreviewModalEl = document.getElementById('payslipPreviewModal');
   const editFundModalEl = document.getElementById('editFundModal');
+  const clientViewModalEl = document.getElementById('clientViewModal');
   const anyOpen = (el) => el && el.classList.contains('show');
-  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl)) return;
+  if (!anyOpen(employeeModalEl) && !anyOpen(deleteModalEl) && !anyOpen(viewModalEl) && !anyOpen(payrollModalEl) && !anyOpen(payslipModalEl) && !anyOpen(paymentModalEl) && !anyOpen(payslipPreviewModalEl) && !anyOpen(editFundModalEl) && !anyOpen(clientViewModalEl)) return;
 
     // Close when pointerdown lands on overlay element itself
     if (anyOpen(employeeModalEl) && e.target === employeeModalEl) {
@@ -781,6 +827,8 @@ function setupEventListeners() {
       closePayslipPreviewModal();
     } else if (anyOpen(editFundModalEl) && e.target === editFundModalEl) {
       closeEditFundModal();
+    } else if (anyOpen(clientViewModalEl) && e.target === clientViewModalEl) {
+      try { window.closeClientViewModal && window.closeClientViewModal(); } catch {}
     }
   }, true);
 
@@ -795,6 +843,7 @@ function setupEventListeners() {
   const paymentModalEl2 = document.getElementById('paymentModal');
   const payslipPreviewModalEl2 = document.getElementById('payslipPreviewModal');
   const editFundModalEl2 = document.getElementById('editFundModal');
+  const clientViewModalEl2 = document.getElementById('clientViewModal');
       if (deleteModalEl && deleteModalEl.classList.contains('show')) closeModal();
       if (employeeModalEl && employeeModalEl.classList.contains('show')) closeEmployeeModal();
       if (viewModalEl && viewModalEl.classList.contains('show')) closeViewModal();
@@ -803,13 +852,16 @@ function setupEventListeners() {
       if (paymentModalEl2 && paymentModalEl2.classList.contains('show')) closePaymentModal();
       if (payslipPreviewModalEl2 && payslipPreviewModalEl2.classList.contains('show')) closePayslipPreviewModal();
       if (editFundModalEl2 && editFundModalEl2.classList.contains('show')) closeEditFundModal();
+      if (clientViewModalEl2 && clientViewModalEl2.classList.contains('show')) { try { window.closeClientViewModal && window.closeClientViewModal(); } catch {} }
     }
   });
 
   // Track modal visibility to toggle body.modal-open for overlay/scroll control
   try {
-    const body = document.body;
+  const body = document.body;
     const modalIds = ['employeeModal','deleteModal','viewModal','payrollModal','payslipModal','paymentModal','editFundModal','payslipPreviewModal','transferModal','cashTxnModal','clientModal','assignmentModal'];
+  // Include Client View modal in global open-state tracking so backdrop/body class work
+  if (!modalIds.includes('clientViewModal')) modalIds.push('clientViewModal');
     const isAnyOpen = () => modalIds.some(id => {
       const el = document.getElementById(id);
       return !!(el && el.classList && el.classList.contains('show'));
@@ -859,8 +911,8 @@ function setupEventListeners() {
       try {
         const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
         const opts = ['<option value="">Select client…</option>']
-          .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
-            .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
+          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
         clientBillingClientEl.innerHTML = opts.join('');
       } catch {}
     };
@@ -912,15 +964,15 @@ function setupEventListeners() {
         const selected = sel.value || '';
         const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
         const opts = ['<option value="">Select client…</option>']
-          .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
-            .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
+          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
         sel.innerHTML = opts.join('');
         if (selected) { try { sel.value = selected; } catch {} }
         // Update header name and button
         try {
           const nameEl = document.getElementById('clientBillingSelectedName');
           const cur = list.find(x => x.id === (sel.value || ''));
-          if (nameEl) nameEl.textContent = cur ? `— ${cur.company || cur.name}` : '';
+          if (nameEl) nameEl.textContent = cur ? `— ${cur.name}` : '';
           const btn = document.getElementById('openClientPaymentBtn');
           if (btn) btn.disabled = !sel.value;
         } catch {}
@@ -1150,7 +1202,7 @@ document.addEventListener('submit', async (e) => {
     if (!date || !accountId || !(amount>0) || !clientId || !/^\d{4}-\d{2}$/.test(ym)) { showToast('Fill all fields correctly', 'warning'); return; }
     try {
       // Save as cashflow IN (payment received) and tag with clientId for reporting
-      await addDoc(collection(db, 'cashflows'), cleanData({
+      const inRef = await addDoc(collection(db, 'cashflows'), cleanData({
         date,
         type: 'in',
         accountId,
@@ -1159,8 +1211,11 @@ document.addEventListener('submit', async (e) => {
         clientId,
         month: ym,
         notes,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        createdBy: auth?.currentUser?.uid || undefined,
+        createdByEmail: auth?.currentUser?.email || undefined
       }));
+      // No AR offset needed per current requirement; payments impact Fund directly via selected Asset account
       // Update local grid cache credited for this (clientId|ym)
       const key = `${clientId}|${ym}`;
       const cur = (__clientBillingGridCache[key] ||= {});
@@ -1303,10 +1358,13 @@ function renderAccountsOverview() {
   const todayYmd = (()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;})()
   const monthYm = todayYmd.slice(0,7);
   let tIn=0,tOut=0,mIn=0,mOut=0;
+  const assetIds = (__getLocalAccounts()||[]).filter(a => String(a.type||'').toLowerCase()==='asset').map(a=>a.id);
+  const isAsset = (id) => !id || assetIds.includes(id);
   for (const t of flows) {
     const typ = String(t.type||'').toLowerCase();
     const amt = Math.abs(Number(t.amount||0))||0;
     const d = String(t.date||'');
+    if (!isAsset(t.accountId)) continue;
     if (d === todayYmd) { if (typ==='in'||typ==='income'||typ==='credit') tIn+=amt; else if (typ==='out'||typ==='expense'||typ==='debit') tOut+=amt; }
     if (d.startsWith(monthYm+'-')) { if (typ==='in'||typ==='income'||typ==='credit') mIn+=amt; else if (typ==='out'||typ==='expense'||typ==='debit') mOut+=amt; }
   }
@@ -1446,8 +1504,11 @@ function updateAccountsFundCard() {
       ? __cashflowShadow
       : (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []));
   let inSum = 0, outSum = 0;
+  const assetIds = (__getLocalAccounts()||[]).filter(a => String(a.type||'').toLowerCase()==='asset').map(a=>a.id);
+  const isAsset = (id) => !id || assetIds.includes(id);
   for (const t of flows) {
     if (!t) continue;
+    if (!isAsset(t.accountId)) continue; // exclude non-asset accounts from Fund
     const typeStr = String(t.type || '').toLowerCase();
     const amt = Math.abs(Number(t.amount || 0)) || 0;
     if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
@@ -1511,8 +1572,11 @@ async function recomputeFundFromFirestoreAndPersist() {
     } catch {}
     const cfSnap = await getDocs(collection(db, 'cashflows'));
     const flows = cfSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const assetIds = (__getLocalAccounts()||[]).filter(a => String(a.type||'').toLowerCase()==='asset').map(a=>a.id);
+    const isAsset = (id) => !id || assetIds.includes(id);
     let inSum = 0, outSum = 0;
     for (const t of flows) {
+      if (!isAsset(t.accountId)) continue;
       const amt = Math.abs(Number(t?.amount || 0)) || 0;
       const typeStr = String(t?.type || '').toLowerCase();
       if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
@@ -1558,6 +1622,22 @@ async function ensureAssetAccount(keyword, fallbackName) {
   }
 }
 
+// Ensure a Receivables account (non-Asset) exists; prefer Liability type so it doesn't affect Fund
+async function ensureReceivableAccount(keyword, fallbackName) {
+  const list = __getLocalAccounts();
+  const lower = (s) => String(s||'').toLowerCase();
+  const match = (list || []).find(a => lower(a.name).includes(keyword.toLowerCase()) && lower(a.type) !== 'asset');
+  if (match) return match.id;
+  try {
+    const payload = cleanData({ name: fallbackName, type: 'Liability', opening: 0, createdAt: new Date().toISOString() });
+    const ref = await addDoc(collection(db, 'accounts'), payload);
+    return ref.id;
+  } catch (e) {
+    console.warn('Failed to create receivable account', fallbackName, e);
+    return '';
+  }
+}
+
 // Edit Fund Modal controls
 // Compute current fund total from caches (opening + net(cashflows))
 function __getCurrentFundTotal() {
@@ -1567,8 +1647,11 @@ function __getCurrentFundTotal() {
       ? __fundCashflowsCache
       : ((Array.isArray(window.__cashflowAll) && window.__cashflowAll.length) ? window.__cashflowAll : []);
     let inSum = 0, outSum = 0;
+    const assetIds = (__getLocalAccounts()||[]).filter(a => String(a.type||'').toLowerCase()==='asset').map(a=>a.id);
+    const isAsset = (id) => !id || assetIds.includes(id);
     for (const t of flows) {
       if (!t) continue;
+      if (!isAsset(t.accountId)) continue;
       const typeStr = String(t.type || '').toLowerCase();
       const amt = Math.abs(Number(t.amount || 0)) || 0;
       if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt;
@@ -1583,8 +1666,11 @@ async function __saveFundDesired(desired) {
   let inSum = 0, outSum = 0;
   try {
     const flows = Array.isArray(__fundCashflowsCache) && __fundCashflowsCache.length ? __fundCashflowsCache : (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []);
+    const assetIds = (__getLocalAccounts()||[]).filter(a => String(a.type||'').toLowerCase()==='asset').map(a=>a.id);
+    const isAsset = (id) => !id || assetIds.includes(id);
     for (const t of flows) {
       if (!t) continue;
+      if (!isAsset(t.accountId)) continue;
       const amt = Math.abs(Number(t.amount || 0)) || 0;
       const typeStr = String(t.type || '').toLowerCase();
       if (typeStr === 'in' || typeStr === 'income' || typeStr === 'credit') inSum += amt; else if (typeStr === 'out' || typeStr === 'expense' || typeStr === 'debit') outSum += amt;
@@ -3725,12 +3811,19 @@ function __cb_commitEdit(save) {
       const key = rowMeta.key;
       const bucket = (__clientBillingGridCache[key] ||= {});
       if (field) bucket[field] = __cb_isNumericCol(c) ? __cb_parseNumber(toStore) : text;
+      // If Debited changed, reconcile AR
+      if (field === 'debited') { try { __cb_reconcileDebitedAR(r); } catch {} }
       // Recompute Outstanding (col 5)
       try {
-        const deb = Number(bucket.debited||0);
-        const cred = Number(bucket.credited||0);
-        const out = deb - cred;
+        // Effective Monthly = user-entered monthly (>0) else computed default for the row
+        const mcell = __cb_getCell(r,2);
         const oc = __cb_getCell(r,5);
+        const prevBase = Number(oc?.getAttribute('data-prev-outstanding') || 0);
+        const deb = Number(bucket.debited||0);
+        const mRaw = Number((bucket.monthly ?? __cb_parseNumber(mcell?.getAttribute('data-raw') || '0')) || 0);
+        const mDef = Number(mcell?.getAttribute('data-default-monthly') || 0);
+        const effMonthly = mRaw > 0 ? mRaw : mDef;
+        const out = Math.max(0, Number(prevBase) + Number(effMonthly) - Number(deb));
         if (oc) { oc.textContent = __cb_fmtCurrency(out); oc.setAttribute('data-raw', String(out)); }
       } catch {}
     }
@@ -3749,9 +3842,9 @@ function __cb_stopEdit(save) {
   __clientBillingEditing = null;
 }
 
-function setupClientBillingGrid(tbody, gridRowsMeta) {
+function setupClientBillingGrid(tbody, gridRowsMeta, ym) {
   injectClientBillingGridStyles();
-  __clientBillingGridCtx = { tbody, rows: gridRowsMeta };
+  __clientBillingGridCtx = { tbody, rows: gridRowsMeta, ym };
   __clientBillingActive = true;
   __cb_setActive(0, 0);
 
@@ -3796,7 +3889,7 @@ function setupClientBillingGrid(tbody, gridRowsMeta) {
       if (e.key === 'ArrowUp') { e.preventDefault(); __cb_setActive(sr-1, sc); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); __cb_setActive(sr+1, sc); return; }
       // Typing starts edit if editable
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (typeof e.key === 'string' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         if (__cb_isEditableCol(sc)) {
           __cb_startEdit(sr, sc);
           // Replace with typed char
@@ -3849,6 +3942,7 @@ function setupClientBillingGrid(tbody, gridRowsMeta) {
             bucket[field] = num;
             cell.setAttribute('data-raw', String(num));
             cell.textContent = __cb_fmtCurrency(num);
+            if (field === 'debited') { try { __cb_reconcileDebitedAR(r); } catch {} }
           } else {
             bucket[field] = val;
             cell.setAttribute('data-raw', val);
@@ -3856,10 +3950,14 @@ function setupClientBillingGrid(tbody, gridRowsMeta) {
           }
           // Update Outstanding if needed
           try {
-            const deb = Number(bucket.debited||0);
-            const cred = Number(bucket.credited||0);
-            const out = deb - cred;
+            const mcell = __cb_getCell(r,2);
             const oc = __cb_getCell(r,5);
+            const prevBase = Number(oc?.getAttribute('data-prev-outstanding') || 0);
+            const deb = Number(bucket.debited||0);
+            const mRaw = Number((bucket.monthly ?? __cb_parseNumber(mcell?.getAttribute('data-raw') || '0')) || 0);
+            const mDef = Number(mcell?.getAttribute('data-default-monthly') || 0);
+            const effMonthly = mRaw > 0 ? mRaw : mDef;
+            const out = Math.max(0, Number(prevBase) + Number(effMonthly) - Number(deb));
             if (oc) { oc.textContent = __cb_fmtCurrency(out); oc.setAttribute('data-raw', String(out)); }
           } catch {}
         }
@@ -3879,7 +3977,113 @@ function setupClientBillingGrid(tbody, gridRowsMeta) {
   }
 }
 
-function renderClientTransactions() {
+// Reconcile Fund Adjustment (Asset) for a client+month when Debited changes
+async function __cb_reconcileDebitedAR(rowIndex) {
+  try {
+    const rowMeta = __clientBillingGridCtx?.rows?.[rowIndex];
+    const ym = __clientBillingGridCtx?.ym || '';
+    if (!rowMeta || !rowMeta.clientId || !/^\d{4}-\d{2}$/.test(ym)) return;
+    const key = rowMeta.key;
+    const bucket = (__clientBillingGridCache[key] ||= {});
+    const debited = Math.abs(Number(bucket.debited || 0)) || 0;
+    // Resolve client name for human-friendly notes
+    let clientName = '';
+    try {
+      const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+      clientName = (list.find(x => x.id === rowMeta.clientId)?.name) || rowMeta.clientName || rowMeta.clientEmail || rowMeta.clientId || '';
+    } catch {}
+    // Ensure a Fund Adjustment Asset account exists (affects Fund by design per request)
+    const fundAdjId = await ensureAssetAccount('fund adjustment', 'Fund Adjustment');
+    if (!fundAdjId) return;
+    // Compute current posted debited total for this client+month in Fund Adjustment account
+    const qInv = query(collection(db, 'cashflows'), where('clientId', '==', rowMeta.clientId));
+    const snap = await getDocs(qInv);
+    let postedDebits = 0, postedDebitAdjustments = 0;
+    snap.forEach(docu => {
+      const d = docu.data();
+      const cat = String(d.category || '');
+      const typ = String(d.type || '').toLowerCase();
+      const amt = Math.abs(Number(d.amount || 0)) || 0;
+      if ((d.month || '') !== ym) return;
+      if (d.accountId !== fundAdjId) return;
+      if (cat === 'Fund Adjustment (Debited)' && typ === 'in') postedDebits += amt;
+      if (cat === 'Fund Adjustment (Debited Adjustment)' && typ === 'out') postedDebitAdjustments += amt;
+    });
+    const currentPosted = Math.max(0, postedDebits - postedDebitAdjustments);
+    const delta = Number(debited) - Number(currentPosted);
+    if (Math.abs(delta) < 0.005) return; // no material change
+    const today = new Date();
+    // Use today's date so the entry shows up in Recent Transactions immediately; keep `month` for reporting
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+    const accName = 'Fund Adjustment';
+    if (delta > 0) {
+      await addDoc(collection(db, 'cashflows'), cleanData({
+        date: dateStr,
+        type: 'in',
+        accountId: fundAdjId,
+        accountName: accName,
+        amount: Number(delta),
+        category: 'Fund Adjustment (Debited)',
+        clientId: rowMeta.clientId,
+        month: ym,
+        notes: `Debited update (posted to Fund Adjustment) — Client: ${clientName}`,
+        createdAt: today.toISOString(),
+        createdBy: auth?.currentUser?.uid || undefined,
+        createdByEmail: auth?.currentUser?.email || undefined,
+      }));
+    } else {
+      await addDoc(collection(db, 'cashflows'), cleanData({
+        date: dateStr,
+        type: 'out',
+        accountId: fundAdjId,
+        accountName: accName,
+        amount: Math.abs(Number(delta)),
+        category: 'Fund Adjustment (Debited Adjustment)',
+        clientId: rowMeta.clientId,
+        month: ym,
+        notes: `Debited decrease (posted to Fund Adjustment) — Client: ${clientName}`,
+        createdAt: today.toISOString(),
+        createdBy: auth?.currentUser?.uid || undefined,
+        createdByEmail: auth?.currentUser?.email || undefined,
+      }));
+    }
+    // Ledger/Overview will auto-refresh via snapshot listeners
+    try {
+      // Update cache so the grid reflects the saved value without reload
+      const cache = (__clientBillingGridCache[key] ||= {});
+      cache.debited = debited;
+    } catch {}
+  } catch (e) {
+    console.warn('Fund Adjustment reconcile failed (debited)', e);
+    try { showToast && showToast('Failed to post Debited to Fund Adjustment', 'error'); } catch {}
+  }
+}
+
+// Fetch sums for a client+month from cashflows: debited (Fund Adjustment) and credited (Client Payment)
+async function __cb_fetchClientMonthSums(clientId, ym) {
+  try {
+    if (!clientId || !/^\d{4}-\d{2}$/.test(ym)) return { debited: 0, credited: 0 };
+    const qInv = query(collection(db, 'cashflows'), where('clientId', '==', clientId));
+    const snap = await getDocs(qInv);
+    let debitedIn = 0, debitedAdjOut = 0, creditedIn = 0;
+    snap.forEach(docu => {
+      const d = docu.data();
+      if ((d.month || '') !== ym) return;
+      const cat = String(d.category || '');
+      const typ = String(d.type || '').toLowerCase();
+      const amt = Math.abs(Number(d.amount || 0)) || 0;
+      if (typ === 'in' && cat === 'Client Payment') creditedIn += amt;
+      if (typ === 'in' && cat === 'Fund Adjustment (Debited)') debitedIn += amt;
+      if (typ === 'out' && cat === 'Fund Adjustment (Debited Adjustment)') debitedAdjOut += amt;
+    });
+    return { debited: Math.max(0, debitedIn - debitedAdjOut), credited: creditedIn };
+  } catch (e) {
+    console.warn('Failed to fetch client-month sums', e);
+    return { debited: 0, credited: 0 };
+  }
+}
+
+async function renderClientTransactions() {
   const monthEl = document.getElementById('clientBillingMonth');
   const clientSel = document.getElementById('clientBillingClient');
   const tbody = document.getElementById('clientBillingTableBody');
@@ -3936,30 +4140,107 @@ function renderClientTransactions() {
   const fmt = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   const monthDateStr = (() => {
     if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return '';
-    try { const d = new Date(Number(ym.slice(0,4)), Number(ym.slice(5,7))-1, 1); return d.toISOString().slice(0,10); } catch { return ''; }
+    // Avoid UTC conversion shifting the date (e.g., to previous day); format directly
+    return `${ym}-01`;
   })();
-  // Build rows with cache-backed values and grid metadata
+  // Preload Firestore-backed sums (current month) and compute previous outstanding by folding prior months
+  const sumsByClient = new Map();
+  const prevOutstandingByClient = new Map();
+  // Helpers for months
+  const ymToDate = (s) => new Date(Number(s.slice(0,4)), Number(s.slice(5,7)) - 1, 1);
+  const dateToYm = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  const nextYm = (s) => { const d = ymToDate(s); d.setMonth(d.getMonth()+1); return dateToYm(d); };
+  const monthRange = (startYm, endYmExcl) => { const out=[]; let cur=startYm; while(cur < endYmExcl){ out.push(cur); cur = nextYm(cur);} return out; };
+  const isActiveForYm2 = (a, ymStr) => {
+    const y = Number(ymStr.slice(0,4)); const m = Number(ymStr.slice(5,7));
+    const s = a.startDate ? new Date(a.startDate) : null;
+    const e = a.endDate ? new Date(a.endDate) : null;
+    const mStart = new Date(y, m-1, 1);
+    const mEnd = new Date(y, m, 0);
+    const startsBeforeOrOnEnd = s ? (s <= mEnd) : true;
+    const endsAfterOrOnStart = e ? (e >= mStart) : true;
+    return startsBeforeOrOnEnd && endsAfterOrOnStart;
+  };
+  for (const { client } of rows) {
+    const id = client.id || client.clientId; if (!id) continue;
+    // Current-month sums (debited and credited for display)
+    try { sumsByClient.set(id, await __cb_fetchClientMonthSums(id, ym)); } catch { sumsByClient.set(id, { debited: 0, credited: 0 }); }
+    // Build debited-by-month from cashflows once
+    let snap = null; try { snap = await getDocs(query(collection(db,'cashflows'), where('clientId','==', id))); } catch {}
+    const debitedByMonth = new Map(); // ym => net debited
+    if (snap) {
+      snap.forEach(docu => {
+        const d = docu.data(); const mon = String(d.month || ''); if (!/^\d{4}-\d{2}$/.test(mon)) return;
+        const cat = String(d.category || ''); const typ = String(d.type || '').toLowerCase(); const amt = Math.abs(Number(d.amount || 0)) || 0;
+        if (typ==='in' && cat==='Fund Adjustment (Debited)') debitedByMonth.set(mon, (debitedByMonth.get(mon)||0) + amt);
+        if (typ==='out' && cat==='Fund Adjustment (Debited Adjustment)') debitedByMonth.set(mon, (debitedByMonth.get(mon)||0) - amt);
+      });
+    }
+    // Determine earliest month to start folding from assignments start
+    const clientAssignments = (assignments||[]).filter(a => a && a.clientId === id);
+    let earliestYm = ym;
+    if (clientAssignments.length) {
+      try {
+        const minStart = clientAssignments.reduce((min,a)=>{ const d=a.startDate?new Date(a.startDate):null; if(!d||isNaN(d))return min; return (!min||d<min)?d:min; }, null);
+        if (minStart) earliestYm = dateToYm(new Date(minStart.getFullYear(), minStart.getMonth(), 1));
+      } catch {}
+    }
+    let prevOutstanding = 0;
+    if (earliestYm < ym) {
+      const months = monthRange(earliestYm, ym);
+      for (const mYm of months) {
+        // Monthly for mYm: override if >0 else sum monthly assignment rates active in mYm
+        const override = Number(client.monthly||0) || 0;
+        let monthlyForM = 0;
+        if (override > 0) monthlyForM = override; else {
+          let sum=0; for (const a of clientAssignments) { if (String(a.rateType||'').toLowerCase()!=='monthly') continue; if (isActiveForYm2(a, mYm)) sum += Number(a.rate||0)||0; }
+          monthlyForM = sum;
+        }
+        const debForM = Math.max(0, Number(debitedByMonth.get(mYm)||0));
+        prevOutstanding = Math.max(0, prevOutstanding + monthlyForM - debForM);
+      }
+    }
+    prevOutstandingByClient.set(id, prevOutstanding);
+  }
+
+  // Build rows with Firestore sums as defaults and cache-backed overrides
   const gridRowsMeta = [];
   const html = rows.map(({ client, count }, rIndex) => {
     const key = `${client.id || client.clientId || ''}|${ym}`;
     gridRowsMeta.push({ key, clientId: client.id || client.clientId });
     const cache = __clientBillingGridCache[key] || {};
-    const monthly = Number(cache.monthly || 0);
-    const debited = Number(cache.debited || 0);
-    const credited = Number(cache.credited || 0);
-    const outstanding = debited - credited;
+    // Compute default monthly due: client.monthly override if > 0 else sum of active monthly assignment rates
+    let assignedMonthlySum = 0;
+    try {
+      for (const a of assignments) {
+        if (!a || a.clientId !== (client.id || client.clientId)) continue;
+        const rt = String(a.rateType || '').toLowerCase();
+        if (rt === 'monthly' && activeForMonth(a)) assignedMonthlySum += Number(a.rate || 0) || 0;
+      }
+    } catch {}
+    const clientMonthlyOverride = Number((client.monthly ?? 0)) || 0;
+    const defaultMonthly = clientMonthlyOverride > 0 ? clientMonthlyOverride : assignedMonthlySum;
+
+  const monthlyRaw = Number(cache.monthly || 0);
+  const effMonthly = monthlyRaw > 0 ? monthlyRaw : defaultMonthly;
+  const sums = sumsByClient.get(client.id || client.clientId) || { debited: 0, credited: 0 };
+  const debited = Number((cache.debited !== undefined ? cache.debited : sums.debited) || 0);
+  const credited = Number((cache.credited !== undefined ? cache.credited : sums.credited) || 0);
+  // Outstanding carry-forward: previous outstanding + current monthly − current debited
+  const prevOutstanding = Math.max(0, Number(prevOutstandingByClient.get(client.id || client.clientId) || 0));
+  const outstanding = Math.max(0, prevOutstanding + Number(effMonthly) - Number(debited));
     const notes = String(cache.notes || '');
     // td builder
-    const td = (cIndex, text, raw, editable, field, extraCls='') => `
-      <td class="px-3 py-2 grid-cell ${editable?'' : 'readonly'} ${extraCls}" data-row="${rIndex}" data-col="${cIndex}" ${field?`data-field="${field}"`:''} ${raw!==undefined?`data-raw="${raw}"`:''}>${text}</td>`;
+    const td = (cIndex, text, raw, editable, field, extraCls='', extraAttrs='') => `
+      <td class="px-3 py-2 grid-cell ${editable?'' : 'readonly'} ${extraCls}" data-row="${rIndex}" data-col="${cIndex}" ${field?`data-field="${field}"`:''} ${raw!==undefined?`data-raw="${raw}"`:''} ${extraAttrs}>${text}</td>`;
     return `
       <tr>
         ${td(0, escapeHtml(monthDateStr), monthDateStr, false, '', 'text-left')}
         ${td(1, Number(count).toLocaleString(), String(Number(count)||0), false, '', 'text-left')}
-        ${td(2, monthly ? fmt(monthly) : '-', String(monthly||0), true, 'monthly', 'text-right')}
+        ${td(2, effMonthly ? fmt(effMonthly) : '-', String(monthlyRaw||0), true, 'monthly', 'text-right', `data-default-monthly="${defaultMonthly}"`)}
         ${td(3, fmt(debited), String(debited||0), true, 'debited', 'text-right')}
         ${td(4, fmt(credited), String(credited||0), true, 'credited', 'text-right')}
-        ${td(5, fmt(outstanding), String(outstanding||0), false, '', 'text-right')}
+  ${td(5, fmt(outstanding), String(outstanding||0), false, '', 'text-right', `data-prev-outstanding="${String(prevOutstanding||0)}"`)}
         ${td(6, escapeHtml(notes), notes, true, 'notes', 'text-left')}
       </tr>`;
   }).join('');
@@ -3967,5 +4248,5 @@ function renderClientTransactions() {
   // Elevate cells to grid mode
   tbody.querySelectorAll('td').forEach(el => el.classList.add('grid-cell'));
   // Initialize grid interactions
-  setupClientBillingGrid(tbody, gridRowsMeta);
+  setupClientBillingGrid(tbody, gridRowsMeta, ym);
 }

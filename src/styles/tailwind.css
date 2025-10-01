@@ -4,8 +4,6 @@
 
 @layer base {
   html, body { @apply min-h-screen bg-gray-50 text-gray-800; }
-  /* Density: compact mode scales rem-based spacing/typography down */
-  html.density-compact { font-size: 14px; }
 }
 
 @layer components {

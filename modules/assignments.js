@@ -13,6 +13,14 @@ export function initAssignments(deps) {
   if (open2) open2.addEventListener('click', () => openAssignmentModal());
   const form = document.getElementById('assignmentForm');
   if (form) form.addEventListener('submit', handleAssignmentFormSubmit);
+  // Wire QID input to lookup employee name
+  const empInput = document.getElementById('asEmployee');
+  if (empInput && !empInput.__wired) {
+    empInput.setAttribute('inputmode','numeric');
+    empInput.setAttribute('autocomplete','off');
+    empInput.addEventListener('input', handleQidLookup);
+    empInput.__wired = true;
+  }
 
   // Expose for inline handlers
   window.closeAssignmentModal = closeAssignmentModal;
@@ -98,19 +106,11 @@ function openAssignmentModal() {
   const modal = document.getElementById('assignmentModal');
   if (!modal) return;
   const { getEmployees, getTemporaryEmployees, getClients } = _deps;
-  const empSel = document.getElementById('asEmployee');
+  const empInput = document.getElementById('asEmployee');
   const cliSel = document.getElementById('asClient');
-
-  const perm = (getEmployees && getEmployees()) || [];
-  const temps = (getTemporaryEmployees && getTemporaryEmployees()) || [];
   const clients = (getClients && getClients()) || [];
-
-  if (empSel) {
-    const merged = perm.concat(temps);
-    empSel.innerHTML = '<option value="" disabled selected>Select employee</option>' +
-      merged.sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-        .map(e => `<option value="${e.id}|${temps.includes(e)?'temporary':'employees'}">${e.name} ${e.department ? `• ${e.department}` : ''}</option>`).join('');
-  }
+  // Reset QID input and any helper name label
+  if (empInput) { empInput.value = ''; setEmployeeNameHelper(''); empInput.dataset.empId = ''; empInput.dataset.empWhich = ''; }
   if (cliSel) {
     cliSel.innerHTML = '<option value="" disabled selected>Select client</option>' +
       clients.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
@@ -141,7 +141,6 @@ function closeAssignmentModal() {
 async function handleAssignmentFormSubmit(e) {
   e.preventDefault();
   const { db, collection, addDoc, serverTimestamp, showToast, cleanData, getEmployees, getTemporaryEmployees, getClients } = _deps || {};
-
   const empSel = document.getElementById('asEmployee');
   const cliSel = document.getElementById('asClient');
   const asStart = document.getElementById('asStart');
@@ -150,10 +149,10 @@ async function handleAssignmentFormSubmit(e) {
   const asRateType = document.getElementById('asRateType');
   const asNotes = document.getElementById('asNotes');
 
-  const empVal = empSel?.value || '';
   const cliId = cliSel?.value || '';
-  const [empId, whichKey] = empVal.split('|');
-  if (!empId || !cliId) {
+  const empId = empSel?.dataset?.empId || '';
+  const whichKey = empSel?.dataset?.empWhich || '';
+  if (!empId || !whichKey || !cliId) {
     showToast && showToast('Please select employee and client', 'warning');
     return;
   }
@@ -193,4 +192,41 @@ async function handleAssignmentFormSubmit(e) {
     console.error('Save assignment failed', err);
     showToast && showToast('Failed to save assignment', 'error');
   }
+}
+
+function handleQidLookup() {
+  try {
+    const input = document.getElementById('asEmployee');
+    if (!input) return;
+    const q = String(input.value||'').trim();
+    if (!q) { setEmployeeNameHelper(''); input.dataset.empId=''; input.dataset.empWhich=''; return; }
+    const perm = (_deps.getEmployees && _deps.getEmployees()) || [];
+    const temps = (_deps.getTemporaryEmployees && _deps.getTemporaryEmployees()) || [];
+    const matchIn = (arr) => arr.find(e => String(e.qid||'').replace(/\s+/g,'') === q.replace(/\s+/g,''));
+    let emp = matchIn(perm);
+    let which = 'employees';
+    if (!emp) { emp = matchIn(temps); which = emp ? 'temporary' : ''; }
+    if (emp && which) {
+      input.dataset.empId = emp.id;
+      input.dataset.empWhich = which;
+      setEmployeeNameHelper(`${emp.name || ''}${emp.department?` • ${emp.department}`:''}`);
+    } else {
+      input.dataset.empId = '';
+      input.dataset.empWhich = '';
+      setEmployeeNameHelper('No match');
+    }
+  } catch {}
+}
+
+function setEmployeeNameHelper(text) {
+  let el = document.getElementById('asEmployeeNameHelper');
+  if (!el) {
+    const input = document.getElementById('asEmployee');
+    if (!input || !input.parentElement) return;
+    el = document.createElement('div');
+    el.id = 'asEmployeeNameHelper';
+    el.className = 'text-xs text-gray-500 mt-1';
+    input.parentElement.appendChild(el);
+  }
+  el.textContent = text || '';
 }

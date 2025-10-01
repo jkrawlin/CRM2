@@ -152,6 +152,13 @@
             <div class="flex items-center justify-between">
                 <div></div>
                 <div class="flex items-center gap-3">
+                    <!-- Notifications Bell (no functionality yet) -->
+                    <button id="notificationsBtn" class="btn btn-ghost relative" title="Notifications" aria-label="Notifications">
+                        <i class="fas fa-bell"></i>
+                        <!-- Hidden badge dot (toggle visibility later via JS) -->
+                        <span id="notificationsBadge" class="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white hidden"></span>
+                        <span class="sr-only">Notifications</span>
+                    </button>
                     <div class="user-badge flex items-center gap-2 bg-gray-50 border-2 border-gray-100 rounded-lg px-3 py-2">
                         <div class="user-avatar w-8 h-8 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-400 text-white flex items-center justify-center text-sm font-semibold" id="userAvatar">A</div>
                         <span class="user-email text-sm font-medium text-gray-700" id="userName">admin@company.com</span>
@@ -198,33 +205,41 @@
                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                     <h3 class="text-lg font-bold text-gray-900">Clients</h3>
                     <div class="flex items-center gap-3">
-                        <label class="text-sm text-gray-600">Client</label>
-                        <div id="clientsFilterCustom" class="relative min-w-[240px]">
-                            <button id="clientsFilterBtn" type="button" class="input w-full flex items-center justify-between">
-                                <span id="clientsFilterBtnText">Loading clients…</span>
-                                <i class="fas fa-chevron-down text-gray-500 ml-2"></i>
-                            </button>
-                            <div id="clientsFilterMenu" class="absolute mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-[1001] hidden max-h-64 overflow-auto">
-                                <!-- Options injected by JS -->
-                            </div>
-                        </div>
+                        <!-- Simple select filter populated at runtime -->
+                        <select id="clientsFilterSelect" class="input min-w-[240px]">
+                            <option value="">All clients…</option>
+                        </select>
                         <button id="openAssignmentModalBtn" class="btn btn-secondary"><i class="fas fa-people-arrows"></i> Assign Employee</button>
-                        <button id="openClientModalBtn" class="btn btn-primary"><i class="fas fa-user-plus"></i> Add Client</button>
+                        <button id="openClientModalBtn" class="btn btn-primary"><i class="fas fa-plus"></i> Add Client</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
-                  <!-- Grid header -->
-                  <div class="hidden md:grid grid-cols-[20%_18%_12%_16%_10%_12%_12%] bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
-                    <div class="px-4 py-3 font-semibold text-left">Company</div>
-                    <div class="px-4 py-3 font-semibold text-left">Company Email</div>
-                    <div class="px-4 py-3 font-semibold text-left">Company Phone</div>
-                    <div class="px-4 py-3 font-semibold text-left">Contact Person</div>
-                    <div class="px-4 py-3 font-semibold text-right">Employees Assigned</div>
-                    <div class="px-4 py-3 font-semibold text-right">Monthly</div>
-                    <div class="px-4 py-3 font-semibold text-left">Address</div>
-                  </div>
-                  <!-- List container (rows injected by JS) -->
-                  <div id="clientsList" class="divide-y divide-gray-100"></div>
+                    <table class="min-w-full table-fixed text-sm">
+                        <colgroup>
+                            <col class="w-[18%]" />  <!-- Company -->
+                            <col class="w-[18%]" />  <!-- Company Email -->
+                            <col class="w-[13%]" />  <!-- Company Phone -->
+                            <col class="w-[15%]" />  <!-- Contact Person -->
+                            <col class="w-[12%]" />  <!-- Monthly -->
+                            <col class="w-[8%]" />   <!-- No. of Employees Assigned -->
+                            <col class="w-[16%]" />  <!-- Address -->
+                            <col class="w-[8%]" />   <!-- Actions -->
+                        </colgroup>
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                            <tr>
+                                <th class="text-left font-semibold px-4 py-3">Company</th>
+                                <th class="text-left font-semibold px-4 py-3">Company Email</th>
+                                <th class="text-left font-semibold px-4 py-3">Company Phone</th>
+                                <th class="text-left font-semibold px-4 py-3">Contact Person</th>
+                                <th class="text-right font-semibold px-4 py-3">Monthly</th>
+                                <th class="text-center font-semibold px-4 py-3">No. of Employees Assigned</th>
+                                <th class="text-left font-semibold px-4 py-3">Address</th>
+                                <th class="text-center font-semibold px-4 py-3">Actions</th>
+                                
+                            </tr>
+                        </thead>
+                        <tbody id="clientsTableBody" class="divide-y divide-gray-100"></tbody>
+                    </table>
                 </div>
                 <div class="empty-state hidden" id="clientsEmptyState">
                     <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
@@ -1560,11 +1575,81 @@
                         <label class="label"><i class="fas fa-map-marker-alt label-icon"></i> Address</label>
                         <input id="clientAddress" type="text" class="input" placeholder="e.g., Street, City, Country" required />
                     </div>
+                    <div>
+                        <label class="label"><i class="fas fa-dollar-sign label-icon"></i> Monthly Pay</label>
+                        <input id="clientMonthly" type="number" step="any" min="0" class="input" placeholder="e.g., 5000" required />
+                        <p class="text-xs text-gray-500 mt-1">Enter 0 to use the total of this client's monthly assignments. Any positive value overrides.</p>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer flex items-center justify-end gap-2">
                 <button type="button" class="btn btn-secondary" onclick="closeClientModal()"><i class="fas fa-times"></i> Cancel</button>
                 <button type="submit" form="clientForm" class="btn btn-primary"><i class="fas fa-save"></i> Save Client</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client View Modal -->
+    <div class="modal" id="clientViewModal" role="dialog" aria-modal="true" aria-labelledby="clientViewModalTitle">
+        <div class="modal-content max-w-3xl w-full">
+            <div class="modal-header flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-building text-indigo-600"></i>
+                    <h3 id="clientViewModalTitle" class="modal-title">Client Details</h3>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closeClientViewModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card p-4">
+                        <div class="text-xs uppercase text-gray-500 font-semibold mb-2">Company</div>
+                        <div class="text-lg font-bold text-gray-900" id="cvName">—</div>
+                        <div class="text-sm text-gray-600" id="cvCompany">—</div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-xs uppercase text-gray-500 font-semibold mb-2">Contact</div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Email</span><span class="font-semibold break-all" id="cvEmail">—</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Phone</span><span class="font-semibold" id="cvPhone">—</span></div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-xs uppercase text-gray-500 font-semibold mb-2">Address</div>
+                        <div class="text-sm text-gray-700" id="cvAddress">—</div>
+                    </div>
+                    <div class="card p-4">
+                        <div class="text-xs uppercase text-gray-500 font-semibold mb-2">Summary</div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Monthly</span><span class="font-semibold" id="cvMonthly">$0</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Assigned Employees</span><span class="font-semibold" id="cvAssigned">0</span></div>
+                        <div class="flex items-center justify-between"><span class="text-gray-600">Created</span><span class="font-semibold" id="cvCreatedAt">—</span></div>
+                    </div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Active Assignments</div>
+                    <div id="cvAssignmentsEmpty" class="text-sm text-gray-500">No active assignments</div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full table-fixed text-sm" id="cvAssignmentsTable" style="display:none;">
+                            <colgroup>
+                                <col class="w-[28%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                            </colgroup>
+                            <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                                <tr>
+                                    <th class="text-left font-semibold px-4 py-3">Employee</th>
+                                    <th class="text-left font-semibold px-4 py-3">Start</th>
+                                    <th class="text-left font-semibold px-4 py-3">End</th>
+                                    <th class="text-left font-semibold px-4 py-3">Rate</th>
+                                    <th class="text-left font-semibold px-4 py-3">Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cvAssignmentsBody" class="divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer flex items-center justify-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeClientViewModal()"><i class="fas fa-times"></i> Close</button>
             </div>
         </div>
     </div>
@@ -1583,7 +1668,7 @@
                 <form id="assignmentForm" class="space-y-4">
                     <div>
                         <label class="label"><i class="fas fa-user label-icon"></i> Employee</label>
-                        <select id="asEmployee" class="input" required></select>
+                        <input id="asEmployee" type="text" class="input" placeholder="Type Qatar ID…" required />
                     </div>
                     <div>
                         <label class="label"><i class="fas fa-building label-icon"></i> Client</label>
@@ -1626,6 +1711,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251001-12"></script>
+    <script type="module" src="script.js?v=20251002-01"></script>
 </body>
 </html>
