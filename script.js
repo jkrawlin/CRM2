@@ -36,7 +36,7 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20250929-12';
+} from './modules/payroll.js?v=20251002-01';
 // bump cache
 // Utilities used in this file (masking account numbers in Payroll modal)
 import { maskAccount } from './modules/utils.js?v=20250929-08';
@@ -2539,6 +2539,13 @@ async function savePayslipThenPrint() {
   try {
     await addDoc(collection(db, 'payslips'), record);
     showToast('Payslip saved', 'success');
+    // Proactively refresh payroll table to reflect advances in Monthly Salary column and balances
+    try {
+      const payrollSection = document.getElementById('payrollSection');
+      if (payrollSection && payrollSection.style.display !== 'none') {
+        renderPayrollTable();
+      }
+    } catch {}
     // If Payroll Details modal is open for this employee, refresh the payslips tab
     try {
       const modal = document.getElementById('payrollModal');
