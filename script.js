@@ -48,6 +48,14 @@ import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
 import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20250929-01';
 
+// Safe helper: always return an array of clients
+function __getSafeClientsList() {
+  try {
+    const list = (typeof getClients === 'function') ? getClients() : (Array.isArray(window.getClients) ? window.getClients() : []);
+    return Array.isArray(list) ? list : [];
+  } catch { return []; }
+}
+
 let employees = [];
 let temporaryEmployees = [];
 // Clients and Assignments state moved into modules; keep thin getters
@@ -290,56 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     initClients({ db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData, getAssignments: () => getAssignments() });
     subscribeClients();
-    // Independent controller for Clients filter to avoid timing issues
+    // Use the custom dropdown built within clients module; ensure it rebuilds after first snapshot
     try {
-      if (!window.__clientsFilterControllerWired) {
-        window.__clientsFilterId = '';
-        // When first clients update arrives, populate and enable the dropdown
-        document.addEventListener('clients:updated', (e) => {
-          const sel = document.getElementById('clientsFilterSelect');
-          if (!sel) return;
-          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
-          const prev = window.__clientsFilterId || sel.value || '';
-          if (!list.length) {
-            sel.innerHTML = '<option value="" disabled selected>No clients available</option>';
-            sel.disabled = true;
-          } else {
-            sel.disabled = false;
-            const opts = ['<option value="">All clients…</option>']
-              .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
-                .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
-            sel.innerHTML = opts.join('');
-            if (prev) { try { sel.value = prev; } catch {} }
-          }
-        }, { once: true });
-        const sel = document.getElementById('clientsFilterSelect');
-        if (sel && !sel.__wired2) {
-          sel.addEventListener('change', () => {
-            window.__clientsFilterId = sel.value || '';
-            try { renderClientsTable(); } catch {}
-          });
-          sel.__wired2 = true;
-        }
-        // Also keep options updated on subsequent clients updates (preserving selection)
-        document.addEventListener('clients:updated', (e) => {
-          const sel2 = document.getElementById('clientsFilterSelect');
-          if (!sel2) return;
-          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
-          const prev = window.__clientsFilterId || sel2.value || '';
-          if (!list.length) {
-            sel2.innerHTML = '<option value="" disabled selected>No clients available</option>';
-            sel2.disabled = true;
-          } else {
-            sel2.disabled = false;
-            const opts = ['<option value="">All clients…</option>']
-              .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
-                .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
-            sel2.innerHTML = opts.join('');
-            if (prev) { try { sel2.value = prev; } catch {} }
-          }
-        });
-        window.__clientsFilterControllerWired = true;
-      }
+      document.addEventListener('clients:updated', () => { try { forceRebuildClientsFilter?.(); } catch {} }, { once: true });
     } catch {}
   } catch (e) { console.warn('Clients init failed', e); }
   try {
