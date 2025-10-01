@@ -211,6 +211,13 @@ function makeTableGrid(tbody, opts) {
 
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
+  // Apply compact density to reduce overall UI scale
+  try {
+    const root = document.documentElement;
+    const pref = (localStorage.getItem('crm_density') || 'compact');
+    if (pref === 'compact') root.classList.add('density-compact');
+  } catch {}
+
   // IMPORTANT: Hide app and show login immediately on load
   const loginPage = document.getElementById('loginPage');
   const appRoot = document.getElementById('appRoot');
