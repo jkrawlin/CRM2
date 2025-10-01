@@ -197,7 +197,17 @@
             <div class="card overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
                     <h3 class="text-lg font-bold text-gray-900">Clients</h3>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-3">
+                        <label class="text-sm text-gray-600">Client</label>
+                        <div id="clientsFilterCustom" class="relative min-w-[240px]">
+                            <button id="clientsFilterBtn" type="button" class="input w-full flex items-center justify-between">
+                                <span id="clientsFilterBtnText">Loading clients…</span>
+                                <i class="fas fa-chevron-down text-gray-500 ml-2"></i>
+                            </button>
+                            <div id="clientsFilterMenu" class="absolute mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-[1001] hidden max-h-64 overflow-auto">
+                                <!-- Options injected by JS -->
+                            </div>
+                        </div>
                         <button id="openAssignmentModalBtn" class="btn btn-secondary"><i class="fas fa-people-arrows"></i> Assign Employee</button>
                         <button id="openClientModalBtn" class="btn btn-primary"><i class="fas fa-user-plus"></i> Add Client</button>
                     </div>
@@ -205,11 +215,13 @@
                 <div class="overflow-x-auto">
                     <table class="min-w-full table-fixed text-sm">
                         <colgroup>
-                            <col class="w-[22%]" />  <!-- Company -->
-                            <col class="w-[22%]" />  <!-- Email -->
-                            <col class="w-[14%]" />  <!-- Phone -->
-                            <col class="w-[18%]" />  <!-- Contact Person -->
-                            <col class="w-[24%]" />  <!-- Address -->
+                            <col class="w-[20%]" />  <!-- Company -->
+                            <col class="w-[18%]" />  <!-- Email -->
+                            <col class="w-[12%]" />  <!-- Phone -->
+                            <col class="w-[16%]" />  <!-- Contact Person -->
+                            <col class="w-[10%]" />  <!-- Employees Assigned -->
+                            <col class="w-[12%]" />  <!-- Monthly -->
+                            <col class="w-[12%]" />  <!-- Address -->
                         </colgroup>
                         <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                             <tr>
@@ -217,6 +229,8 @@
                                 <th class="text-left font-semibold px-4 py-3">Company Email</th>
                                 <th class="text-left font-semibold px-4 py-3">Company Phone</th>
                                 <th class="text-left font-semibold px-4 py-3">Contact Person</th>
+                                <th class="text-right font-semibold px-4 py-3">Employees Assigned</th>
+                                <th class="text-right font-semibold px-4 py-3">Monthly</th>
                                 <th class="text-left font-semibold px-4 py-3">Address</th>
                                 
                             </tr>
@@ -236,29 +250,36 @@
         <section id="clientsBillingSection" data-section="clients-billing" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-                    <h3 class="text-lg font-bold text-gray-900">Client Transactions (Monthly)</h3>
+                    <h3 class="text-lg font-bold text-gray-900">Client Transactions (Monthly)
+                        <span id="clientBillingSelectedName" class="ml-2 text-indigo-600 font-semibold"></span>
+                    </h3>
                     <div class="flex items-center gap-3">
                         <label class="text-sm text-gray-600">Month</label>
                         <input id="clientBillingMonth" type="month" class="input" />
+                        <label class="text-sm text-gray-600">Client</label>
+                        <select id="clientBillingClient" class="input min-w-[240px]"></select>
+                        <button id="openClientPaymentBtn" class="btn btn-primary" disabled title="Record a payment for the selected month and client"><i class="fas fa-hand-holding-dollar"></i> Record Payment</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full table-fixed text-sm">
                         <colgroup>
-                            <col class="w-[28%]" />  <!-- Client -->
-                            <col class="w-[18%]" />  <!-- Email -->
-                            <col class="w-[14%]" />  <!-- Phone -->
-                            <col class="w-[16%]" />  <!-- Assigned Employees -->
-                            <col class="w-[12%]" />  <!-- Monthly Amount -->
-                            <col class="w-[12%]" />  <!-- Notes -->
+                            <col class="w-[14%]" />  <!-- Date -->
+                            <col class="w-[12%]" />  <!-- Assigned Employees -->
+                            <col class="w-[14%]" />  <!-- Monthly Amount -->
+                            <col class="w-[14%]" />  <!-- Debited -->
+                            <col class="w-[14%]" />  <!-- Credited -->
+                            <col class="w-[14%]" />  <!-- Outstanding -->
+                            <col class="w-[18%]" />  <!-- Notes -->
                         </colgroup>
                         <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                             <tr>
-                                <th class="text-left font-semibold px-4 py-3">Client</th>
-                                <th class="text-left font-semibold px-4 py-3">Email</th>
-                                <th class="text-left font-semibold px-4 py-3">Phone</th>
-                                <th class="text-left font-semibold px-4 py-3">Assigned Employees</th>
-                                <th class="text-right font-semibold px-4 py-3">Monthly Amount</th>
+                                <th class="text-left font-semibold px-4 py-3">Date</th>
+                                <th class="text-left font-semibold px-4 py-3">Assigned</th>
+                                <th class="text-right font-semibold px-4 py-3">Monthly</th>
+                                <th class="text-right font-semibold px-4 py-3">Debited</th>
+                                <th class="text-right font-semibold px-4 py-3">Credited</th>
+                                <th class="text-right font-semibold px-4 py-3">Outstanding</th>
                                 <th class="text-left font-semibold px-4 py-3">Notes</th>
                             </tr>
                         </thead>
@@ -273,6 +294,48 @@
             </div>
         </section>
 
+        <!-- Client Payment Modal -->
+        <div class="modal" id="clientPaymentModal" role="dialog" aria-modal="true" aria-labelledby="clientPaymentModalTitle">
+            <div class="modal-content max-w-md w-full">
+                <div class="modal-header flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-hand-holding-dollar text-indigo-600"></i>
+                        <h3 id="clientPaymentModalTitle" class="modal-title">Record Client Payment</h3>
+                    </div>
+                    <button class="btn btn-ghost" aria-label="Close" onclick="closeClientPaymentModal()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="clientPaymentForm" class="space-y-4">
+                        <div class="bg-gray-50 border border-gray-200 rounded p-3 text-sm text-gray-700">
+                            <div>Client: <span id="clientPaymentClientName" class="font-semibold">—</span></div>
+                            <div>Month: <span id="clientPaymentMonth" class="font-semibold">—</span></div>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-calendar-day label-icon"></i> Date</label>
+                            <input id="cpDate" type="date" class="input" readonly />
+                            <p class="text-xs text-gray-500 mt-1">Uses the selected month’s date when recording a monthly payment.</p>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-wallet label-icon"></i> Account</label>
+                            <select id="cpAccount" class="input" required></select>
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-dollar-sign label-icon"></i> Amount</label>
+                            <input id="cpAmount" type="number" step="any" class="input" required />
+                        </div>
+                        <div>
+                            <label class="label"><i class="fas fa-sticky-note label-icon"></i> Notes (optional)</label>
+                            <textarea id="cpNotes" class="input" rows="2" placeholder="Details..."></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer flex items-center justify-end gap-2">
+                    <button type="button" class="btn btn-secondary" onclick="closeClientPaymentModal()"><i class="fas fa-times"></i> Cancel</button>
+                    <button type="submit" form="clientPaymentForm" class="btn btn-primary"><i class="fas fa-save"></i> Save Payment</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Accounts Section (Redesigned) -->
         <section id="accountsSection" data-section="accounts" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
@@ -282,7 +345,7 @@
                         <button id="openIncomeTxnBtn" class="btn btn-primary" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'in' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('in'))"><i class="fas fa-arrow-down"></i> Income</button>
                         <button id="openExpenseTxnBtn" class="btn btn-danger" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'out' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('out'))"><i class="fas fa-arrow-up"></i> Expense</button>
                         <button id="openTransferBtn" class="btn btn-secondary" onclick="window.openTransferModal && window.openTransferModal()"><i class="fas fa-right-left"></i> Transfer</button>
-                        <button id="editFundBtn" class="btn btn-secondary" onclick="window.openEditFundModal && window.openEditFundModal()"><i class="fas fa-pen"></i> Set Current Fund</button>
+                        <button id="setCurrentFundBtn" class="btn btn-secondary"><i class="fas fa-pen"></i> Set Current Fund</button>
                     </div>
                 </div>
 
@@ -310,7 +373,6 @@
                 <div class="border-b">
                     <div class="flex items-center gap-2 px-4">
                         <button id="accountsSubTabOverviewBtn" class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600" onclick="window.setAccountsSubTab && window.setAccountsSubTab('overview')">Overview</button>
-                        <button id="accountsSubTabTransactionsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('transactions')">Transactions</button>
                         <button id="accountsSubTabLedgerBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('ledger')">Ledger</button>
                         <button id="accountsSubTabSettingsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('settings')">Settings</button>
                     </div>
@@ -370,52 +432,7 @@
                     </div>
                 </div>
 
-                <!-- Tab: Transactions -->
-                <div id="accountsTabTransactions" class="overflow-x-auto" style="display:none;">
-                    <div class="px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div class="flex items-center gap-3 flex-wrap">
-                            <label class="text-sm text-gray-600">Start</label>
-                            <input id="cashflowStartDate" type="date" class="input" />
-                            <label class="text-sm text-gray-600">End</label>
-                            <input id="cashflowEndDate" type="date" class="input" />
-                            <label class="text-sm text-gray-600">Account</label>
-                            <select id="cashflowAccountFilter" class="input min-w-[220px]"></select>
-                            <label class="text-sm text-gray-600">Category</label>
-                            <select id="cashflowCategoryFilter" class="input min-w-[180px]"></select>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div id="cashflowSummary" class="text-sm text-gray-600"></div>
-                            <button id="openTransferBtn2" class="btn btn-secondary" onclick="window.openTransferModal && window.openTransferModal()"><i class="fas fa-right-left"></i> Transfer</button>
-                            <button id="exportCashflowCsvBtn" class="btn btn-secondary"><i class="fas fa-file-csv"></i> Export</button>
-                        </div>
-                    </div>
-                    <table class="min-w-full table-fixed text-sm">
-                        <colgroup>
-                            <col class="w-[14%]" />
-                            <col class="w-[24%]" />
-                            <col class="w-[12%]" />
-                            <col class="w-[18%]" />
-                            <col class="w-[14%]" />
-                            <col class="w-[18%]" />
-                        </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
-                            <tr>
-                                <th class="text-left font-semibold px-4 py-3">Date</th>
-                                <th class="text-left font-semibold px-4 py-3">Account</th>
-                                <th class="text-left font-semibold px-4 py-3">Type</th>
-                                <th class="text-left font-semibold px-4 py-3">Category</th>
-                                <th class="text-right font-semibold px-4 py-3">Amount</th>
-                                <th class="text-left font-semibold px-4 py-3">Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="cashflowTableBody" class="divide-y divide-gray-100"></tbody>
-                    </table>
-                    <div class="empty-state hidden" id="cashflowEmptyState">
-                        <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
-                        <h3 class="text-lg font-semibold text-gray-700">No Transactions Found</h3>
-                        <p class="text-gray-500">Add a cash transaction to get started</p>
-                    </div>
-                </div>
+                
 
                 <!-- Tab: Ledger (reuse existing markup) -->
                 <div id="accountsTabLedger" class="overflow-x-auto" style="display:none;">
@@ -1621,6 +1638,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20250930-11"></script>
+    <script type="module" src="script.js?v=20251001-12"></script>
 </body>
 </html>

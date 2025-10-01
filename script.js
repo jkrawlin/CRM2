@@ -42,7 +42,7 @@ import {
 import { maskAccount } from './modules/utils.js?v=20250929-08';
 import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
 import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
-import { initClients, subscribeClients, renderClientsTable, getClients } from './modules/clients.js?v=20250930-05';
+import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-03';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20250930-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
@@ -81,6 +81,126 @@ let __unsubFundCashflows = null;
 let __fundOpening = 0;
 let __unsubFundStats = null;
 
+// =====================
+// Generic Grid Engine (Excel-like) for Accounts tables
+// =====================
+let __gridCache = (window.__gridCache ||= {}); // { [tableId]: { [rowKey]: {field:value} } }
+let __gridCtx = null; // { tbody, tableId, opts }
+let __gridSel = null; // { sr, sc, er, ec }
+let __gridEditing = null; // { r,c,cell,field,original }
+let __gridActive = false;
+
+function __grid_injectStyles() {
+  if (document.getElementById('grid-styles-global')) return;
+  const s = document.createElement('style');
+  s.id = 'grid-styles-global';
+  s.textContent = `
+    /* Global grid styles (Accounts) */
+    td.grid-cell, th.grid-cell { border: 1px solid #e5e7eb; }
+    table:has(td.grid-cell) { border-collapse: separate; border-spacing: 0; }
+    td.grid-cell { position: relative; cursor: cell; }
+    td.grid-cell.readonly { background: #fafafa; color: #475569; }
+    td.grid-cell.grid-active { outline: 2px solid #4f46e5; outline-offset: -2px; background: #eef2ff; }
+    td.grid-cell.grid-selected { background: #eef2ff; }
+    td.grid-cell.editing { outline: 2px solid #22c55e; background: #ecfdf5; }
+    td.grid-cell[contenteditable="true"] { caret-color: #111827; }
+  `;
+  document.head.appendChild(s);
+}
+function __grid_fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`; }
+function __grid_parseNumber(s) { if (typeof s!=='string') return Number(s||0); const t=s.replace(/[^0-9.\-]/g,''); const v=Number(t); return isFinite(v)?v:0; }
+function __grid_isEditableCol(c) { const cols = __gridCtx?.opts?.editableCols || []; return cols.includes(c); }
+function __grid_isNumericCol(c) { const cols = __gridCtx?.opts?.numericCols || []; return cols.includes(c); }
+function __grid_getCell(r,c) { return __gridCtx?.tbody?.querySelector?.(`td.grid-cell[data-row="${r}"][data-col="${c}"]`)||null; }
+function __grid_clearSel() { if (!__gridCtx?.tbody) return; __gridCtx.tbody.querySelectorAll('td.grid-cell.grid-active, td.grid-cell.grid-selected').forEach(el=>el.classList.remove('grid-active','grid-selected')); }
+function __grid_applySel() {
+  if (!__gridCtx?.tbody || !__gridSel) return;
+  const { sr, sc, er, ec } = __gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec);
+  for (let r=r0;r<=r1;r++){ for(let c=c0;c<=c1;c++){ const cell=__grid_getCell(r,c); if (cell) cell.classList.add('grid-selected'); }}
+  const active=__grid_getCell(sr,sc); if (active) active.classList.add('grid-active');
+}
+function __grid_setActive(r,c,extend=false) {
+  if (!__gridCtx) return;
+  const maxR = (__gridCtx.tbody?.querySelectorAll('tr')?.length||1)-1;
+  const maxC = (__gridCtx.opts?.maxCols ?? 0);
+  r = Math.max(0, Math.min(maxR, r)); c = Math.max(0, Math.min(maxC, c));
+  if (!extend || !__gridSel) __gridSel = { sr:r, sc:c, er:r, ec:c }; else { __gridSel.er=r; __gridSel.ec=c; }
+  __grid_clearSel(); __grid_applySel();
+}
+function __grid_stopEdit(save) {
+  if (!__gridEditing) return;
+  const { r,c,cell,field,original } = __gridEditing;
+  const text = cell.textContent || '';
+  let display = text, toStore = text;
+  if (__grid_isNumericCol(c)) { const num = __grid_parseNumber(text); display = __grid_fmtCurrency(num); toStore = String(num); }
+  if (save) {
+    cell.setAttribute('data-raw', toStore);
+    const key = __gridCtx.opts.getRowKey(r);
+    const bucket = (__gridCache[__gridCtx.tableId] ||= {});
+    const row = (bucket[key] ||= {});
+    if (field) row[field] = __grid_isNumericCol(c) ? __grid_parseNumber(toStore) : text;
+    if (typeof __gridCtx.opts.recompute === 'function') { try { __gridCtx.opts.recompute(r, { rowKey:key, row }); } catch {} }
+  } else {
+    const d = __grid_isNumericCol(c) ? __grid_fmtCurrency(__grid_parseNumber(original)) : original; cell.textContent = d;
+  }
+  cell.removeAttribute('contenteditable'); cell.classList.remove('editing'); __gridEditing = null;
+}
+function __grid_startEdit(r,c) {
+  if (!__grid_isEditableCol(c)) return; const cell = __grid_getCell(r,c); if (!cell) return;
+  if (__gridEditing) __grid_stopEdit(false);
+  const field = cell.getAttribute('data-field'); const raw = cell.getAttribute('data-raw') || cell.textContent;
+  __gridEditing = { r,c,cell,field,original: raw };
+  cell.classList.add('editing'); cell.setAttribute('contenteditable','true');
+  if (__grid_isNumericCol(c)) { const v = __grid_parseNumber(raw); cell.textContent = String(v||0); }
+  const range=document.createRange(); range.selectNodeContents(cell); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+function makeTableGrid(tbody, opts) {
+  __grid_injectStyles(); if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  if (!rows.length) return;
+  const maxCols = rows.reduce((m,tr)=>Math.max(m, tr.children.length-1), 0);
+  opts.maxCols = maxCols;
+  // Annotate cells
+  rows.forEach((tr, r) => {
+    Array.from(tr.children).forEach((td, c) => {
+      td.classList.add('grid-cell'); td.setAttribute('data-row', String(r)); td.setAttribute('data-col', String(c));
+      const field = opts.fields?.[c] || ''; if (field) td.setAttribute('data-field', field);
+      if ((opts.numericCols||[]).includes(c)) {
+        const raw = td.getAttribute('data-raw') || __grid_parseNumber(td.textContent||'');
+        td.setAttribute('data-raw', String(raw));
+      }
+      if (!(opts.editableCols||[]).includes(c)) td.classList.add('readonly');
+    });
+  });
+  // Context
+  __gridCtx = { tbody, tableId: opts.tableId, opts };
+  __gridActive = true; __grid_setActive(0,0);
+  // Wire events once per tbody
+  if (!tbody.__gridWired) {
+    tbody.addEventListener('mousedown', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; __gridActive = true; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_setActive(r,c, e.shiftKey); });
+    tbody.addEventListener('dblclick', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_startEdit(r,c); });
+    tbody.__gridWired = true;
+  }
+  if (!document.__gridKeyWired) {
+    document.addEventListener('keydown', (e) => {
+      if (!__gridActive) return; if (__gridEditing) { if (e.key==='Enter'){ e.preventDefault(); __grid_stopEdit(true); return;} if(e.key==='Escape'){ e.preventDefault(); __grid_stopEdit(false); return;} return; }
+      if (!__gridSel) return; const { sr, sc } = __gridSel;
+      if (e.key==='F2'){ e.preventDefault(); __grid_startEdit(sr,sc); return; }
+      if (e.key==='Enter'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
+      if (e.key==='Tab'){ e.preventDefault(); __grid_setActive(sr, sc + (e.shiftKey?-1:1)); return; }
+      if (e.key==='ArrowLeft'){ e.preventDefault(); __grid_setActive(sr, sc-1); return; }
+      if (e.key==='ArrowRight'){ e.preventDefault(); __grid_setActive(sr, sc+1); return; }
+      if (e.key==='ArrowUp'){ e.preventDefault(); __grid_setActive(sr-1, sc); return; }
+      if (e.key==='ArrowDown'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
+      if (e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) { if (__grid_isEditableCol(sc)) { __grid_startEdit(sr,sc); setTimeout(()=>{ try { if (__gridEditing?.cell) __gridEditing.cell.textContent = e.key; } catch {} }, 0); e.preventDefault(); } }
+    });
+    document.addEventListener('copy', (e) => { if (!__gridActive || !__gridSel) return; const {sr,sc,er,ec}=__gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec); const out=[]; for(let r=r0;r<=r1;r++){const row=[]; for(let c=c0;c<=c1;c++){const cell=__grid_getCell(r,c); row.push(cell ? (cell.getAttribute('data-raw')||cell.textContent||'') : '');} out.push(row.join('\t'));} try{ e.clipboardData.setData('text/plain', out.join('\n')); e.preventDefault(); }catch{} });
+    document.addEventListener('paste', (e) => { if (!__gridActive || !__gridSel) return; const text=e.clipboardData?.getData('text/plain'); if (!text) return; const {sr,sc}=__gridSel; const rows=text.split(/\r?\n/); for (let i=0;i<rows.length;i++){ if (rows[i]==='') continue; const cols=rows[i].split('\t'); for (let j=0;j<cols.length;j++){ const r=sr+i, c=sc+j; if (!__grid_isEditableCol(c)) continue; const cell=__grid_getCell(r,c); if (!cell) continue; const field=cell.getAttribute('data-field'); const key=__gridCtx.opts.getRowKey(r); const bucket=(__gridCache[__gridCtx.tableId] ||= {}); const row=(bucket[key] ||= {}); const val=cols[j]; if (__grid_isNumericCol(c)) { const num=__grid_parseNumber(val); row[field]=num; cell.setAttribute('data-raw', String(num)); cell.textContent=__grid_fmtCurrency(num); } else { row[field]=val; cell.setAttribute('data-raw', val); cell.textContent=val; } if (typeof __gridCtx.opts.recompute==='function') { try { __gridCtx.opts.recompute(r,{rowKey:key,row}); } catch {} } } } e.preventDefault(); });
+    document.addEventListener('mousedown', (e) => { const accSec=document.getElementById('accountsSection'); if (accSec && !accSec.contains(e.target)) { if (__gridEditing) __grid_stopEdit(true); __gridActive=false; } });
+    document.__gridKeyWired = true;
+  }
+}
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
   // IMPORTANT: Hide app and show login immediately on load
@@ -97,8 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Always-available fallback to open cash txn modal even if module wiring hasn't attached yet
   try {
     window.__openCashTxnFallback = function(kind) {
-      // Ensure cashflow tab is visible
-      try { setAccountsSubTab('transactions'); } catch {}
       const modal = document.getElementById('cashTxnModal');
       if (!modal) return false;
       const form = document.getElementById('cashTxnForm');
@@ -151,14 +269,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const ovTab = document.getElementById('accountsTabOverview');
       if (ovTab && ovTab.style.display !== 'none') renderAccountsOverview();
     } catch {}
-    try {
-      const trTab = document.getElementById('accountsTabTransactions');
-      if (trTab && trTab.style.display !== 'none') {
-        populateCategoryFilter?.(document.getElementById('cashflowCategoryFilter'));
-        renderCashflowTable?.();
-        postFilterCashflowTable?.();
-      }
-    } catch {}
   });
 
   // Auth state listener
@@ -178,8 +288,59 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTemporaryRealtime();
   // Init clients/assignments modules and subscribe
   try {
-    initClients({ db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData });
+    initClients({ db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData, getAssignments: () => getAssignments() });
     subscribeClients();
+    // Independent controller for Clients filter to avoid timing issues
+    try {
+      if (!window.__clientsFilterControllerWired) {
+        window.__clientsFilterId = '';
+        // When first clients update arrives, populate and enable the dropdown
+        document.addEventListener('clients:updated', (e) => {
+          const sel = document.getElementById('clientsFilterSelect');
+          if (!sel) return;
+          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
+          const prev = window.__clientsFilterId || sel.value || '';
+          if (!list.length) {
+            sel.innerHTML = '<option value="" disabled selected>No clients available</option>';
+            sel.disabled = true;
+          } else {
+            sel.disabled = false;
+            const opts = ['<option value="">All clients…</option>']
+              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+            sel.innerHTML = opts.join('');
+            if (prev) { try { sel.value = prev; } catch {} }
+          }
+        }, { once: true });
+        const sel = document.getElementById('clientsFilterSelect');
+        if (sel && !sel.__wired2) {
+          sel.addEventListener('change', () => {
+            window.__clientsFilterId = sel.value || '';
+            try { renderClientsTable(); } catch {}
+          });
+          sel.__wired2 = true;
+        }
+        // Also keep options updated on subsequent clients updates (preserving selection)
+        document.addEventListener('clients:updated', (e) => {
+          const sel2 = document.getElementById('clientsFilterSelect');
+          if (!sel2) return;
+          const list = Array.isArray(e.detail) ? e.detail : (typeof getClients==='function'?getClients():[]);
+          const prev = window.__clientsFilterId || sel2.value || '';
+          if (!list.length) {
+            sel2.innerHTML = '<option value="" disabled selected>No clients available</option>';
+            sel2.disabled = true;
+          } else {
+            sel2.disabled = false;
+            const opts = ['<option value="">All clients…</option>']
+              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+            sel2.innerHTML = opts.join('');
+            if (prev) { try { sel2.value = prev; } catch {} }
+          }
+        });
+        window.__clientsFilterControllerWired = true;
+      }
+    } catch {}
   } catch (e) { console.warn('Clients init failed', e); }
   try {
     initAssignments({ db, collection, query, onSnapshot, addDoc, updateDoc, doc, serverTimestamp, showToast, cleanData,
@@ -451,6 +612,7 @@ function setupEventListeners() {
         renderPayrollTable();
       } else if (target === 'clients') {
         renderClientsTable();
+        try { forceRebuildClientsFilter?.(); } catch {}
       } else if (target === 'clients-billing') {
         // Default month to current if empty and render client transactions view
         try {
@@ -460,6 +622,27 @@ function setupEventListeners() {
             m.value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
           }
         } catch {}
+        // Always repopulate the client dropdown on navigation to ensure it's fresh
+        try {
+          const sel = document.getElementById('clientBillingClient');
+          if (sel) {
+            const prev = sel.value || '';
+            const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+            const opts = ['<option value="">Select client…</option>']
+              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
+            sel.innerHTML = opts.join('');
+            if (prev) { try { sel.value = prev; } catch {} }
+            // Update header label
+            try {
+              const nameEl = document.getElementById('clientBillingSelectedName');
+              const cur = list.find(x => x.id === (sel.value || ''));
+              if (nameEl) nameEl.textContent = cur ? `— ${cur.name}` : '';
+              const btn = document.getElementById('openClientPaymentBtn');
+              if (btn) btn.disabled = !sel.value;
+            } catch {}
+          }
+        } catch {}
         try { renderClientTransactions(); } catch {}
       } else if (target === 'assignments') {
         renderAssignmentsTable();
@@ -467,6 +650,7 @@ function setupEventListeners() {
         renderAccountsTable();
         renderCashflowTable?.();
         try { renderLedgerTable?.(); } catch {}
+        try { setupLedgerGrid(); } catch {}
         // ensure default sub-tab shown and controls visibility updated
         setAccountsSubTab('overview');
         // re-wire in case this section was hidden before
@@ -476,23 +660,30 @@ function setupEventListeners() {
     });
   });
 
-  // Edit Fund button
-  const editFundBtn = document.getElementById('editFundBtn');
-  if (editFundBtn) {
-    editFundBtn.addEventListener('click', (ev) => {
-      try { console.debug('[Fund] Set Current Fund button clicked', { target: ev?.target?.id }); } catch {}
-      openEditFundModal();
+  // Set Current Fund button (direct, no window dependency)
+  const setFundBtn = document.getElementById('setCurrentFundBtn');
+  if (setFundBtn) {
+    setFundBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { console.debug('[Fund] Set Current Fund button clicked'); } catch {}
+      if (typeof openSetFundDialog === 'function') {
+        openSetFundDialog();
+      } else {
+        console.error('[Fund] openSetFundDialog function not found');
+        showToast && showToast('Fund dialog not available', 'error');
+      }
     });
   } else {
-    try { console.warn('[Fund] editFundBtn not found in DOM at startup'); } catch {}
+    try { console.warn('[Fund] setCurrentFundBtn not found in DOM at startup'); } catch {}
   }
-  // Delegated fallback: capture clicks anywhere for #editFundBtn
+  // Delegated fallback: capture clicks anywhere for #setCurrentFundBtn
   document.addEventListener('click', (e) => {
-    const btn = e.target && e.target.closest ? e.target.closest('#editFundBtn') : null;
+    const btn = e.target && e.target.closest ? e.target.closest('#setCurrentFundBtn') : null;
     if (!btn) return;
     e.preventDefault();
     try { console.debug('[Fund] Delegated click for Set Current Fund'); } catch {}
-    openEditFundModal();
+    if (typeof openSetFundDialog === 'function') openSetFundDialog();
   }, true);
   const editFundForm = document.getElementById('editFundForm');
   if (editFundForm) {
@@ -693,9 +884,81 @@ function setupEventListeners() {
     });
     clientBillingMonthEl.__wired = true;
   }
+  // Client selector for Client Transactions
+  const clientBillingClientEl = document.getElementById('clientBillingClient');
+  if (clientBillingClientEl && !clientBillingClientEl.__wired) {
+    const populate = () => {
+      try {
+        const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+        const opts = ['<option value="">Select client…</option>']
+          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
+        clientBillingClientEl.innerHTML = opts.join('');
+      } catch {}
+    };
+    populate();
+    clientBillingClientEl.addEventListener('change', () => {
+      try {
+        const sel = document.getElementById('clientBillingClient');
+        const nameEl = document.getElementById('clientBillingSelectedName');
+        const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+        const c = list.find(x => x.id === (sel?.value || ''));
+        if (nameEl) nameEl.textContent = c ? `— ${c.name}` : '';
+        // Toggle Record Payment button
+        const btn = document.getElementById('openClientPaymentBtn');
+        if (btn) btn.disabled = !sel?.value;
+      } catch {}
+      try { renderClientTransactions(); } catch {}
+    });
+    clientBillingClientEl.__wired = true;
+  }
+
+  // Enable/disable Record Payment on month change
+  if (clientBillingMonthEl && !clientBillingMonthEl.__wired2) {
+    clientBillingMonthEl.addEventListener('change', () => {
+      try {
+        const btn = document.getElementById('openClientPaymentBtn');
+        const sel = document.getElementById('clientBillingClient');
+        if (btn) btn.disabled = !(sel?.value);
+      } catch {}
+    });
+    clientBillingMonthEl.__wired2 = true;
+  }
+
+  // Wire Record Payment button
+  const openClientPaymentBtn = document.getElementById('openClientPaymentBtn');
+  if (openClientPaymentBtn && !openClientPaymentBtn.__wired) {
+    openClientPaymentBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openClientPaymentModal();
+    });
+    openClientPaymentBtn.__wired = true;
+  }
 
   // Auto-refresh Client Transactions when clients/assignments change
   document.addEventListener('clients:updated', () => {
+    // Rebuild Client Transactions dropdown and update title/button when clients update
+    try {
+      const sel = document.getElementById('clientBillingClient');
+      if (sel) {
+        const selected = sel.value || '';
+        const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+        const opts = ['<option value="">Select client…</option>']
+          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
+        sel.innerHTML = opts.join('');
+        if (selected) { try { sel.value = selected; } catch {} }
+        // Update header name and button
+        try {
+          const nameEl = document.getElementById('clientBillingSelectedName');
+          const cur = list.find(x => x.id === (sel.value || ''));
+          if (nameEl) nameEl.textContent = cur ? `— ${cur.name}` : '';
+          const btn = document.getElementById('openClientPaymentBtn');
+          if (btn) btn.disabled = !sel.value;
+        } catch {}
+      }
+    } catch {}
+    // If section visible, re-render the table
     const sec = document.getElementById('clientsBillingSection');
     if (sec && sec.style.display !== 'none') {
       try { renderClientTransactions(); } catch {}
@@ -737,10 +1000,6 @@ function setupEventListeners() {
     if (!btn) return;
     e.preventDefault();
     const isIncome = btn.id.includes('Income');
-    try {
-      // Ensure cashflow tab is visible for context
-      setAccountsSubTab('transactions');
-    } catch {}
     try {
       if (window.openCashTxnModal) {
         window.openCashTxnModal({ type: isIncome ? 'in' : 'out' });
@@ -869,6 +1128,87 @@ function setupEventListeners() {
   setupSwipeToClose();
 }
 
+// Client Payment Modal controls
+window.openClientPaymentModal = function() {
+  const sel = document.getElementById('clientBillingClient');
+  const monthEl = document.getElementById('clientBillingMonth');
+  const modal = document.getElementById('clientPaymentModal');
+  if (!sel || !monthEl || !modal) return;
+  const clientId = sel.value || '';
+  if (!clientId) { showToast('Choose a client first', 'warning'); return; }
+  const ym = monthEl.value || '';
+  if (!/^\d{4}-\d{2}$/.test(ym)) { showToast('Choose a valid month', 'warning'); return; }
+  // Prefill labels
+  try {
+    const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
+    const c = list.find(x => x.id === clientId);
+    const name = c?.name || '—';
+    const mm = new Date(Number(ym.slice(0,4)), Number(ym.slice(5,7)) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+    const dateStr = `${ym}-01`;
+    const nameEl = document.getElementById('clientPaymentClientName');
+    const monthLbl = document.getElementById('clientPaymentMonth');
+    const dateInput = document.getElementById('cpDate');
+    if (nameEl) nameEl.textContent = name;
+    if (monthLbl) monthLbl.textContent = mm;
+    if (dateInput) dateInput.value = dateStr;
+  } catch {}
+  // Populate accounts
+  try {
+    const selAcc = document.getElementById('cpAccount');
+    const accs = __getLocalAccounts().filter(a => (String(a.type||'').toLowerCase() === 'asset'));
+    selAcc.innerHTML = accs.map(a => `<option value="${a.id}">${escapeHtml(a.name||'')}</option>`).join('');
+  } catch {}
+  // Reset amount/notes
+  try { const a = document.getElementById('cpAmount'); if (a) a.value = ''; } catch {}
+  try { const n = document.getElementById('cpNotes'); if (n) n.value = ''; } catch {}
+  modal.classList.add('show');
+}
+window.closeClientPaymentModal = function() {
+  const modal = document.getElementById('clientPaymentModal');
+  if (modal) modal.classList.remove('show');
+}
+
+document.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'clientPaymentForm') {
+    e.preventDefault();
+    const date = document.getElementById('cpDate')?.value || '';
+    const accountId = document.getElementById('cpAccount')?.value || '';
+    const amount = Math.abs(Number(document.getElementById('cpAmount')?.value || 0)) || 0;
+    const notes = document.getElementById('cpNotes')?.value || '';
+    const sel = document.getElementById('clientBillingClient');
+    const monthEl = document.getElementById('clientBillingMonth');
+    const clientId = sel?.value || '';
+    const ym = monthEl?.value || '';
+    if (!date || !accountId || !(amount>0) || !clientId || !/^\d{4}-\d{2}$/.test(ym)) { showToast('Fill all fields correctly', 'warning'); return; }
+    try {
+      // Save as cashflow IN (payment received) and tag with clientId for reporting
+      await addDoc(collection(db, 'cashflows'), cleanData({
+        date,
+        type: 'in',
+        accountId,
+        amount,
+        category: 'Client Payment',
+        clientId,
+        month: ym,
+        notes,
+        createdAt: new Date().toISOString()
+      }));
+      // Update local grid cache credited for this (clientId|ym)
+      const key = `${clientId}|${ym}`;
+      const cur = (__clientBillingGridCache[key] ||= {});
+      const prevCred = Number(cur.credited||0);
+      cur.credited = prevCred + amount;
+      showToast('Payment recorded', 'success');
+      closeClientPaymentModal();
+      // Re-render grid to reflect credited/outstanding
+      try { renderClientTransactions(); } catch {}
+    } catch (err) {
+      console.error('Client payment save failed', err);
+      showToast('Failed to save payment', 'error');
+    }
+  }
+});
+
 // Toggle visible section and active nav
 function setActiveSection(key) {
   const sections = document.querySelectorAll('[data-section]');
@@ -928,12 +1268,11 @@ function setActiveSection(key) {
 
 // Clients/Assignments logic moved into modules
 
-// Accounts sub-tabs (redesigned) — Overview, Transactions, Ledger, Settings
+// Accounts sub-tabs (redesigned) — Overview, Ledger, Settings (Transactions removed)
 document.addEventListener('click', (e) => {
-  const btn = e.target && e.target.closest && e.target.closest('#accountsSubTabOverviewBtn, #accountsSubTabTransactionsBtn, #accountsSubTabLedgerBtn, #accountsSubTabSettingsBtn');
+  const btn = e.target && e.target.closest && e.target.closest('#accountsSubTabOverviewBtn, #accountsSubTabLedgerBtn, #accountsSubTabSettingsBtn');
   if (!btn) return;
   let which = 'overview';
-  if (btn.id === 'accountsSubTabTransactionsBtn') which = 'transactions';
   if (btn.id === 'accountsSubTabLedgerBtn') which = 'ledger';
   if (btn.id === 'accountsSubTabSettingsBtn') which = 'settings';
   setAccountsSubTab(which);
@@ -942,13 +1281,11 @@ document.addEventListener('click', (e) => {
 function setAccountsSubTab(which) {
   const tabs = {
     overview: document.getElementById('accountsTabOverview'),
-    transactions: document.getElementById('accountsTabTransactions'),
     ledger: document.getElementById('accountsTabLedger'),
     settings: document.getElementById('accountsTabSettings'),
   };
   const btns = {
     overview: document.getElementById('accountsSubTabOverviewBtn'),
-    transactions: document.getElementById('accountsSubTabTransactionsBtn'),
     ledger: document.getElementById('accountsSubTabLedgerBtn'),
     settings: document.getElementById('accountsSubTabSettingsBtn'),
   };
@@ -960,13 +1297,10 @@ function setAccountsSubTab(which) {
   // Render content per tab
   if (which === 'overview') {
     renderAccountsOverview();
-  } else if (which === 'transactions') {
-    try { renderCashflowTable?.(); } catch {}
-    try { wireTransactionsFilters(); } catch {}
-    try { postFilterCashflowTable(); } catch {}
   } else if (which === 'ledger') {
     try { refreshLedgerAccounts?.(); } catch {}
     try { renderLedgerTable?.(); } catch {}
+    try { setupLedgerGrid(); } catch {}
   } else if (which === 'settings') {
     renderAccountsTable();
   }
@@ -980,13 +1314,13 @@ try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
 
 // Robust wiring for Accounts sub-tab buttons (direct listeners)
 function wireAccountsTabButtons() {
-  const ids = ['accountsSubTabOverviewBtn','accountsSubTabTransactionsBtn','accountsSubTabLedgerBtn','accountsSubTabSettingsBtn'];
+  const ids = ['accountsSubTabOverviewBtn','accountsSubTabLedgerBtn','accountsSubTabSettingsBtn'];
   ids.forEach((id) => {
     const el = document.getElementById(id);
     if (el && !el.__wired) {
       el.addEventListener('click', (e) => {
         e.preventDefault();
-        const which = id.includes('Overview') ? 'overview' : id.includes('Transactions') ? 'transactions' : id.includes('Ledger') ? 'ledger' : 'settings';
+        const which = id.includes('Overview') ? 'overview' : id.includes('Ledger') ? 'ledger' : 'settings';
         setAccountsSubTab(which);
       });
       el.__wired = true;
@@ -1043,87 +1377,52 @@ function renderAccountsOverview() {
       <td class="px-4 py-2">${escapeHtml(t.notes||'')}</td>
     </tr>`;
   }).join('');
-}
-
-// Transactions tab: date range and category filters + export CSV
-function wireTransactionsFilters() {
-  const startEl = document.getElementById('cashflowStartDate');
-  const endEl = document.getElementById('cashflowEndDate');
-  const catEl = document.getElementById('cashflowCategoryFilter');
-  const exportBtn = document.getElementById('exportCashflowCsvBtn');
-  if (startEl && !startEl.__wired) { startEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); startEl.__wired = true; }
-  if (endEl && !endEl.__wired) { endEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); endEl.__wired = true; }
-  if (catEl && !catEl.__wired) { catEl.addEventListener('change', () => { renderCashflowTable?.(); postFilterCashflowTable(); }); catEl.__wired = true; populateCategoryFilter(catEl); }
-  if (exportBtn && !exportBtn.__wired) { exportBtn.addEventListener('click', exportCashflowCsv); exportBtn.__wired = true; }
-}
-
-function populateCategoryFilter(selectEl) {
-  const flows = Array.isArray(window.__cashflowAll) ? window.__cashflowAll : [];
-  const cats = Array.from(new Set(flows.map(f => (f.category||'').trim()).filter(Boolean))).sort();
-  const opts = ['<option value="">All Categories</option>'].concat(cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`));
-  selectEl.innerHTML = opts.join('');
-}
-
-// Post-filter cashflow table rows in DOM based on date range/category filters
-function postFilterCashflowTable() {
+  // Make the Recent Transactions table grid-like (read-only)
   try {
-    const start = document.getElementById('cashflowStartDate')?.value || '';
-    const end = document.getElementById('cashflowEndDate')?.value || '';
-    const cat = document.getElementById('cashflowCategoryFilter')?.value || '';
-    const tbody = document.getElementById('cashflowTableBody');
-    const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
-    let inSum = 0, outSum = 0;
-    rows.forEach(tr => {
-      const tds = tr.querySelectorAll('td');
-      const d = tds[0]?.textContent || '';
-      const typ = (tds[2]?.textContent || '').toLowerCase();
-      const catTxt = (tds[3]?.textContent || '').trim();
-      const amtTxt = (tds[4]?.textContent || '').replace(/[^0-9.\-]/g,'');
-      const amt = Math.abs(Number(amtTxt)||0);
-      let ok = true;
-      if (start && d < start) ok = false;
-      if (end && d > end) ok = false;
-      if (cat && catTxt !== cat) ok = false;
-      tr.style.display = ok ? '' : 'none';
-      if (ok) { if (typ==='in') inSum += amt; else if (typ==='out') outSum += amt; }
+    makeTableGrid(tbody, {
+      tableId: 'accountsRecent',
+      editableCols: [], // read-only
+      numericCols: [4],
+      fields: ['date','account','type','category','amount','notes'],
+      getRowKey: (r) => {
+        const tr = tbody.querySelectorAll('tr')[r]; if (!tr) return String(r);
+        const date = tr.children[0]?.textContent||'';
+        const acc = tr.children[1]?.textContent||'';
+        const typ = tr.children[2]?.textContent||'';
+        const cat = tr.children[3]?.textContent||'';
+        const amt = tr.children[4]?.getAttribute('data-raw')||tr.children[4]?.textContent||'';
+        const notes = tr.children[5]?.textContent||'';
+        return `${date}|${acc}|${typ}|${cat}|${amt}|${notes}`;
+      }
     });
-    const sumEl = document.getElementById('cashflowSummary');
-    if (sumEl) {
-      const fmt=(n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-      sumEl.textContent = `In: ${fmt(inSum)} • Out: ${fmt(outSum)} • Net: ${fmt(inSum-outSum)}`;
-    }
   } catch {}
 }
 
-function exportCashflowCsv() {
-  const flows = Array.isArray(window.__cashflowAll) ? window.__cashflowAll.slice() : [];
-  const start = document.getElementById('cashflowStartDate')?.value || '';
-  const end = document.getElementById('cashflowEndDate')?.value || '';
-  const accId = document.getElementById('cashflowAccountFilter')?.value || '';
-  const cat = document.getElementById('cashflowCategoryFilter')?.value || '';
-  const rows = flows.filter(f => {
-    if (start && (f.date||'') < start) return false;
-    if (end && (f.date||'') > end) return false;
-    if (accId && (f.accountId||'') !== accId) return false;
-    if (cat && (f.category||'') !== cat) return false;
-    return true;
-  }).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
-  const head = ['Date','Account','Type','Category','Amount','Notes'];
-  const accs = __getLocalAccounts();
-  const accName = (id)=> (accs.find(a=>a.id===id)?.name || '');
-  const csv = [head].concat(rows.map(r=>[
-    r.date||'',
-    accName(r.accountId),
-    (String(r.type||'').toLowerCase()==='in'?'In':'Out'),
-    r.category||'',
-    Number(r.amount||0),
-    (r.notes||'').replace(/\n/g,' ')
-  ])).map(cols=>cols.map(quoteCsv).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download=`cashflows_${new Date().toISOString().slice(0,10)}.csv`; a.click();
-  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+// Initialize grid on Ledger table after it renders
+function setupLedgerGrid() {
+  const tbody = document.getElementById('ledgerTableBody');
+  if (!tbody) return;
+  if (!tbody.querySelector('tr')) return; // nothing to grid
+  makeTableGrid(tbody, {
+    tableId: 'accountsLedger',
+    editableCols: [1], // allow editing Description locally
+    numericCols: [2,3,4], // Debit, Credit, Balance numeric formatting
+    fields: ['date','description','debit','credit','balance'],
+    getRowKey: (r) => {
+      const tr = tbody.querySelectorAll('tr')[r]; if (!tr) return String(r);
+      const date = tr.children[0]?.textContent||'';
+      const desc = tr.children[1]?.textContent||'';
+      const deb = tr.children[2]?.getAttribute('data-raw')||tr.children[2]?.textContent||'';
+      const cred = tr.children[3]?.getAttribute('data-raw')||tr.children[3]?.textContent||'';
+      const bal = tr.children[4]?.getAttribute('data-raw')||tr.children[4]?.textContent||'';
+      return `${date}|${desc}|${deb}|${cred}|${bal}`;
+    },
+    recompute: () => { /* balance left read-only for now */ }
+  });
 }
+
+// Transactions tab: date range and category filters + export CSV
+// Transactions tab removed: filters and CSV export helpers deleted
 
 // Transfer modal: open/close and submit
 window.openTransferModal = function() {
@@ -3341,12 +3640,285 @@ function prettyAuthError(e) {
 // =====================
 // Client Transactions (Monthly)
 // =====================
+// Lightweight in-memory cache for grid edits per client+month
+const __clientBillingGridCache = (window.__clientBillingGridCache ||= {});
+let __clientBillingGridCtx = null; // { tbody, ym, rows: [{key, clientId}], cols }
+let __clientBillingSel = null;     // { sr, sc, er, ec }
+let __clientBillingEditing = null; // { r, c, cell, field, original }
+let __clientBillingActive = false;
+
+function injectClientBillingGridStyles() {
+  if (document.getElementById('client-billing-grid-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'client-billing-grid-styles';
+  style.textContent = `
+    /* Excel-like grid visuals for Client Transactions */
+    #clientsBillingSection td.grid-cell, #clientsBillingSection th.grid-cell { border: 1px solid #e5e7eb; }
+    #clientsBillingSection table { border-collapse: separate; border-spacing: 0; }
+    #clientsBillingSection td.grid-cell { position: relative; cursor: cell; }
+    #clientsBillingSection td.grid-cell.readonly { background: #fafafa; color: #475569; }
+    #clientsBillingSection td.grid-cell.grid-active { outline: 2px solid #4f46e5; outline-offset: -2px; background: #eef2ff; }
+    #clientsBillingSection td.grid-cell.grid-selected { background: #eef2ff; }
+    #clientsBillingSection td.grid-cell.editing { outline: 2px solid #22c55e; background: #ecfdf5; }
+    #clientsBillingSection td.grid-cell[contenteditable="true"] { caret-color: #111827; }
+  `;
+  document.head.appendChild(style);
+}
+
+function __cb_isEditableCol(c) {
+  // 0 Date (ro), 1 Assigned (ro), 2 Monthly (num), 3 Debited (num), 4 Credited (num), 5 Outstanding (ro computed), 6 Notes (text)
+  return c === 2 || c === 3 || c === 4 || c === 6;
+}
+function __cb_isNumericCol(c) { return c === 2 || c === 3 || c === 4; }
+function __cb_fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`; }
+function __cb_parseNumber(s) {
+  if (typeof s !== 'string') return Number(s||0);
+  const t = s.replace(/[^0-9.\-]/g, '');
+  const v = Number(t);
+  return isFinite(v) ? v : 0;
+}
+
+function __cb_getCell(r, c) {
+  if (!__clientBillingGridCtx?.tbody) return null;
+  return __clientBillingGridCtx.tbody.querySelector(`td.grid-cell[data-row="${r}"][data-col="${c}"]`);
+}
+function __cb_clearSel() {
+  if (!__clientBillingGridCtx?.tbody) return;
+  __clientBillingGridCtx.tbody.querySelectorAll('td.grid-cell.grid-active, td.grid-cell.grid-selected').forEach(el=>{
+    el.classList.remove('grid-active','grid-selected');
+  });
+}
+function __cb_applySel() {
+  if (!__clientBillingGridCtx?.tbody || !__clientBillingSel) return;
+  const { sr, sc, er, ec } = __clientBillingSel;
+  const r0 = Math.min(sr, er), r1 = Math.max(sr, er);
+  const c0 = Math.min(sc, ec), c1 = Math.max(sc, ec);
+  for (let r=r0; r<=r1; r++) {
+    for (let c=c0; c<=c1; c++) {
+      const cell = __cb_getCell(r,c);
+      if (!cell) continue;
+      cell.classList.add('grid-selected');
+    }
+  }
+  const active = __cb_getCell(sr, sc);
+  if (active) active.classList.add('grid-active');
+}
+function __cb_setActive(r,c, extend=false) {
+  if (!__clientBillingGridCtx) return;
+  const maxR = (__clientBillingGridCtx.rows?.length||1)-1;
+  const maxC = 6;
+  r = Math.max(0, Math.min(maxR, r));
+  c = Math.max(0, Math.min(maxC, c));
+  if (!extend || !__clientBillingSel) {
+    __clientBillingSel = { sr:r, sc:c, er:r, ec:c };
+  } else {
+    __clientBillingSel.er = r; __clientBillingSel.ec = c;
+  }
+  __cb_clearSel();
+  __cb_applySel();
+}
+function __cb_startEdit(r,c) {
+  if (!__clientBillingGridCtx) return;
+  if (!__cb_isEditableCol(c)) return;
+  const cell = __cb_getCell(r,c);
+  if (!cell) return;
+  if (__clientBillingEditing) __cb_stopEdit(false);
+  const field = cell.getAttribute('data-field');
+  const raw = cell.getAttribute('data-raw') || cell.textContent;
+  __clientBillingEditing = { r, c, cell, field, original: raw };
+  cell.classList.add('editing');
+  cell.setAttribute('contenteditable','true');
+  // Set plain value for numeric fields when entering
+  if (__cb_isNumericCol(c)) {
+    const v = __cb_parseNumber(raw);
+    cell.textContent = String(v || 0);
+  }
+  // Focus and select
+  const range = document.createRange();
+  range.selectNodeContents(cell);
+  const sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+}
+function __cb_commitEdit(save) {
+  if (!__clientBillingEditing) return;
+  const { r, c, cell, field, original } = __clientBillingEditing;
+  const text = cell.textContent || '';
+  let display = text;
+  let toStore = text;
+  if (__cb_isNumericCol(c)) {
+    const num = __cb_parseNumber(text);
+    display = __cb_fmtCurrency(num);
+    toStore = String(num);
+  }
+  if (save) {
+    cell.setAttribute('data-raw', toStore);
+    const rowMeta = __clientBillingGridCtx.rows?.[r];
+    if (rowMeta) {
+      const key = rowMeta.key;
+      const bucket = (__clientBillingGridCache[key] ||= {});
+      if (field) bucket[field] = __cb_isNumericCol(c) ? __cb_parseNumber(toStore) : text;
+      // Recompute Outstanding (col 5)
+      try {
+        const deb = Number(bucket.debited||0);
+        const cred = Number(bucket.credited||0);
+        const out = deb - cred;
+        const oc = __cb_getCell(r,5);
+        if (oc) { oc.textContent = __cb_fmtCurrency(out); oc.setAttribute('data-raw', String(out)); }
+      } catch {}
+    }
+  } else {
+    // Restore previous display
+    if (__cb_isNumericCol(c)) display = __cb_fmtCurrency(__cb_parseNumber(original)); else display = original;
+  }
+  cell.textContent = display;
+}
+function __cb_stopEdit(save) {
+  if (!__clientBillingEditing) return;
+  try { __cb_commitEdit(save); } catch {}
+  const { cell } = __clientBillingEditing;
+  cell.removeAttribute('contenteditable');
+  cell.classList.remove('editing');
+  __clientBillingEditing = null;
+}
+
+function setupClientBillingGrid(tbody, gridRowsMeta) {
+  injectClientBillingGridStyles();
+  __clientBillingGridCtx = { tbody, rows: gridRowsMeta };
+  __clientBillingActive = true;
+  __cb_setActive(0, 0);
+
+  // Click to select or Shift+Click to extend
+  if (!tbody.__gridWired) {
+    tbody.addEventListener('mousedown', (e) => {
+      const td = e.target.closest('td.grid-cell');
+      if (!td) return;
+      __clientBillingActive = true;
+      const r = Number(td.getAttribute('data-row')||0);
+      const c = Number(td.getAttribute('data-col')||0);
+      const extend = e.shiftKey;
+      __cb_setActive(r, c, extend);
+    });
+    // Double click or F2 to edit
+    tbody.addEventListener('dblclick', (e) => {
+      const td = e.target.closest('td.grid-cell');
+      if (!td) return;
+      const r = Number(td.getAttribute('data-row')||0);
+      const c = Number(td.getAttribute('data-col')||0);
+      __cb_startEdit(r,c);
+    });
+    tbody.__gridWired = true;
+  }
+  // Global key handlers (once)
+  if (!document.__cbKeyWired) {
+    document.addEventListener('keydown', (e) => {
+      if (!__clientBillingActive) return;
+      // If editing, handle Enter/Escape/Tab
+      if (__clientBillingEditing) {
+        if (e.key === 'Enter') { e.preventDefault(); __cb_stopEdit(true); return; }
+        if (e.key === 'Escape') { e.preventDefault(); __cb_stopEdit(false); return; }
+        return;
+      }
+      if (!__clientBillingSel) return;
+      const { sr, sc } = __clientBillingSel;
+      if (e.key === 'F2') { e.preventDefault(); __cb_startEdit(sr, sc); return; }
+      if (e.key === 'Enter') { e.preventDefault(); __cb_setActive(sr+1, sc); return; }
+      if (e.key === 'Tab') { e.preventDefault(); __cb_setActive(sr, sc + (e.shiftKey ? -1 : 1)); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); __cb_setActive(sr, sc-1); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); __cb_setActive(sr, sc+1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); __cb_setActive(sr-1, sc); return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); __cb_setActive(sr+1, sc); return; }
+      // Typing starts edit if editable
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (__cb_isEditableCol(sc)) {
+          __cb_startEdit(sr, sc);
+          // Replace with typed char
+          setTimeout(()=>{ try { if (__clientBillingEditing?.cell) { __clientBillingEditing.cell.textContent = e.key; } } catch {} }, 0);
+          e.preventDefault();
+        }
+      }
+    });
+    // Copy
+    document.addEventListener('copy', (e) => {
+      if (!__clientBillingActive || !__clientBillingSel) return;
+      const { sr, sc, er, ec } = __clientBillingSel;
+      const r0 = Math.min(sr, er), r1 = Math.max(sr, er);
+      const c0 = Math.min(sc, ec), c1 = Math.max(sc, ec);
+      let out = [];
+      for (let r=r0; r<=r1; r++) {
+        const row = [];
+        for (let c=c0; c<=c1; c++) {
+          const cell = __cb_getCell(r,c);
+          row.push(cell ? (cell.getAttribute('data-raw') || cell.textContent || '') : '');
+        }
+        out.push(row.join('\t'));
+      }
+      try { e.clipboardData.setData('text/plain', out.join('\n')); e.preventDefault(); } catch {}
+    });
+    // Paste
+    document.addEventListener('paste', (e) => {
+      if (!__clientBillingActive || !__clientBillingSel) return;
+      const text = e.clipboardData?.getData('text/plain');
+      if (!text) return;
+      const { sr, sc } = __clientBillingSel;
+      const rows = text.split(/\r?\n/);
+      for (let i=0; i<rows.length; i++) {
+        if (rows[i] === '') continue;
+        const cols = rows[i].split('\t');
+        for (let j=0; j<cols.length; j++) {
+          const r = sr + i, c = sc + j;
+          if (!__cb_isEditableCol(c)) continue;
+          const cell = __cb_getCell(r,c);
+          if (!cell) continue;
+          const val = cols[j];
+          // Commit directly without entering edit mode
+          const field = cell.getAttribute('data-field');
+          const rowMeta = __clientBillingGridCtx.rows?.[r];
+          if (!rowMeta) continue;
+          const key = rowMeta.key;
+          const bucket = (__clientBillingGridCache[key] ||= {});
+          if (__cb_isNumericCol(c)) {
+            const num = __cb_parseNumber(val);
+            bucket[field] = num;
+            cell.setAttribute('data-raw', String(num));
+            cell.textContent = __cb_fmtCurrency(num);
+          } else {
+            bucket[field] = val;
+            cell.setAttribute('data-raw', val);
+            cell.textContent = val;
+          }
+          // Update Outstanding if needed
+          try {
+            const deb = Number(bucket.debited||0);
+            const cred = Number(bucket.credited||0);
+            const out = deb - cred;
+            const oc = __cb_getCell(r,5);
+            if (oc) { oc.textContent = __cb_fmtCurrency(out); oc.setAttribute('data-raw', String(out)); }
+          } catch {}
+        }
+      }
+      e.preventDefault();
+    });
+    // Click outside to deactivate
+    document.addEventListener('mousedown', (e) => {
+      const sec = document.getElementById('clientsBillingSection');
+      if (!sec) return;
+      if (!sec.contains(e.target)) {
+        __clientBillingActive = false;
+        if (__clientBillingEditing) __cb_stopEdit(true);
+      }
+    });
+    document.__cbKeyWired = true;
+  }
+}
+
 function renderClientTransactions() {
   const monthEl = document.getElementById('clientBillingMonth');
+  const clientSel = document.getElementById('clientBillingClient');
   const tbody = document.getElementById('clientBillingTableBody');
   const empty = document.getElementById('clientBillingEmpty');
   if (!monthEl || !tbody || !empty) return;
   const ym = monthEl.value || '';
+  const clientFilter = clientSel ? (clientSel.value || '') : '';
   const clients = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
   const assignments = (typeof getAssignments === 'function') ? getAssignments() : (window.getAssignments ? window.getAssignments() : []);
   // Filter assignments that are active within selected Ym
@@ -3380,7 +3952,13 @@ function renderClientTransactions() {
     byClient.get(a.clientId).count += 1;
   }
 
-  const rows = Array.from(byClient.values()).sort((A,B)=> (A.client.name||'').localeCompare(B.client.name||''));
+  let rows = Array.from(byClient.values()).sort((A,B)=> (A.client.name||'').localeCompare(B.client.name||''));
+  // Filter by selected client; if none selected, show nothing so page loads clean
+  if (clientFilter) {
+    rows = rows.filter(r => r.client && r.client.id === clientFilter);
+  } else {
+    rows = [];
+  }
   if (!rows.length) {
     tbody.innerHTML = '';
     empty.classList.remove('hidden');
@@ -3388,19 +3966,38 @@ function renderClientTransactions() {
   }
   empty.classList.add('hidden');
   const fmt = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-  tbody.innerHTML = rows.map(({ client, count }) => {
-    // Placeholder for Monthly Amount until rate/invoice logic is defined
-    const monthly = 0;
-    const notes = '';
+  const monthDateStr = (() => {
+    if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return '';
+    try { const d = new Date(Number(ym.slice(0,4)), Number(ym.slice(5,7))-1, 1); return d.toISOString().slice(0,10); } catch { return ''; }
+  })();
+  // Build rows with cache-backed values and grid metadata
+  const gridRowsMeta = [];
+  const html = rows.map(({ client, count }, rIndex) => {
+    const key = `${client.id || client.clientId || ''}|${ym}`;
+    gridRowsMeta.push({ key, clientId: client.id || client.clientId });
+    const cache = __clientBillingGridCache[key] || {};
+    const monthly = Number(cache.monthly || 0);
+    const debited = Number(cache.debited || 0);
+    const credited = Number(cache.credited || 0);
+    const outstanding = debited - credited;
+    const notes = String(cache.notes || '');
+    // td builder
+    const td = (cIndex, text, raw, editable, field, extraCls='') => `
+      <td class="px-3 py-2 grid-cell ${editable?'' : 'readonly'} ${extraCls}" data-row="${rIndex}" data-col="${cIndex}" ${field?`data-field="${field}"`:''} ${raw!==undefined?`data-raw="${raw}"`:''}>${text}</td>`;
     return `
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(client.name || '')}</td>
-        <td class="px-4 py-2">${escapeHtml(client.email || '')}</td>
-        <td class="px-4 py-2">${escapeHtml(client.phone || '-')}</td>
-        <td class="px-4 py-2">${Number(count).toLocaleString()}</td>
-        <td class="px-4 py-2 text-right">${monthly ? fmt(monthly) : '-'}</td>
-        <td class="px-4 py-2">${escapeHtml(notes)}</td>
-      </tr>
-    `;
+      <tr>
+        ${td(0, escapeHtml(monthDateStr), monthDateStr, false, '', 'text-left')}
+        ${td(1, Number(count).toLocaleString(), String(Number(count)||0), false, '', 'text-left')}
+        ${td(2, monthly ? fmt(monthly) : '-', String(monthly||0), true, 'monthly', 'text-right')}
+        ${td(3, fmt(debited), String(debited||0), true, 'debited', 'text-right')}
+        ${td(4, fmt(credited), String(credited||0), true, 'credited', 'text-right')}
+        ${td(5, fmt(outstanding), String(outstanding||0), false, '', 'text-right')}
+        ${td(6, escapeHtml(notes), notes, true, 'notes', 'text-left')}
+      </tr>`;
   }).join('');
+  tbody.innerHTML = html;
+  // Elevate cells to grid mode
+  tbody.querySelectorAll('td').forEach(el => el.classList.add('grid-cell'));
+  // Initialize grid interactions
+  setupClientBillingGrid(tbody, gridRowsMeta);
 }

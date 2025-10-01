@@ -4,9 +4,34 @@
 let _deps = null;
 let _clients = [];
 let _unsub = null;
+let _assignments = [];
+let _filterInitDone = false;
+let _customFilterWired = false;
+
+function byName(a, b) {
+  const an = String(a?.name || a?.company || '').toLowerCase();
+  const bn = String(b?.name || b?.company || '').toLowerCase();
+  return an.localeCompare(bn);
+}
+
+function getClientLabel(c) {
+  const n = c?.name || c?.company || '';
+  return n || '(unnamed)';
+}
+
+function getContactPerson(c) {
+  return (
+    c?.contactPerson ||
+    c?.contactName ||
+    c?.contact ||
+    c?.person ||
+    c?.companyContact ||
+    '-' 
+  );
+}
 
 export function initClients(deps) {
-  _deps = deps; // { db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData }
+  _deps = deps; // { db, collection, query, onSnapshot, addDoc, serverTimestamp, showToast, cleanData, getAssignments }
 
   // Wire UI events
   const openClientModalBtn = document.getElementById('openClientModalBtn');
@@ -18,8 +43,23 @@ export function initClients(deps) {
   window.closeClientModal = closeClientModal;
   window.openClientModal = openClientModal;
 
+  // Initialize custom filter dropdown UI
+  try { initCustomClientsFilter(); } catch {}
   // Initial render to show empty state even before first snapshot
   try { renderClientsTable(); } catch {}
+
+  // Track assignments to compute Monthly per client
+  try {
+    const getter = deps && deps.getAssignments;
+    _assignments = typeof getter === 'function' ? (getter() || []) : [];
+  } catch { _assignments = []; }
+  document.addEventListener('assignments:updated', (e) => {
+    try { _assignments = Array.isArray(e.detail) ? e.detail.slice() : []; } catch { _assignments = []; }
+    try { renderClientsTable(); } catch {}
+  });
+
+  // Ensure the custom dropdown handlers are wired once
+  try { wireCustomClientsFilter(); } catch {}
 }
 
 export function subscribeClients() {
@@ -30,7 +70,9 @@ export function subscribeClients() {
   _unsub = onSnapshot(
     q,
     (snapshot) => {
-      _clients = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  _clients = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Rebuild the Clients tab custom filter options on live updates
+  try { rebuildCustomClientsFilter(true); } catch {}
       renderClientsTable();
       // Notify listeners that clients data updated (for Client Billing and others)
       try {
@@ -57,26 +99,162 @@ export function renderClientsTable() {
   const tbody = document.getElementById('clientsTableBody');
   const empty = document.getElementById('clientsEmptyState');
   if (!tbody || !empty) return;
+  // Prefer controller-provided selection to decouple from DOM readiness
+  let filterId = window.__clientsFilterId || '';
+  if (!filterId) { try { window.__clientsFilterId = '*'; } catch {} filterId = '*'; }
+  if (filterId === '*') filterId = '';
   if (!_clients.length) {
     tbody.innerHTML = '';
     empty.classList.remove('hidden');
     return;
   }
   empty.classList.add('hidden');
-  const fmtDateTime = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso || ''; } };
+  const fmtCurrency = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const today = new Date();
+  const todayYmd = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const isActiveInMonth = (start, end, ym) => {
+    // Active if start <= endOfMonth and (no end or end >= startOfMonth)
+    const y = Number(ym.slice(0,4));
+    const m = Number(ym.slice(5,7)) - 1;
+    const startOfMonth = new Date(y, m, 1);
+    const endOfMonth = new Date(y, m + 1, 0);
+    const s = start ? new Date(start) : null;
+    const e = end ? new Date(end) : null;
+    const sOk = !s || s <= endOfMonth;
+    const eOk = !e || e >= startOfMonth;
+    return sOk && eOk;
+  };
+  const currentYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const monthlyForClient = (clientId) => {
+    try {
+      const list = Array.isArray(_assignments) ? _assignments : [];
+      let sum = 0;
+      for (const a of list) {
+        if (!a || a.clientId !== clientId) continue;
+        const rt = String(a.rateType||'').toLowerCase();
+        const rate = Number(a.rate||0) || 0;
+        if (rt === 'monthly' && rate) {
+          if (isActiveInMonth(a.startDate, a.endDate, currentYm)) sum += rate;
+        }
+      }
+      return sum;
+    } catch { return 0; }
+  };
+  const assignedCountForClient = (clientId) => {
+    try {
+      const list = Array.isArray(_assignments) ? _assignments : [];
+      let cnt = 0;
+      for (const a of list) {
+        if (!a || a.clientId !== clientId) continue;
+        if (isActiveInMonth(a.startDate, a.endDate, currentYm)) cnt += 1;
+      }
+      return cnt;
+    } catch { return 0; }
+  };
   const rows = _clients
     .slice()
-    .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-    .map(c => `
-      <tr class="hover:bg-gray-50">
-        <td class="px-4 py-2 font-semibold text-gray-900">${c.name || ''}</td>
-        <td class="px-4 py-2">${c.email || ''}</td>
-        <td class="px-4 py-2">${c.phone || '-'}</td>
-        <td class="px-4 py-2">${c.company || '-'}</td>
-        <td class="px-4 py-2">${c.address || '-'}</td>
-      </tr>
-    `).join('');
+    .filter(c => !filterId || c.id === filterId)
+    .sort(byName)
+    .map(c => {
+      const cells = [
+        `<td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(c.name || c.company || '')}</td>`,
+        `<td class="px-4 py-2">${escapeHtml(c.email || '')}</td>`,
+        `<td class="px-4 py-2">${escapeHtml(c.phone || '-')}</td>`,
+        `<td class="px-4 py-2">${escapeHtml(getContactPerson(c))}</td>`,
+        `<td class="px-4 py-2 text-right">${assignedCountForClient(c.id)}</td>`,
+        `<td class="px-4 py-2 text-right">${fmtCurrency(monthlyForClient(c.id))}</td>`,
+        `<td class="px-4 py-2">${escapeHtml(c.address || '-')}</td>`,
+      ];
+      return `<tr class="hover:bg-gray-50">${cells.join('')}</tr>`;
+    }).join('');
   tbody.innerHTML = rows;
+  if (!rows) { empty.classList.remove('hidden'); } else { empty.classList.add('hidden'); }
+}
+
+// Clients filter dropdown — fully rebuilt
+// Custom Clients filter dropdown — improved UI
+function initCustomClientsFilter() {
+  const btn = document.getElementById('clientsFilterBtn');
+  const menu = document.getElementById('clientsFilterMenu');
+  const txt = document.getElementById('clientsFilterBtnText');
+  if (!btn || !menu || !txt) return;
+  if (!_filterInitDone) {
+    txt.textContent = 'Loading clients…';
+    menu.innerHTML = '';
+    _filterInitDone = true;
+  }
+}
+
+function wireCustomClientsFilter() {
+  if (_customFilterWired) return;
+  const root = document.getElementById('clientsFilterCustom');
+  const btn = document.getElementById('clientsFilterBtn');
+  const menu = document.getElementById('clientsFilterMenu');
+  const txt = document.getElementById('clientsFilterBtnText');
+  if (!root || !btn || !menu || !txt) return;
+  const openMenu = () => { menu.classList.remove('hidden'); btn.setAttribute('aria-expanded','true'); };
+  const closeMenu = () => { menu.classList.add('hidden'); btn.setAttribute('aria-expanded','false'); };
+  const isOpen = () => !menu.classList.contains('hidden');
+  btn.addEventListener('click', (e) => { e.preventDefault(); isOpen() ? closeMenu() : openMenu(); });
+  // Close on outside click
+  document.addEventListener('mousedown', (e) => { if (!root.contains(e.target)) closeMenu(); });
+  // Keyboard navigation
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); openMenu(); const first = menu.querySelector('[data-opt]'); first?.focus(); }
+  });
+  menu.addEventListener('keydown', (e) => {
+    const items = Array.from(menu.querySelectorAll('[data-opt]'));
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); (items[idx+1]||items[0])?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); (items[idx-1]||items[items.length-1])?.focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeMenu(); btn.focus(); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); document.activeElement?.click?.(); }
+  });
+  _customFilterWired = true;
+}
+
+function rebuildCustomClientsFilter(preserveSelection = true) {
+  const btn = document.getElementById('clientsFilterBtn');
+  const menu = document.getElementById('clientsFilterMenu');
+  const txt = document.getElementById('clientsFilterBtnText');
+  if (!btn || !menu || !txt) return;
+  const prev = preserveSelection ? (window.__clientsFilterId || '*') : '*';
+  const items = _clients.slice().sort(byName);
+  if (!items.length) {
+    txt.textContent = 'No clients available';
+    menu.innerHTML = '';
+    btn.disabled = true;
+    return;
+  }
+  btn.disabled = false;
+  const mkItem = (value, label) => `<button type="button" data-opt data-value="${value}" class="w-full text-left px-3 py-2 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none">${escapeHtml(label)}</button>`;
+  const html = [mkItem('*', 'All clients…')].concat(items.map(c => mkItem(c.id, getClientLabel(c)))).join('');
+  menu.innerHTML = html;
+  const selectedLabel = (prev === '*') ? 'All clients…' : (getClientLabel(items.find(i => i.id === prev) || {}) || 'Select a client');
+  txt.textContent = selectedLabel;
+  // Wire item clicks (rebind each rebuild)
+  Array.from(menu.querySelectorAll('[data-opt]')).forEach(el => {
+    el.addEventListener('click', () => {
+      const val = el.getAttribute('data-value') || '*';
+      window.__clientsFilterId = val;
+      txt.textContent = val === '*' ? 'All clients…' : el.textContent;
+      renderClientsTable();
+      menu.classList.add('hidden');
+    });
+  });
+}
+
+export function forceRebuildClientsFilter() {
+  try { rebuildCustomClientsFilter(true); } catch {}
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function openClientModal() {
@@ -120,6 +298,7 @@ async function handleClientFormSubmit(e) {
       if (!exists) {
         _clients = _clients.concat([{ id: ref.id, ...payload }]);
         renderClientsTable();
+        try { rebuildCustomClientsFilter(true); } catch {}
       }
     } catch {}
     closeClientModal();
