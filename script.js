@@ -4176,15 +4176,26 @@ async function renderClientTransactions() {
         if (typ==='out' && cat==='Fund Adjustment (Debited Adjustment)') debitedByMonth.set(mon, (debitedByMonth.get(mon)||0) - amt);
       });
     }
-    // Determine earliest month to start folding from assignments start
+    // Determine earliest month to start folding from:
+    // 1) earliest assignment start month (if any)
+    // 2) earliest month that has a posted Debited entry (from cashflows)
     const clientAssignments = (assignments||[]).filter(a => a && a.clientId === id);
     let earliestYm = ym;
+    // From assignments
     if (clientAssignments.length) {
       try {
         const minStart = clientAssignments.reduce((min,a)=>{ const d=a.startDate?new Date(a.startDate):null; if(!d||isNaN(d))return min; return (!min||d<min)?d:min; }, null);
         if (minStart) earliestYm = dateToYm(new Date(minStart.getFullYear(), minStart.getMonth(), 1));
       } catch {}
     }
+    // From posted debited months
+    try {
+      const debitedMonths = Array.from(debitedByMonth.keys()).filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
+      if (debitedMonths.length) {
+        const firstDebitedYm = debitedMonths[0];
+        if (firstDebitedYm < earliestYm) earliestYm = firstDebitedYm;
+      }
+    } catch {}
     let prevOutstanding = 0;
     if (earliestYm < ym) {
       const months = monthRange(earliestYm, ym);
