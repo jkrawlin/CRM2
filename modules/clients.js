@@ -99,15 +99,15 @@ export function getClients() {
 }
 
 export function renderClientsTable() {
-  const tbody = document.getElementById('clientsTableBody');
+  const list = document.getElementById('clientsList');
   const empty = document.getElementById('clientsEmptyState');
-  if (!tbody || !empty) return;
+  if (!list || !empty) return;
   // Prefer controller-provided selection to decouple from DOM readiness
   let filterId = window.__clientsFilterId || '';
   if (!filterId) { try { window.__clientsFilterId = '*'; } catch {} filterId = '*'; }
   if (filterId === '*') filterId = '';
   if (!_clients.length) {
-    tbody.innerHTML = '';
+    list.innerHTML = '';
     empty.classList.remove('hidden');
     return;
   }
@@ -159,19 +159,19 @@ export function renderClientsTable() {
     .filter(c => !filterId || c.id === filterId)
     .sort(byName)
     .map(c => {
-      const cells = [
-        // Company column: use only company-style fields; do NOT fall back to person name
-        `<td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(c.company || c.companyName || c.businessName || '')}</td>`,
-        `<td class="px-4 py-2">${escapeHtml(c.email || '')}</td>`,
-        `<td class="px-4 py-2">${escapeHtml(c.phone || '-')}</td>`,
-        `<td class="px-4 py-2">${escapeHtml(getContactPerson(c))}</td>`,
-        `<td class="px-4 py-2 text-right">${assignedCountForClient(c.id)}</td>`,
-        `<td class="px-4 py-2 text-right">${fmtCurrency(monthlyForClient(c.id))}</td>`,
-        `<td class="px-4 py-2">${escapeHtml(c.address || '-')}</td>`,
-      ];
-      return `<tr class="hover:bg-gray-50">${cells.join('')}</tr>`;
+      // Row: 7 columns grid to match header order
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-[20%_18%_12%_16%_10%_12%_12%] hover:bg-gray-50">
+          <div class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(c.company || c.companyName || c.businessName || '')}</div>
+          <div class="px-4 py-2">${escapeHtml(c.email || '')}</div>
+          <div class="px-4 py-2">${escapeHtml(c.phone || '-')}</div>
+          <div class="px-4 py-2">${escapeHtml(getContactPerson(c))}</div>
+          <div class="px-4 py-2 text-right">${assignedCountForClient(c.id)}</div>
+          <div class="px-4 py-2 text-right">${fmtCurrency(monthlyForClient(c.id))}</div>
+          <div class="px-4 py-2">${escapeHtml(c.address || '-')}</div>
+        </div>`;
     }).join('');
-  tbody.innerHTML = rows;
+  list.innerHTML = rows;
   if (!rows) { empty.classList.remove('hidden'); } else { empty.classList.add('hidden'); }
 }
 
@@ -276,25 +276,25 @@ function closeClientModal() {
 async function handleClientFormSubmit(e) {
   e.preventDefault();
   const { db, collection, addDoc, showToast, cleanData } = _deps || {};
-  const name = document.getElementById('clientName')?.value.trim();
+  const company = document.getElementById('clientName')?.value.trim(); // Company Name field in the modal
   const email = document.getElementById('clientEmail')?.value.trim();
   const phone = document.getElementById('clientPhone')?.value.trim();
-  const company = document.getElementById('clientCompany')?.value.trim();
+  const contactPerson = document.getElementById('clientCompany')?.value.trim(); // Contact Person field in the modal
   const address = document.getElementById('clientAddress')?.value.trim();
-  // Require at least a company for the Company column; treat name as optional contact person
+  // Require company/email/address; contact person optional
   if (!company || !email || !address) {
     showToast && showToast('Company, Email, and Address are required', 'warning');
     return;
   }
   const payload = cleanData ? cleanData({
-    // Persist both when provided; UI will use company for Company column and name for Contact Person
-    name,
+    // Persist company and contact person distinctly
     email,
     phone,
     company,
+    contactPerson: contactPerson || undefined,
     address,
     createdAt: new Date().toISOString(),
-  }) : { name, email, phone, company, createdAt: new Date().toISOString() };
+  }) : { email, phone, company, contactPerson: contactPerson || undefined, address, createdAt: new Date().toISOString() };
   try {
     const ref = await addDoc(collection(db, 'customers'), payload);
     showToast && showToast('Client added', 'success');

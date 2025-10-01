@@ -213,30 +213,18 @@
                     </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full table-fixed text-sm">
-                        <colgroup>
-                            <col class="w-[20%]" />  <!-- Company -->
-                            <col class="w-[18%]" />  <!-- Email -->
-                            <col class="w-[12%]" />  <!-- Phone -->
-                            <col class="w-[16%]" />  <!-- Contact Person -->
-                            <col class="w-[10%]" />  <!-- Employees Assigned -->
-                            <col class="w-[12%]" />  <!-- Monthly -->
-                            <col class="w-[12%]" />  <!-- Address -->
-                        </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
-                            <tr>
-                                <th class="text-left font-semibold px-4 py-3">Company</th>
-                                <th class="text-left font-semibold px-4 py-3">Company Email</th>
-                                <th class="text-left font-semibold px-4 py-3">Company Phone</th>
-                                <th class="text-left font-semibold px-4 py-3">Contact Person</th>
-                                <th class="text-right font-semibold px-4 py-3">Employees Assigned</th>
-                                <th class="text-right font-semibold px-4 py-3">Monthly</th>
-                                <th class="text-left font-semibold px-4 py-3">Address</th>
-                                
-                            </tr>
-                        </thead>
-                        <tbody id="clientsTableBody" class="divide-y divide-gray-100"></tbody>
-                    </table>
+                  <!-- Grid header -->
+                  <div class="hidden md:grid grid-cols-[20%_18%_12%_16%_10%_12%_12%] bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                    <div class="px-4 py-3 font-semibold text-left">Company</div>
+                    <div class="px-4 py-3 font-semibold text-left">Company Email</div>
+                    <div class="px-4 py-3 font-semibold text-left">Company Phone</div>
+                    <div class="px-4 py-3 font-semibold text-left">Contact Person</div>
+                    <div class="px-4 py-3 font-semibold text-right">Employees Assigned</div>
+                    <div class="px-4 py-3 font-semibold text-right">Monthly</div>
+                    <div class="px-4 py-3 font-semibold text-left">Address</div>
+                  </div>
+                  <!-- List container (rows injected by JS) -->
+                  <div id="clientsList" class="divide-y divide-gray-100"></div>
                 </div>
                 <div class="empty-state hidden" id="clientsEmptyState">
                     <div class="empty-state-icon"><i class="fas fa-inbox"></i></div>
