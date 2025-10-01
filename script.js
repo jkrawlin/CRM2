@@ -306,8 +306,8 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             sel.disabled = false;
             const opts = ['<option value="">All clients…</option>']
-              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+              .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
             sel.innerHTML = opts.join('');
             if (prev) { try { sel.value = prev; } catch {} }
           }
@@ -332,8 +332,8 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             sel2.disabled = false;
             const opts = ['<option value="">All clients…</option>']
-              .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-                .map(c => `<option value="${c.id}">${escapeHtml(c.name||c.company||'')}</option>`));
+              .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
+                .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
             sel2.innerHTML = opts.join('');
             if (prev) { try { sel2.value = prev; } catch {} }
           }
@@ -891,8 +891,8 @@ function setupEventListeners() {
       try {
         const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
         const opts = ['<option value="">Select client…</option>']
-          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
+          .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
         clientBillingClientEl.innerHTML = opts.join('');
       } catch {}
     };
@@ -944,15 +944,15 @@ function setupEventListeners() {
         const selected = sel.value || '';
         const list = (typeof getClients === 'function') ? getClients() : (window.getClients ? window.getClients() : []);
         const opts = ['<option value="">Select client…</option>']
-          .concat(list.slice().sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-            .map(c => `<option value="${c.id}">${escapeHtml(c.name||'')}</option>`));
+          .concat(list.slice().sort((a,b)=> (a.company||a.name||'').localeCompare(b.company||b.name||''))
+            .map(c => `<option value="${c.id}">${escapeHtml(c.company||c.name||'')}</option>`));
         sel.innerHTML = opts.join('');
         if (selected) { try { sel.value = selected; } catch {} }
         // Update header name and button
         try {
           const nameEl = document.getElementById('clientBillingSelectedName');
           const cur = list.find(x => x.id === (sel.value || ''));
-          if (nameEl) nameEl.textContent = cur ? `— ${cur.name}` : '';
+          if (nameEl) nameEl.textContent = cur ? `— ${cur.company || cur.name}` : '';
           const btn = document.getElementById('openClientPaymentBtn');
           if (btn) btn.disabled = !sel.value;
         } catch {}

@@ -9,13 +9,15 @@ let _filterInitDone = false;
 let _customFilterWired = false;
 
 function byName(a, b) {
-  const an = String(a?.name || a?.company || '').toLowerCase();
-  const bn = String(b?.name || b?.company || '').toLowerCase();
+  // Prefer company name for sorting; fallback to person/name last
+  const an = String(a?.company || a?.companyName || a?.businessName || a?.name || '').toLowerCase();
+  const bn = String(b?.company || b?.companyName || b?.businessName || b?.name || '').toLowerCase();
   return an.localeCompare(bn);
 }
 
 function getClientLabel(c) {
-  const n = c?.name || c?.company || '';
+  // Prefer company-style fields for labels in dropdowns; fallback to name
+  const n = c?.company || c?.companyName || c?.businessName || c?.name || '';
   return n || '(unnamed)';
 }
 
@@ -26,7 +28,8 @@ function getContactPerson(c) {
     c?.contact ||
     c?.person ||
     c?.companyContact ||
-    '-' 
+    c?.name || // treat generic "name" as the contact person's name if provided
+    '-'
   );
 }
 
@@ -157,7 +160,8 @@ export function renderClientsTable() {
     .sort(byName)
     .map(c => {
       const cells = [
-        `<td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(c.name || c.company || '')}</td>`,
+        // Company column: use only company-style fields; do NOT fall back to person name
+        `<td class="px-4 py-2 font-semibold text-gray-900">${escapeHtml(c.company || c.companyName || c.businessName || '')}</td>`,
         `<td class="px-4 py-2">${escapeHtml(c.email || '')}</td>`,
         `<td class="px-4 py-2">${escapeHtml(c.phone || '-')}</td>`,
         `<td class="px-4 py-2">${escapeHtml(getContactPerson(c))}</td>`,
@@ -277,11 +281,13 @@ async function handleClientFormSubmit(e) {
   const phone = document.getElementById('clientPhone')?.value.trim();
   const company = document.getElementById('clientCompany')?.value.trim();
   const address = document.getElementById('clientAddress')?.value.trim();
-  if (!name || !email || !address) {
-    showToast && showToast('Company Name, Email, and Address are required', 'warning');
+  // Require at least a company for the Company column; treat name as optional contact person
+  if (!company || !email || !address) {
+    showToast && showToast('Company, Email, and Address are required', 'warning');
     return;
   }
   const payload = cleanData ? cleanData({
+    // Persist both when provided; UI will use company for Company column and name for Contact Person
     name,
     email,
     phone,
