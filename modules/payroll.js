@@ -255,6 +255,26 @@ function buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, 
       </div>
       <div class="footer">Generated on ${new Date().toLocaleString()}</div>
     </div>
+    <script>
+      // Robust auto-print after the document paints to avoid blank pages
+      (function() {
+        function afterPaint(cb) {
+          try {
+            requestAnimationFrame(function() { requestAnimationFrame(cb); });
+          } catch (_) { setTimeout(cb, 200); }
+        }
+        function doPrint() {
+          try { window.focus(); } catch(_) {}
+          try { window.print(); } catch(_) {}
+        }
+        window.addEventListener('load', function() {
+          afterPaint(function(){ setTimeout(doPrint, 200); });
+        });
+        window.onafterprint = function() { try { window.close(); } catch(_) {} };
+        // Safety net: if load didn't fire for some reason, attempt after a short delay
+        setTimeout(function(){ try { if (document.readyState === 'complete') { afterPaint(function(){ setTimeout(doPrint, 200); }); } } catch(_){} }, 1200);
+      })();
+    </script>
   </body>
   </html>`;
   return html;
@@ -348,41 +368,18 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
       totals: { salary: totalSalary, balance: totalBalance }
     });
 
-    // Open print window
-    const printWindow = window.open('', '_blank');
+    // Open print window and let the document self-print via its inline script
+    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
     if (!printWindow) { alert('Please allow pop-ups to print the payroll report'); return; }
-
-    // Write content
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-
-    // Printing coordination guards
-    let printed = false;
-    const doPrint = (delay = 250) => {
-      if (printed) return; printed = true;
-      setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch {} }, delay);
-    };
-
-    // Close the window only after the print dialog is dismissed
-    printWindow.onafterprint = () => { try { printWindow.close(); } catch {} };
-
-    // Wait for the new window to finish loading
-    printWindow.onload = () => {
-      try {
-        // Ensure app styles are loaded in case the print HTML references shared styles
-        const cssLink = printWindow.document.createElement('link');
-        cssLink.rel = 'stylesheet';
-        cssLink.href = new URL('styles.css', window.location.href).toString();
-        cssLink.onload = () => doPrint(100);
-        cssLink.onerror = () => doPrint(350);
-        printWindow.document.head.appendChild(cssLink);
-      } catch {
-        doPrint(500);
-      }
-      // Extra fallback if onload handlers fail
-      setTimeout(() => doPrint(0), 1500);
-    };
+    try {
+      const doc = printWindow.document;
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+    } catch (_) {
+      // As a fallback, attempt to trigger print from opener after a short delay
+      setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch {} }, 800);
+    }
   } catch (error) {
     console.error('Print failed:', error);
     alert('Failed to print payroll report. Please try again.');
