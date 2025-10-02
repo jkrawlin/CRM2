@@ -10,8 +10,8 @@ const firebaseConfig = {
   apiKey: "AIzaSyBNv8o3mjpnqrHSMqI-hIrKcbHOWK5V-0Y",
   authDomain: "crm1-7ed70.firebaseapp.com",
   projectId: "crm1-7ed70",
-  // Use the default storage bucket domain (appspot.com)
-  storageBucket: "crm1-7ed70.appspot.com",
+  // Use the project's actual bucket as shown in Firebase Console
+  storageBucket: "crm1-7ed70.firebasestorage.app",
   messagingSenderId: "577746769811",
   appId: "1:577746769811:web:27aabfba857b749266ba66",
   measurementId: "G-YRSFEXJ6VX"
@@ -37,7 +37,7 @@ const db = initializeFirestore(app, {
   useFetchStreams: false,
 });
 const auth = getAuth(app);
-// Use the actual default bucket that exists in your project
-const storage = getStorage(app, "gs://crm1-7ed70.appspot.com");
+// Use the exact bucket from Firebase Console
+const storage = getStorage(app, "gs://crm1-7ed70.firebasestorage.app");
 
 export { db, auth, storage };
