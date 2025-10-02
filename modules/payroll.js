@@ -237,14 +237,14 @@ function buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, 
         <div class="brand">Payroll Report</div>
         <div class="title-wrap">
           <div class="title">${esc(monthTitle)}</div>
-          <div class="subtitle">${combined.length} employees • Total Payroll ${fmt(totals.totalSalaries)} • Total Outstanding ${fmt(totals.totalBalances)}</div>
+          <div class="subtitle">${combined.length} employees • Total Payroll ${fmt(totals.salary)} • Total Outstanding ${fmt(totals.balance)}</div>
         </div>
       </div>
       <div class="summary">
         <div class="card"><div class="label">Employees</div><div class="value">${combined.length}</div></div>
         <div class="card"><div class="label">Permanent</div><div class="value">${byType.Employee.length}</div></div>
         <div class="card"><div class="label">Temporary</div><div class="value">${byType.Temporary.length}</div></div>
-        <div class="card"><div class="label">Total Payroll</div><div class="value">${fmt(totals.totalSalaries)}</div></div>
+        <div class="card"><div class="label">Total Payroll</div><div class="value">${fmt(totals.salary)}</div></div>
       </div>
       ${table('Permanent Employees', byType.Employee)}
       ${table('Temporary Employees', byType.Temporary)}
@@ -255,11 +255,6 @@ function buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, 
       </div>
       <div class="footer">Generated on ${new Date().toLocaleString()}</div>
     </div>
-    <script>
-      window.addEventListener('load', function() {
-        setTimeout(function(){ window.print(); setTimeout(function(){ window.close(); }, 300); }, 50);
-      });
-    </script>
   </body>
   </html>`;
   return html;
@@ -318,97 +313,82 @@ async function computeMonthlyBalancesForList(list, ym) {
 
 // Open a dedicated window and print the professional report
 export async function printPayrollProfessional({ getEmployees, getTemporaryEmployees }) {
-  // Require an explicit month selection for clarity
-  const monthEl = document.getElementById('payrollMonth');
-  if (!monthEl || !monthEl.value) {
-    alert('Please select a month');
-    return;
-  }
-  const ym = monthEl.value;
-  const [yr, mo] = ym.split('-');
-  const monthTitle = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+  const btn = document.getElementById('printPayrollBtn') || document.querySelector('[onclick*="printPayrollProfessional"]');
+  if (btn) btn.disabled = true;
 
-  // Collect employees (exclude terminated)
-  const permanentList = (getEmployees() || []).filter(e => !e.terminated).map(e=>({ ...e, _type: 'Employee' }));
-  const temporaryList = (getTemporaryEmployees() || []).filter(e => !e.terminated).map(e=>({ ...e, _type: 'Temporary' }));
-  const combined = [...permanentList, ...temporaryList].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  try {
+    // Ensure a month is selected
+    const monthEl = document.getElementById('payrollMonth');
+    const ym = monthEl?.value || '';
+    if (!ym) { alert('Please select a month'); return; }
+    const monthTitle = new Date(ym + '-01').toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
 
-  // Compute balances for the month
-  const balancesMap = await computeMonthlyBalancesForList(combined, ym);
+    // Prepare lists (exclude terminated) and tag types
+    const perm = ((getEmployees && getEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Employee' }));
+    const temps = ((getTemporaryEmployees && getTemporaryEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Temporary' }));
+    const combined = [...perm, ...temps].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
 
-  // Totals
-  let totalSalary = 0, totalBalance = 0;
-  for (const e of combined) {
-    totalSalary += Number(e.salary || 0);
-    totalBalance += Number(balancesMap.get(e.id) || 0);
-  }
-  const byType = { permanent: permanentList, temporary: temporaryList };
-  const totals = { salary: totalSalary, balance: totalBalance };
+    // Compute balances for selected month
+    const balancesMap = await computeMonthlyBalancesForList(combined, ym);
 
-  // Ensure a reusable hidden print area exists
-  let printArea = document.getElementById('payrollPrintArea');
-  if (!printArea) {
-    printArea = document.createElement('div');
-    printArea.id = 'payrollPrintArea';
-    printArea.style.display = 'none';
-    document.body.appendChild(printArea);
-  }
-
-  // Build content and inject
-  const inner = buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, totals });
-  printArea.innerHTML = inner;
-
-  // Inject print styles if not present (appended after other styles to win specificity/order)
-  if (!document.getElementById('payroll-professional-print-styles')) {
-    const style = document.createElement('style');
-    style.id = 'payroll-professional-print-styles';
-    style.textContent = `
-      @media print {
-        @page { size: A4 landscape; margin: 10mm; }
-        /* Hide everything except the payroll print area */
-        body > *:not(#payrollPrintArea) { display: none !important; }
-        #payrollPrintArea { display: block !important; width: 100%; margin: 0; padding: 0; }
-        .payroll-report { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 10px; line-height: 1.4; color: #1f2937; }
-        .payroll-report h1 { font-size: 18px; margin-bottom: 4px; }
-        .payroll-report h2 { font-size: 14px; margin: 12px 0 8px; }
-        .payroll-summary { display:grid; grid-template-columns: repeat(4,1fr); gap:6px; margin: 8px 0 10px; }
-        .payroll-card { border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
-        .payroll-card .label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.02em; }
-        .payroll-card .value { font-size:14px; font-weight:800; }
-        .payroll-report table { width:100%; border-collapse: collapse; font-size: 9px; margin-bottom: 12px; }
-        .payroll-report th { background: #f3f4f6; padding: 4px 6px; text-align: left; font-weight: 600; border: 1px solid #e5e7eb; }
-        .payroll-report td { padding: 3px 6px; border: 1px solid #e5e7eb; vertical-align: top; }
-        .payroll-report td.text-right { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
-        .payroll-report td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 9px; letter-spacing: -0.2px; word-break: break-word; }
-        .payroll-report .footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 9px; color: #6b7280; text-align: right; }
-      }
-      @media screen { #payrollPrintArea { display: none !important; } }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // After-print cleanup (wire once)
-  if (!window.__payrollAfterprintWired) {
-    window.addEventListener('afterprint', () => {
-      try {
-        const area = document.getElementById('payrollPrintArea');
-        if (area) area.innerHTML = '';
-        // Restore any temporarily overridden window.open
-        if (window.__payrollOpenBackup) {
-          window.open = window.__payrollOpenBackup;
-          window.__payrollOpenBackup = null;
-        }
-      } catch {}
+    // Totals
+    let totalSalary = 0, totalBalance = 0;
+    combined.forEach(e => {
+      totalSalary += Number(e.salary || 0);
+      totalBalance += Number(balancesMap.get(e.id) || 0);
     });
-    window.__payrollAfterprintWired = true;
+
+    // Build full HTML document
+    const htmlContent = buildPayrollPrintHtml({
+      ym,
+      monthTitle,
+      combined,
+      byType: { Employee: perm, Temporary: temps },
+      balancesMap,
+      totals: { salary: totalSalary, balance: totalBalance }
+    });
+
+    // Open print window
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) { alert('Please allow pop-ups to print the payroll report'); return; }
+
+    // Write content
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+
+    // Printing coordination guards
+    let printed = false;
+    const doPrint = (delay = 250) => {
+      if (printed) return; printed = true;
+      setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch {} }, delay);
+    };
+
+    // Close the window only after the print dialog is dismissed
+    printWindow.onafterprint = () => { try { printWindow.close(); } catch {} };
+
+    // Wait for the new window to finish loading
+    printWindow.onload = () => {
+      try {
+        // Ensure app styles are loaded in case the print HTML references shared styles
+        const cssLink = printWindow.document.createElement('link');
+        cssLink.rel = 'stylesheet';
+        cssLink.href = new URL('styles.css', window.location.href).toString();
+        cssLink.onload = () => doPrint(100);
+        cssLink.onerror = () => doPrint(350);
+        printWindow.document.head.appendChild(cssLink);
+      } catch {
+        doPrint(500);
+      }
+      // Extra fallback if onload handlers fail
+      setTimeout(() => doPrint(0), 1500);
+    };
+  } catch (error) {
+    console.error('Print failed:', error);
+    alert('Failed to print payroll report. Please try again.');
+  } finally {
+    if (btn) btn.disabled = false;
   }
-
-  // Temporarily block window.open during print to avoid about:blank popups
-  try { if (!window.__payrollOpenBackup) { window.__payrollOpenBackup = window.open; window.open = function(){ try{ console.warn('[PayrollPrint] blocked window.open during print'); }catch{} return null; }; } } catch {}
-
-  // Force layout so content is ready, then print synchronously
-  try { void printArea.offsetHeight; } catch {}
-  window.print();
 }
 
 function buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, totals }) {
