@@ -12,6 +12,13 @@
             .sidebar-collapsed #sidebar { display: none !important; }
             .sidebar-collapsed #openSidebarBtn { display: inline-flex !important; }
         </style>
+                <style id="payroll-print-handler">
+                    /* Keep payroll print area hidden on screen; shown only for print */
+                    #payrollPrintArea { position: absolute; left: -9999px; top: -9999px; visibility: hidden; display: none; }
+                    @media print {
+                        #payrollPrintArea { position: static !important; left: auto !important; top: auto !important; visibility: visible !important; display: block !important; }
+                    }
+                </style>
         <style id="payslip-print-css">
             /* Print-only payslip: hide everything except the payslip area using display none to avoid extra pages */
             @media print {

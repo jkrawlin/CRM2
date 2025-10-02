@@ -318,45 +318,148 @@ async function computeMonthlyBalancesForList(list, ym) {
 
 // Open a dedicated window and print the professional report
 export async function printPayrollProfessional({ getEmployees, getTemporaryEmployees }) {
-  try {
-    // Determine month
-    const monthEl = document.getElementById('payrollMonth');
-    let ym = monthEl && monthEl.value ? monthEl.value : '';
-    if (!ym) {
-      const now = new Date();
-      ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
-      if (monthEl) monthEl.value = ym;
-    }
-    const [yr, mo] = ym.split('-');
-    const monthTitle = ym ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
-
-    // Build data sets
-    const combined = [
-      ...getEmployees().map(e => ({ ...e, _type: 'Employee' })),
-      ...getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' })),
-    ].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-
-    const byType = {
-      Employee: combined.filter(e => e._type === 'Employee'),
-      Temporary: combined.filter(e => e._type === 'Temporary')
-    };
-
-    const balancesMap = await computeMonthlyBalancesForList(combined, ym);
-    const totals = {
-      totalSalaries: combined.reduce((s,e)=> s + Number(e.salary||0), 0),
-      totalBalances: combined.reduce((s,e)=> s + Number(balancesMap.get(e.id) || 0), 0),
-    };
-
-    const html = buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, totals });
-    const w = window.open('', 'payrollPrint', 'noopener,noreferrer,width=1200,height=800');
-    if (!w) { window.print(); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-  } catch (e) {
-    try { console.warn('Payroll print failed, falling back to window.print()', e); } catch {}
-    window.print();
+  // Require an explicit month selection for clarity
+  const monthEl = document.getElementById('payrollMonth');
+  if (!monthEl || !monthEl.value) {
+    alert('Please select a month');
+    return;
   }
+  const ym = monthEl.value;
+  const [yr, mo] = ym.split('-');
+  const monthTitle = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
+
+  // Collect employees (exclude terminated)
+  const permanentList = (getEmployees() || []).filter(e => !e.terminated).map(e=>({ ...e, _type: 'Employee' }));
+  const temporaryList = (getTemporaryEmployees() || []).filter(e => !e.terminated).map(e=>({ ...e, _type: 'Temporary' }));
+  const combined = [...permanentList, ...temporaryList].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+
+  // Compute balances for the month
+  const balancesMap = await computeMonthlyBalancesForList(combined, ym);
+
+  // Totals
+  let totalSalary = 0, totalBalance = 0;
+  for (const e of combined) {
+    totalSalary += Number(e.salary || 0);
+    totalBalance += Number(balancesMap.get(e.id) || 0);
+  }
+  const byType = { permanent: permanentList, temporary: temporaryList };
+  const totals = { salary: totalSalary, balance: totalBalance };
+
+  // Ensure a reusable hidden print area exists
+  let printArea = document.getElementById('payrollPrintArea');
+  if (!printArea) {
+    printArea = document.createElement('div');
+    printArea.id = 'payrollPrintArea';
+    printArea.style.display = 'none';
+    document.body.appendChild(printArea);
+  }
+
+  // Build content and inject
+  const inner = buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, totals });
+  printArea.innerHTML = inner;
+
+  // Inject print styles if not present (appended after other styles to win specificity/order)
+  if (!document.getElementById('payroll-professional-print-styles')) {
+    const style = document.createElement('style');
+    style.id = 'payroll-professional-print-styles';
+    style.textContent = `
+      @media print {
+        @page { size: A4 landscape; margin: 10mm; }
+        /* Hide everything except the payroll print area */
+        body > *:not(#payrollPrintArea) { display: none !important; }
+        #payrollPrintArea { display: block !important; width: 100%; margin: 0; padding: 0; }
+        .payroll-report { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 10px; line-height: 1.4; color: #1f2937; }
+        .payroll-report h1 { font-size: 18px; margin-bottom: 4px; }
+        .payroll-report h2 { font-size: 14px; margin: 12px 0 8px; }
+        .payroll-summary { display:grid; grid-template-columns: repeat(4,1fr); gap:6px; margin: 8px 0 10px; }
+        .payroll-card { border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
+        .payroll-card .label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.02em; }
+        .payroll-card .value { font-size:14px; font-weight:800; }
+        .payroll-report table { width:100%; border-collapse: collapse; font-size: 9px; margin-bottom: 12px; }
+        .payroll-report th { background: #f3f4f6; padding: 4px 6px; text-align: left; font-weight: 600; border: 1px solid #e5e7eb; }
+        .payroll-report td { padding: 3px 6px; border: 1px solid #e5e7eb; vertical-align: top; }
+        .payroll-report td.text-right { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+        .payroll-report td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 9px; letter-spacing: -0.2px; word-break: break-word; }
+        .payroll-report .footer { margin-top: 12px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 9px; color: #6b7280; text-align: right; }
+      }
+      @media screen { #payrollPrintArea { display: none !important; } }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // After-print cleanup (wire once)
+  if (!window.__payrollAfterprintWired) {
+    window.addEventListener('afterprint', () => {
+      try {
+        const area = document.getElementById('payrollPrintArea');
+        if (area) area.innerHTML = '';
+      } catch {}
+    });
+    window.__payrollAfterprintWired = true;
+  }
+
+  // Trigger print
+  setTimeout(() => { window.print(); }, 100);
+}
+
+function buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, totals }) {
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const section = (title, list) => {
+    if (!list || !list.length) return '';
+    return `
+      <h2>${esc(title)} (${list.length})</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Company</th>
+            <th>QID</th>
+            <th>Bank</th>
+            <th>Account</th>
+            <th>IBAN</th>
+            <th class="text-right">Monthly</th>
+            <th class="text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map((e,i)=>`
+            <tr>
+              <td>${i+1}</td>
+              <td>${esc(e.name||'')}</td>
+              <td>${esc(e.department||'-')}</td>
+              <td class="mono">${esc(e.qid||'-')}</td>
+              <td>${esc(e.bankName||'-')}</td>
+              <td class="mono">${esc(e.bankAccountNumber||'-')}</td>
+              <td class="mono">${esc(e.bankIban||'-')}</td>
+              <td class="text-right">${fmt(e.salary||0)}</td>
+              <td class="text-right">${fmt(balancesMap.get(e.id)||0)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  };
+  return `
+    <div class="payroll-report">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;">
+        <div>
+          <h1>Payroll Report</h1>
+          <div style="font-size:11px;color:#6b7280;">${esc(monthTitle)} • Total Payroll ${fmt(totals.salary)} • Total Outstanding ${fmt(totals.balance)}</div>
+        </div>
+      </div>
+      <div class="payroll-summary">
+        <div class="payroll-card"><div class="label">Employees</div><div class="value">${(byType.permanent.length + byType.temporary.length)}</div></div>
+        <div class="payroll-card"><div class="label">Permanent</div><div class="value">${byType.permanent.length}</div></div>
+        <div class="payroll-card"><div class="label">Temporary</div><div class="value">${byType.temporary.length}</div></div>
+        <div class="payroll-card"><div class="label">Total Payroll</div><div class="value">${fmt(totals.salary)}</div></div>
+      </div>
+      ${section('Permanent Employees', byType.permanent)}
+      ${section('Temporary Employees', byType.temporary)}
+      <div class="footer">Generated on ${new Date().toLocaleString()}</div>
+    </div>`;
 }
 
 // Compute current salary balance for each employee based on payslips minus payments of the current month
