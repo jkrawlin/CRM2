@@ -69,19 +69,96 @@
             body.modal-open .backdrop { display: block; }
         </style>
                 <style id="payroll-table-styles">
-                    /* Compact payroll table styles for the payroll modal */
-                    #payrollModal .payroll-table { font-size: 11px; }
-                    #payrollModal .payroll-table th { font-size: 10px; padding: 8px 6px; white-space: nowrap; }
-                    #payrollModal .payroll-table td { padding: 6px; font-size: 11px; }
-                    #payrollModal .mono-text { font-family: 'Courier New', monospace; font-size: 10px; }
-                    @media (max-width: 1600px) {
-                        #payrollModal .payroll-table { font-size: 10px; }
-                        #payrollModal .payroll-table th, #payrollModal .payroll-table td { padding: 4px; }
+                    /* Compact payroll table styles for better space utilization */
+                    #payrollModal .payroll-table { 
+                        font-size: 10px; 
+                        table-layout: fixed;
+                        width: 100%;
                     }
-                    #payrollModal .table-container { overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f7fafc; }
-                    #payrollModal .table-container::-webkit-scrollbar { height: 6px; }
-                    #payrollModal .table-container::-webkit-scrollbar-track { background: #f7fafc; }
-                    #payrollModal .table-container::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 3px; }
+
+                    #payrollModal .payroll-table th { 
+                        font-size: 9px; 
+                        padding: 6px 4px; 
+                        white-space: nowrap;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                        letter-spacing: 0.025em;
+                    }
+
+                    #payrollModal .payroll-table td { 
+                        padding: 4px; 
+                        font-size: 10px;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+
+                    /* Column width optimization */
+                    #payrollModal .payroll-table th:nth-child(1), 
+                    #payrollModal .payroll-table td:nth-child(1) { width: 3%; } /* # */
+
+                    #payrollModal .payroll-table th:nth-child(2), 
+                    #payrollModal .payroll-table td:nth-child(2) { width: 12%; min-width: 100px; } /* Name */
+
+                    #payrollModal .payroll-table th:nth-child(3), 
+                    #payrollModal .payroll-table td:nth-child(3) { width: 8%; } /* Type */
+
+                    #payrollModal .payroll-table th:nth-child(4), 
+                    #payrollModal .payroll-table td:nth-child(4) { width: 10%; } /* Company */
+
+                    #payrollModal .payroll-table th:nth-child(5), 
+                    #payrollModal .payroll-table td:nth-child(5) { width: 10%; } /* QID */
+
+                    #payrollModal .payroll-table th:nth-child(6), 
+                    #payrollModal .payroll-table td:nth-child(6) { width: 10%; } /* Bank */
+
+                    #payrollModal .payroll-table th:nth-child(7), 
+                    #payrollModal .payroll-table td:nth-child(7) { width: 12%; } /* Account */
+
+                    #payrollModal .payroll-table th:nth-child(8), 
+                    #payrollModal .payroll-table td:nth-child(8) { width: 13%; } /* IBAN */
+
+                    #payrollModal .payroll-table th:nth-child(9), 
+                    #payrollModal .payroll-table td:nth-child(9) { width: 10%; text-align: right; } /* Monthly Salary */
+
+                    #payrollModal .payroll-table th:nth-child(10), 
+                    #payrollModal .payroll-table td:nth-child(10) { width: 10%; text-align: right; } /* Current Balance */
+
+                    /* Make account numbers and IBANs more readable */
+                    #payrollModal .mono-text { 
+                        font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace; 
+                        font-size: 9px;
+                        letter-spacing: -0.025em;
+                    }
+
+                    /* Responsive adjustments for smaller screens */
+                    @media (max-width: 1400px) {
+                        #payrollModal .payroll-table { font-size: 9px; }
+                        #payrollModal .payroll-table th { font-size: 8px; padding: 4px 3px; }
+                        #payrollModal .payroll-table td { padding: 3px; font-size: 9px; }
+                        #payrollModal .mono-text { font-size: 8px; }
+                    }
+
+                    /* Better scroll container */
+                    #payrollModal .table-container { 
+                        overflow-x: auto; 
+                        max-width: 100%; 
+                        scrollbar-width: thin; 
+                        scrollbar-color: #cbd5e0 #f7fafc;
+                        margin: 0 -8px;
+                        padding: 0 8px;
+                    }
+
+                    /* Hover state for better row identification */
+                    #payrollModal .payroll-table tbody tr:hover {
+                        background-color: rgba(99, 102, 241, 0.04);
+                    }
+
+                    /* Section headers styling */
+                    #payrollModal h4 {
+                        font-size: 13px;
+                        margin: 12px 0 8px 0;
+                        font-weight: 700;
+                    }
                 </style>
 </head>
 <body>

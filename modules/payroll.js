@@ -273,8 +273,8 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
                     <td class="text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding:4px" title="${emp.department || '-'}">${emp.department || '-'}</td>
                     <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; width: 72px; padding:4px">${emp.qid || '-'}</td>
                     <td class="text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding:4px" title="${emp.bankName || '-'}">${emp.bankName || '-'}</td>
-                    <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; white-space: nowrap; padding:4px" title="${emp.bankAccountNumber || '-'}">${maskAcc(emp.bankAccountNumber)}</td>
-                    <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; white-space: nowrap; padding:4px" title="${emp.bankIban || '-'}">${maskIban(emp.bankIban)}</td>
+                    <td class="text-gray-600 mono-text" style="white-space: nowrap; padding:4px" title="${emp.bankAccountNumber || '-'}">${maskAcc(emp.bankAccountNumber)}</td>
+                    <td class="text-gray-600 mono-text" style="white-space: nowrap; padding:4px" title="${emp.bankIban || '-'}">${maskIban(emp.bankIban)}</td>
                     <td class="text-right font-mono tabular-nums font-semibold" style="padding:4px">${fmt(emp.salary || 0)}</td>
                     <td class="text-right font-mono tabular-nums font-semibold" style="padding:4px" data-report-balance-for="${emp.id}">-</td>
                   </tr>
