@@ -228,20 +228,20 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
     return `
       <div class="mb-6">
         <h3 class="text-sm font-bold text-amber-700 mb-3">${label} (${items.length})</h3>
-        <div class="overflow-x-auto">
-          <table class="w-full text-xs">
+        <div class="overflow-x-hidden">
+          <table class="w-full" style="font-size:10px;">
             <thead>
-              <tr class="bg-gray-50 text-gray-600 uppercase text-[10px] font-semibold">
-                <th class="text-left px-2 py-2" style="width:20px">#</th>
-                <th class="text-left px-2 py-2" style="min-width: 80px">NAME</th>
-                <th class="text-left px-2 py-2" style="width: 56px">TYPE</th>
-                <th class="text-left px-2 py-2" style="min-width: 64px">COMPANY</th>
-                <th class="text-left px-2 py-2" style="width: 88px">QID</th>
-                <th class="text-left px-2 py-2" style="width: 72px">BANK</th>
-                <th class="text-left px-2 py-2" style="min-width: 22rem; width: 22rem">ACCOUNT</th>
-                <th class="text-left px-2 py-2" style="min-width: 26rem; width: 26rem">IBAN</th>
-                <th class="text-right px-2 py-2" style="width: 100px">MONTHLY<br/>SALARY</th>
-                <th class="text-right px-2 py-2" style="width: 108px">CURRENT<br/>SALARY<br/>BALANCE</th>
+              <tr class="bg-gray-50 text-gray-600 uppercase font-semibold" style="font-size:9px;">
+                <th class="text-left" style="width:20px;padding:4px">#</th>
+                <th class="text-left" style="width:150px;padding:4px">NAME</th>
+                <th class="text-left" style="width:56px;padding:4px">TYPE</th>
+                <th class="text-left" style="width:64px;padding:4px">COMPANY</th>
+                <th class="text-left" style="width:72px;padding:4px">QID</th>
+                <th class="text-left" style="width:64px;padding:4px">BANK</th>
+                <th class="text-left" style="padding:4px">ACCOUNT</th>
+                <th class="text-left" style="padding:4px">IBAN</th>
+                <th class="text-right" style="width:100px;padding:4px">MONTHLY<br/>SALARY</th>
+                <th class="text-right" style="width:108px;padding:4px">CURRENT<br/>SALARY<br/>BALANCE</th>
               </tr>
             </thead>
             <tbody>
@@ -250,30 +250,33 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
                   if (!acc) return '-';
                   const s = String(acc).replace(/\s+/g, '');
                   if (s.length <= 4) return s;
-                  return '•••• ' + s.slice(-4);
+                  // Show first 2 and last 4 digits, fixed bullets in between
+                  return `${s.slice(0,2)}••••${s.slice(-4)}`;
                 };
                 const maskIban = (iban) => {
                   if (!iban) return '-';
-                  const s = String(iban).replace(/\s+/g, '');
-                  if (s.length <= 8) return s;
-                  return s.slice(0, 4) + '•••' + s.slice(-4);
+                  const s = String(iban).replace(/\s+/g, '').toUpperCase();
+                  const cc = s.slice(0,2);
+                  const tail = s.slice(-6);
+                  // Country code + 6 bullets + last 6
+                  return `${cc}••••••${tail}`;
                 };
                 return `
                   <tr class="border-b border-gray-100 hover:bg-gray-50">
-                    <td class="px-2 py-2 text-gray-500">${idx + 1}</td>
-                    <td class="px-2 py-2">
-                      <div class="font-semibold text-gray-900" style="max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${emp.name}">${emp.name}</div>
+                    <td class="text-gray-500" style="padding:4px">${idx + 1}</td>
+                    <td style="padding:4px">
+                      <div class="font-semibold text-gray-900" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${emp.name}">${emp.name}</div>
                     </td>
-                    <td class="px-2 py-2">
+                    <td style="padding:4px">
                       ${badge(emp._type)}
                     </td>
-                    <td class="px-2 py-2 text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${emp.department || '-'}">${emp.department || '-'}</td>
-                    <td class="px-2 py-2 text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; width: 88px;">${emp.qid || '-'}</td>
-                    <td class="px-2 py-2 text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${emp.bankName || '-'}">${emp.bankName || '-'}</td>
-                    <td class="px-2 py-2 text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; min-width: 22rem; width: 22rem; white-space: nowrap;" title="${emp.bankAccountNumber || '-'}">${maskAcc(emp.bankAccountNumber)}</td>
-                    <td class="px-2 py-2 text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; min-width: 26rem; width: 26rem; white-space: nowrap;" title="${emp.bankIban || '-'}">${maskIban(emp.bankIban)}</td>
-                    <td class="px-2 py-2 text-right font-mono tabular-nums font-semibold">${fmt(emp.salary || 0)}</td>
-                    <td class="px-2 py-2 text-right font-mono tabular-nums font-semibold" data-report-balance-for="${emp.id}">-</td>
+                    <td class="text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding:4px" title="${emp.department || '-'}">${emp.department || '-'}</td>
+                    <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; width: 72px; padding:4px">${emp.qid || '-'}</td>
+                    <td class="text-gray-600" style="max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding:4px" title="${emp.bankName || '-'}">${emp.bankName || '-'}</td>
+                    <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; white-space: nowrap; padding:4px" title="${emp.bankAccountNumber || '-'}">${maskAcc(emp.bankAccountNumber)}</td>
+                    <td class="text-gray-600" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:10px; white-space: nowrap; padding:4px" title="${emp.bankIban || '-'}">${maskIban(emp.bankIban)}</td>
+                    <td class="text-right font-mono tabular-nums font-semibold" style="padding:4px">${fmt(emp.salary || 0)}</td>
+                    <td class="text-right font-mono tabular-nums font-semibold" style="padding:4px" data-report-balance-for="${emp.id}">-</td>
                   </tr>
                 `;
               }).join('')}
