@@ -225,27 +225,66 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
 
   const renderGroup = (label, items) => {
     if (!items.length) return '';
-    const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
-    const header = `<tr class="${tone}"><td colspan="10" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
-    const rowBg = label.includes('Temporary') ? 'bg-amber-50' : '';
-    const rows = items.map((e, i) => `
-      <tr class="border-b border-gray-100 ${rowBg}">
-        <td class="px-4 py-2 text-gray-600">${i + 1}</td>
-        <td class="px-4 py-2 font-semibold text-gray-900">${e.name || ''}</td>
-        <td class="px-4 py-2">${badge(e._type)}</td>
-        <td class="px-4 py-2">${e.department || '-'}</td>
-        <td class="px-4 py-2">${e.qid || '-'}</td>
-        <td class="px-4 py-2">${e.bankName || '-'}</td>
-        <td class="px-4 py-2">${maskAccount(e.bankAccountNumber)}</td>
-        <td class="px-4 py-2 break-all">${e.bankIban || '-'}</td>
-        <td class="px-4 py-2 text-right tabular-nums">${fmt(e.salary)}</td>
-        <td class="px-4 py-2 text-right tabular-nums" data-report-balance-for="${e.id}">—</td>
-      </tr>
-    `).join('');
-    return header + rows;
+    return `
+      <div class="mb-6">
+        <h3 class="text-sm font-bold text-amber-700 mb-3">${label} (${items.length})</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-gray-50 text-gray-600 uppercase text-[10px] font-semibold">
+                <th class="text-left px-2 py-2 w-8">#</th>
+                <th class="text-left px-2 py-2 min-w-[120px]">NAME</th>
+                <th class="text-left px-2 py-2 w-20">TYPE</th>
+                <th class="text-left px-2 py-2 min-w-[80px]">COMPANY</th>
+                <th class="text-left px-2 py-2 w-24">QID</th>
+                <th class="text-left px-2 py-2 w-20">BANK</th>
+                <th class="text-left px-2 py-2 w-24">ACCOUNT</th>
+                <th class="text-left px-2 py-2 w-28">IBAN</th>
+                <th class="text-right px-2 py-2 w-20">MONTHLY<br/>SALARY</th>
+                <th class="text-right px-2 py-2 w-20">CURRENT<br/>SALARY<br/>BALANCE</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map((emp, idx) => {
+                const maskAcc = (acc) => {
+                  if (!acc) return '-';
+                  const s = String(acc).replace(/\s+/g, '');
+                  if (s.length <= 4) return s;
+                  return '•••• ' + s.slice(-4);
+                };
+                const maskIban = (iban) => {
+                  if (!iban) return '-';
+                  const s = String(iban).replace(/\s+/g, '');
+                  if (s.length <= 8) return s;
+                  return s.slice(0, 4) + '•••' + s.slice(-4);
+                };
+                return `
+                  <tr class="border-b border-gray-100 hover:bg-gray-50">
+                    <td class="px-2 py-2 text-gray-500">${idx + 1}</td>
+                    <td class="px-2 py-2">
+                      <div class="font-semibold text-gray-900 truncate max-w-[150px]" title="${emp.name}">${emp.name}</div>
+                    </td>
+                    <td class="px-2 py-2">
+                      ${badge(emp._type)}
+                    </td>
+                    <td class="px-2 py-2 text-gray-600 truncate max-w-[100px]" title="${emp.department || '-'}">${emp.department || '-'}</td>
+                    <td class="px-2 py-2 text-gray-600 font-mono text-[10px]">${emp.qid || '-'}</td>
+                    <td class="px-2 py-2 text-gray-600 truncate max-w-[80px]" title="${emp.bankName || '-'}">${emp.bankName || '-'}</td>
+                    <td class="px-2 py-2 text-gray-600 font-mono text-[10px]" title="${emp.bankAccountNumber || '-'}">${maskAcc(emp.bankAccountNumber)}</td>
+                    <td class="px-2 py-2 text-gray-600 font-mono text-[10px]" title="${emp.bankIban || '-'}">${maskIban(emp.bankIban)}</td>
+                    <td class="px-2 py-2 text-right font-mono tabular-nums font-semibold">${fmt(emp.salary || 0)}</td>
+                    <td class="px-2 py-2 text-right font-mono tabular-nums font-semibold" data-report-balance-for="${emp.id}">-</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
   };
 
-  const rows = [
+  const groupsHtml = [
     renderGroup('Permanent Employees', byType.Employee),
     renderGroup('Temporary Employees', byType.Temporary)
   ].join('');
@@ -261,27 +300,7 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
         <div class="text-xl font-extrabold text-gray-900">${fmt(total)}</div>
       </div>
     </div>
-    <div class="overflow-x-auto">
-      <table class="min-w-full text-sm">
-        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
-          <tr>
-            <th class="text-left font-semibold px-4 py-2">#</th>
-            <th class="text-left font-semibold px-4 py-2">Name</th>
-            <th class="text-left font-semibold px-4 py-2">Type</th>
-            <th class="text-left font-semibold px-4 py-2">Company</th>
-            <th class="text-left font-semibold px-4 py-2">QID</th>
-            <th class="text-left font-semibold px-4 py-2">Bank</th>
-            <th class="text-left font-semibold px-4 py-2">Account</th>
-            <th class="text-left font-semibold px-4 py-2">IBAN</th>
-            <th class="text-right font-semibold px-4 py-2">Monthly Salary</th>
-            <th class="text-right font-semibold px-4 py-2">Current Salary Balance</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          ${rows}
-        </tbody>
-      </table>
-    </div>
+    ${groupsHtml}
   `;
   // After rendering, compute and populate balances for the selected month
   try { computeAndFillReportBalancesForMonth(combined, ym).catch(()=>{}); } catch {}

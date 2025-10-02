@@ -68,6 +68,21 @@
             .backdrop { position: fixed; inset: 0; background: rgba(17,24,39,0.78); z-index: 99990; display: none; }
             body.modal-open .backdrop { display: block; }
         </style>
+                <style id="payroll-table-styles">
+                    /* Compact payroll table styles for the payroll modal */
+                    #payrollModal .payroll-table { font-size: 11px; }
+                    #payrollModal .payroll-table th { font-size: 10px; padding: 8px 6px; white-space: nowrap; }
+                    #payrollModal .payroll-table td { padding: 6px; font-size: 11px; }
+                    #payrollModal .mono-text { font-family: 'Courier New', monospace; font-size: 10px; }
+                    @media (max-width: 1600px) {
+                        #payrollModal .payroll-table { font-size: 10px; }
+                        #payrollModal .payroll-table th, #payrollModal .payroll-table td { padding: 4px; }
+                    }
+                    #payrollModal .table-container { overflow-x: auto; max-width: 100%; scrollbar-width: thin; scrollbar-color: #cbd5e0 #f7fafc; }
+                    #payrollModal .table-container::-webkit-scrollbar { height: 6px; }
+                    #payrollModal .table-container::-webkit-scrollbar-track { background: #f7fafc; }
+                    #payrollModal .table-container::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 3px; }
+                </style>
 </head>
 <body>
     <!-- Login Page with modern design -->

@@ -36,7 +36,7 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251002-05';
+} from './modules/payroll.js?v=20251002-06';
 // cache-bust payroll module
 // (Note: update version to ensure latest code loads in browsers)
 // The previous line will be overridden by the next import if bundlers/deduping are used; in pure ESM the first import wins.
