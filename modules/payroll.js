@@ -393,13 +393,22 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
       try {
         const area = document.getElementById('payrollPrintArea');
         if (area) area.innerHTML = '';
+        // Restore any temporarily overridden window.open
+        if (window.__payrollOpenBackup) {
+          window.open = window.__payrollOpenBackup;
+          window.__payrollOpenBackup = null;
+        }
       } catch {}
     });
     window.__payrollAfterprintWired = true;
   }
 
-  // Trigger print
-  setTimeout(() => { window.print(); }, 100);
+  // Temporarily block window.open during print to avoid about:blank popups
+  try { if (!window.__payrollOpenBackup) { window.__payrollOpenBackup = window.open; window.open = function(){ try{ console.warn('[PayrollPrint] blocked window.open during print'); }catch{} return null; }; } } catch {}
+
+  // Force layout so content is ready, then print synchronously
+  try { void printArea.offsetHeight; } catch {}
+  window.print();
 }
 
 function buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, totals }) {
