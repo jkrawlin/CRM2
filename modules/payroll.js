@@ -343,6 +343,18 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
     if (!ym) { alert('Please select a month'); return; }
     const monthTitle = new Date(ym + '-01').toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
 
+    // Open the print window immediately (sync with user gesture) to avoid popup blockers
+    const printWindow = window.open('about:blank', 'payroll-print', 'width=1200,height=800');
+    if (!printWindow) { alert('Please allow pop-ups to print the payroll report'); return; }
+    try {
+      const preDoc = printWindow.document;
+      preDoc.open();
+      preDoc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Preparing Payroll…</title>
+        <style>html,body{height:100%}body{margin:0;display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#334155;background:#f8fafc} .box{padding:16px 18px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.06)} .spin{width:14px;height:14px;border:2px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;display:inline-block;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle}@keyframes spin{to{transform:rotate(360deg)}} </style>
+      </head><body><div class="box"><span class="spin"></span>Preparing payroll report…</div></body></html>`);
+      preDoc.close();
+    } catch {}
+
     // Prepare lists (exclude terminated) and tag types
     const perm = ((getEmployees && getEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Employee' }));
     const temps = ((getTemporaryEmployees && getTemporaryEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Temporary' }));
@@ -368,18 +380,42 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
       totals: { salary: totalSalary, balance: totalBalance }
     });
 
-    // Open print window and let the document self-print via its inline script
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer');
-    if (!printWindow) { alert('Please allow pop-ups to print the payroll report'); return; }
     try {
       const doc = printWindow.document;
       doc.open();
       doc.write(htmlContent);
       doc.close();
     } catch (_) {
-      // As a fallback, attempt to trigger print from opener after a short delay
-      setTimeout(() => { try { printWindow.focus(); printWindow.print(); } catch {} }, 800);
+      // Fallback to data URL load if direct write fails
+      try {
+        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent);
+        printWindow.location.href = dataUrl;
+      } catch {}
     }
+
+    // Opener-side fallback: if the inline auto-print didn’t fire, poll until DOM is ready then print.
+    try {
+      const started = Date.now();
+      const timer = setInterval(() => {
+        try {
+          const d = printWindow.document;
+          if (!d) return;
+          const ready = d.readyState === 'complete';
+          const hasBody = d.body && d.body.innerHTML && d.body.innerHTML.length > 100;
+          if (ready && hasBody) {
+            clearInterval(timer);
+            try { printWindow.focus(); } catch {}
+            try { printWindow.print(); } catch {}
+            // Best-effort close shortly after
+            setTimeout(() => { try { printWindow.close(); } catch {} }, 1500);
+          } else if (Date.now() - started > 7000) {
+            clearInterval(timer);
+            try { printWindow.focus(); } catch {}
+            try { printWindow.print(); } catch {}
+          }
+        } catch {}
+      }, 200);
+    } catch {}
   } catch (error) {
     console.error('Print failed:', error);
     alert('Failed to print payroll report. Please try again.');
