@@ -13,13 +13,12 @@
             .sidebar-collapsed #openSidebarBtn { display: inline-flex !important; }
         </style>
         <style id="payslip-print-css">
-            /* Print-only payslip: hide everything except the payslip area using display none to avoid extra pages */
+            /* Print-only payslip: scope to body.printing-payslip so other prints (like Payroll) are unaffected */
             @media print {
-                /* Only keep the print area in the document flow */
-                body > :not(#payslipPrintArea) { display: none !important; }
-                #payslipPrintArea { display: block !important; width: 100%; padding: 16mm; margin: 0; }
-                /* Page setup for A4 portrait */
-                @page { size: A4 portrait; margin: 0; }
+                /* Only keep the payslip area in the document flow when explicitly printing payslip */
+                body.printing-payslip > :not(#payslipPrintArea) { display: none !important; }
+                body.printing-payslip #payslipPrintArea { display: block !important; width: 100%; padding: 16mm; margin: 0; }
+                /* Do not set @page here to avoid conflicts with other print contexts */
                 html, body { margin: 0; height: auto; }
                 /* Basic styles for slip */
                 .payslip { font-family: Inter, Arial, sans-serif; color: #111827; }

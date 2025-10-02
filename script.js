@@ -36,7 +36,7 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251002-14';
+} from './modules/payroll.js?v=20251002-15';
 // cache-bust payroll module
 // (Note: update version to ensure latest code loads in browsers)
 // The previous line will be overridden by the next import if bundlers/deduping are used; in pure ESM the first import wins.
@@ -2647,9 +2647,11 @@ function renderAndPrintPayslip() {
   area.innerHTML = html;
   // Ensure the area is visible for printing
   area.style.display = 'block';
-  // Trigger print
+  // Trigger print with scoped body class so payroll prints are unaffected
+  document.body.classList.add('printing-payslip');
   const afterPrint = () => {
     window.removeEventListener('afterprint', afterPrint);
+    try { document.body.classList.remove('printing-payslip'); } catch {}
     // Restore previous display (hide in screen context per CSS)
     area.style.display = prevDisplay || '';
   };
@@ -2820,8 +2822,10 @@ async function renderAndPrintPaymentSlip() {
   `;
   const prevDisplay = area.style.display;
   area.style.display = 'block';
+  document.body.classList.add('printing-payslip');
   const afterPrint = () => {
     window.removeEventListener('afterprint', afterPrint);
+    try { document.body.classList.remove('printing-payslip'); } catch {}
     area.style.display = prevDisplay || '';
   };
   window.addEventListener('afterprint', afterPrint);
