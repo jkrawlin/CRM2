@@ -29,9 +29,20 @@ export function initPayroll(context) {
       // Activate the Report sub-tab and render latest data for selected month
       setPayrollSubTab('report', { getEmployees, getTemporaryEmployees, getSearchQuery });
       const monthEl = document.getElementById('payrollMonth');
-      const ym = monthEl ? monthEl.value : null;
+      let ym = monthEl ? monthEl.value : '';
+      if (!/^\d{4}-\d{2}$/.test(ym)) {
+        const now = new Date();
+        ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      }
       // Build a professional print HTML into #payrollPrintArea
-      const area = document.getElementById('payrollPrintArea');
+      let area = document.getElementById('payrollPrintArea');
+      if (!area) {
+        // Create on the fly if missing (cache/cdn race safety)
+        area = document.createElement('div');
+        area.id = 'payrollPrintArea';
+        area.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(area);
+      }
       if (area) {
         const employees = getEmployees().map(e => ({ ...e, _type: 'Employee' }));
         const temps = getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' }));
@@ -99,10 +110,11 @@ export function initPayroll(context) {
     } catch {}
     // Print only the dedicated template area
     document.body.classList.add('printing-payroll');
-    setTimeout(() => {
-      window.print();
-      setTimeout(()=> document.body.classList.remove('printing-payroll'), 200);
-    }, 100);
+    // Wait for a paint frame then trigger print; cleanup after
+    const cleanup = () => { try { document.body.classList.remove('printing-payroll'); } catch {} };
+    const afterPrint = () => { window.removeEventListener('afterprint', afterPrint); cleanup(); };
+    window.addEventListener('afterprint', afterPrint);
+    requestAnimationFrame(() => { setTimeout(() => { window.print(); }, 150); });
   });
 }
 
