@@ -160,6 +160,64 @@
                         font-weight: 700;
                     }
                 </style>
+                    <style id="payroll-print-styles">
+                    /* Print-specific optimizations for payroll report */
+                    @media print {
+                        @page {
+                            size: A4 landscape;
+                            margin: 10mm;
+                        }
+    
+                        #payrollTabReport {
+                            font-size: 9px !important;
+                        }
+    
+                        #payrollTabReport table {
+                            font-size: 8px !important;
+                            page-break-inside: avoid;
+                        }
+    
+                        #payrollTabReport th,
+                        #payrollTabReport td {
+                            padding: 1px 2px !important;
+                            font-size: 8px !important;
+                        }
+    
+                        #payrollTabReport .mono-text {
+                            font-family: 'Courier New', monospace !important;
+                            font-size: 7px !important;
+                            letter-spacing: -0.5px !important;
+                        }
+    
+                        /* Hide non-essential elements */
+                        #payrollTabReport button,
+                        #payrollTabReport .btn {
+                            display: none !important;
+                        }
+    
+                        /* Ensure full content visibility */
+                        #payrollTabReport td {
+                            overflow: visible !important;
+                            text-overflow: clip !important;
+                            white-space: normal !important;
+                            word-break: break-word !important;
+                        }
+                    }
+
+                    /* Screen view optimizations */
+                    #payrollTabReport .mono-text {
+                        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                        font-size: 8px;
+                        letter-spacing: -0.3px;
+                    }
+
+                    #payrollTabReport .compact-badge {
+                        padding: 0 4px;
+                        font-size: 7px;
+                        display: inline-block;
+                        border-radius: 2px;
+                    }
+                    </style>
 </head>
 <body>
     <!-- Login Page with modern design -->
