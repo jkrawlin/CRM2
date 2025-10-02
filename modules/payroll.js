@@ -26,23 +26,82 @@ export function initPayroll(context) {
   if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportPayrollCsv(getEmployees(), getTemporaryEmployees()));
   if (printBtn) printBtn.addEventListener('click', () => {
     try {
-      // Ensure the report tab is active and rendered before printing
+      // Activate the Report sub-tab and render latest data for selected month
       setPayrollSubTab('report', { getEmployees, getTemporaryEmployees, getSearchQuery });
-      // Render with currently selected month (if any)
-      try {
-        const monthEl = document.getElementById('payrollMonth');
-        renderPayrollFrame({ getEmployees, getTemporaryEmployees, month: monthEl ? monthEl.value : null });
-      } catch {}
-      // Make sure the report pane is visible
-      const reportPane = document.getElementById('payrollTabReport');
-      if (reportPane) reportPane.style.display = '';
+      const monthEl = document.getElementById('payrollMonth');
+      const ym = monthEl ? monthEl.value : null;
+      // Build a professional print HTML into #payrollPrintArea
+      const area = document.getElementById('payrollPrintArea');
+      if (area) {
+        const employees = getEmployees().map(e => ({ ...e, _type: 'Employee' }));
+        const temps = getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' }));
+        const combined = [...employees, ...temps].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+        const total = combined.reduce((s,e)=> s + Number(e.salary||0), 0);
+        const fmt = (n)=> `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+        const [yr, mo] = ym && ym.includes('-') ? ym.split('-') : [];
+        const monthTitle = ym ? new Date(Number(yr), Number(mo)-1, 1).toLocaleDateString(undefined,{year:'numeric', month:'long'}) : 'Current Month';
+        const group = (arr,label)=>{
+          if (!arr.length) return '';
+          const rows = arr.map((emp,idx)=>{
+            return `<tr>
+              <td>${idx+1}</td>
+              <td><div style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.name}">${emp.name}</div></td>
+              <td>${emp._type==='Temporary'?'TEMP':'PERM'}</td>
+              <td><div style="max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.department||'-'}">${emp.department||'-'}</div></td>
+              <td class="mono-text">${emp.qid||'-'}</td>
+              <td><div style="max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.bankName||'-'}">${emp.bankName||'-'}</div></td>
+              <td class="mono-text" style="word-break:break-word">${emp.bankAccountNumber||'-'}</td>
+              <td class="mono-text" style="word-break:break-word">${emp.bankIban||'-'}</td>
+              <td class="right mono-text">${fmt(emp.salary||0)}</td>
+              <td class="right mono-text" data-report-balance-for="${emp.id}">-</td>
+            </tr>`;
+          }).join('');
+          return `
+            <h3 style="margin:8px 0 4px 0;font-size:11px;font-weight:800;color:#374151;text-transform:uppercase">${label} (${arr.length})</h3>
+            <table>
+              <colgroup>
+                <col /><col /><col /><col /><col /><col /><col /><col /><col /><col />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>#</th><th>NAME</th><th>TYPE</th><th>DEPT</th><th>QID</th><th>BANK</th><th>ACCOUNT</th><th>IBAN</th><th>SALARY</th><th>BALANCE</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>`;
+        };
+        const byType = { Employee: combined.filter(x=>x._type==='Employee'), Temporary: combined.filter(x=>x._type==='Temporary') };
+        area.innerHTML = `
+          <section class="report">
+            <div class="report-header">
+              <div>
+                <div class="brand">CRM</div>
+                <h1 class="report-title">Payroll Report</h1>
+                <div class="report-subtitle">${monthTitle}</div>
+              </div>
+              <div style="text-align:right">
+                <div class="report-subtitle">Total Payroll</div>
+                <div class="report-title">${fmt(total)}</div>
+              </div>
+            </div>
+            <div class="meta">
+              <div><div class="label">Generated</div><div class="value">${new Date().toLocaleString()}</div></div>
+              <div><div class="label">Employees</div><div class="value">${combined.length}</div></div>
+              <div><div class="label">Period</div><div class="value">${monthTitle}</div></div>
+            </div>
+            ${group(byType.Employee, 'Permanent Employees')}
+            ${group(byType.Temporary, 'Temporary Employees')}
+            <div class="foot">CRM • Confidential</div>
+          </section>`;
+        // Fill balances asynchronously
+        try { computeAndFillReportBalancesForMonth(combined, ym||''); } catch {}
+      }
     } catch {}
-    // Add a temporary class to print only the report content
+    // Print only the dedicated template area
     document.body.classList.add('printing-payroll');
     setTimeout(() => {
       window.print();
-      // Cleanup class shortly after print is triggered
-      setTimeout(() => document.body.classList.remove('printing-payroll'), 250);
+      setTimeout(()=> document.body.classList.remove('printing-payroll'), 200);
     }, 100);
   });
 }
