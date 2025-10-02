@@ -191,11 +191,18 @@ async function computeAndFillCurrentBalances(list) {
   }
 }
 
-export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
+export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month = null }) {
   const frame = document.getElementById('payrollFrame');
   if (!frame) return;
   const monthEl = document.getElementById('payrollMonth');
-  const ym = monthEl && monthEl.value ? monthEl.value : '';
+  let ym = month || (monthEl && monthEl.value ? monthEl.value : '');
+  // If still no month, fallback to current month and persist to input if present
+  if (!ym) {
+    const now = new Date();
+    const defaultYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (monthEl) monthEl.value = defaultYm;
+    ym = defaultYm;
+  }
   const [yr, mo] = ym ? ym.split('-') : ['',''];
 
   const combined = [
@@ -219,7 +226,7 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
   const renderGroup = (label, items) => {
     if (!items.length) return '';
     const tone = label.includes('Temporary') ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800';
-    const header = `<tr class="${tone}"><td colspan="9" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
+    const header = `<tr class="${tone}"><td colspan="10" class="px-4 py-2 font-bold">${label} (${items.length})</td></tr>`;
     const rowBg = label.includes('Temporary') ? 'bg-amber-50' : '';
     const rows = items.map((e, i) => `
       <tr class="border-b border-gray-100 ${rowBg}">
@@ -232,6 +239,7 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
         <td class="px-4 py-2">${maskAccount(e.bankAccountNumber)}</td>
         <td class="px-4 py-2 break-all">${e.bankIban || '-'}</td>
         <td class="px-4 py-2 text-right tabular-nums">${fmt(e.salary)}</td>
+        <td class="px-4 py-2 text-right tabular-nums" data-report-balance-for="${e.id}">—</td>
       </tr>
     `).join('');
     return header + rows;
@@ -266,6 +274,7 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
             <th class="text-left font-semibold px-4 py-2">Account</th>
             <th class="text-left font-semibold px-4 py-2">IBAN</th>
             <th class="text-right font-semibold px-4 py-2">Monthly Salary</th>
+            <th class="text-right font-semibold px-4 py-2">Current Salary Balance</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
@@ -274,6 +283,57 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees }) {
       </table>
     </div>
   `;
+  // After rendering, compute and populate balances for the selected month
+  try { computeAndFillReportBalancesForMonth(combined, ym).catch(()=>{}); } catch {}
+}
+
+// Compute balances for the report frame for a specific month (ym = YYYY-MM)
+async function computeAndFillReportBalancesForMonth(list, ym) {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return;
+  try {
+    const [yStr, mStr] = ym.split('-');
+    const y = Number(yStr), m = Number(mStr);
+    const prev = new Date(y, m - 2, 1); // previous month
+    const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { db } = await import('../firebase-config.js');
+    const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    for (const emp of list) {
+      try {
+        // Previous month carryover
+        let carryover = 0;
+        try {
+          const prevRef = doc(db, 'balances', `${emp.id}_${prevYm}`);
+          const prevDoc = await getDoc(prevRef);
+          if (prevDoc.exists()) carryover = Number(prevDoc.data().balance || 0) || 0;
+        } catch {}
+
+        // Payslips for selected month
+        const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
+        const slipsThisMonth = psSnap.docs.map(d => d.data()).filter(d => (d.period || '') === ym);
+        const basic = slipsThisMonth.length
+          ? Number(slipsThisMonth.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0].basic || emp.salary || 0)
+          : Number(emp.salary || 0);
+        const advances = slipsThisMonth.reduce((s, p) => s + Number(p.advance || 0), 0);
+
+        // Payments within selected month (exclude advances)
+        const paySnap = await getDocs(query(collection(db, 'payments'), where('employeeId', '==', emp.id)));
+        const paymentsThisMonth = paySnap.docs
+          .map(d => d.data())
+          .filter(p => (p.date || '').startsWith(ym + '-') && !Boolean(p.isAdvance))
+          .reduce((s, p) => s + Number(p.amount || 0) + Number(p.overtime || 0), 0);
+
+        const balance = Math.max(0, Number(carryover) + basic - advances - paymentsThisMonth);
+        const cell = document.querySelector(`[data-report-balance-for="${emp.id}"]`);
+        if (cell) cell.textContent = fmt(balance);
+      } catch (e) {
+        const cell = document.querySelector(`[data-report-balance-for="${emp.id}"]`);
+        if (cell) cell.textContent = '—';
+      }
+    }
+  } catch (e) {
+    console.warn('computeAndFillReportBalancesForMonth failure', e);
+  }
 }
 
 export function setPayrollSubTab(which, deps) {
@@ -298,7 +358,18 @@ export function setPayrollSubTab(which, deps) {
     reportPane.style.display = '';
     activateBtn(tableBtn, false);
     activateBtn(reportBtn, true);
-    renderPayrollFrame(deps);
+    // Ensure month input has a sensible default
+    try {
+      const monthEl = document.getElementById('payrollMonth');
+      if (monthEl && !monthEl.value) {
+        const now = new Date();
+        monthEl.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      }
+      renderPayrollFrame({ ...deps, month: monthEl ? monthEl.value : null });
+    } catch {
+      // Fallback without month if something goes wrong
+      renderPayrollFrame(deps);
+    }
     currentPayrollSubTab = 'report';
   } else {
     tablePane.style.display = '';

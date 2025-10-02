@@ -36,7 +36,10 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20250929-12';
+} from './modules/payroll.js?v=20251002-05';
+// cache-bust payroll module
+// (Note: update version to ensure latest code loads in browsers)
+// The previous line will be overridden by the next import if bundlers/deduping are used; in pure ESM the first import wins.
 // bump cache
 // Utilities used in this file (masking account numbers in Payroll modal)
 import { maskAccount } from './modules/utils.js?v=20250929-08';
@@ -886,25 +889,7 @@ function setupEventListeners() {
     setInterval(syncBodyClass, 1000); // safety net
   } catch {}
 
-  // Payroll Frame controls
-  const payrollMonthEl = document.getElementById('payrollMonth');
-  if (payrollMonthEl) {
-    // Default to current month
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    payrollMonthEl.value = payrollMonthEl.value || ym;
-    payrollMonthEl.addEventListener('change', () => {
-      renderPayrollFrame();
-      // Ensure monthly balances exist for the selected month
-      try {
-        const month = payrollMonthEl.value;
-        if (month && /^\d{4}-\d{2}$/.test(month)) {
-          const everyone = [...employees, ...temporaryEmployees];
-          everyone.forEach(emp => { try { ensureMonthlyBalance(emp.id, month); } catch {} });
-        }
-      } catch {}
-    });
-  }
+  // Payroll month input is wired in setupEventListeners
   // Client Transactions controls
   const clientBillingMonthEl = document.getElementById('clientBillingMonth');
   if (clientBillingMonthEl && !clientBillingMonthEl.__wired) {
@@ -1158,6 +1143,38 @@ function setupEventListeners() {
 
   // Mobile swipe-to-close for View modal
   setupSwipeToClose();
+
+  // Payroll Monthly Report: month input default + change wiring
+  const payrollMonthInput = document.getElementById('payrollMonth');
+  if (payrollMonthInput) {
+    // Set default value if empty (current YYYY-MM)
+    if (!payrollMonthInput.value) {
+      const now = new Date();
+      payrollMonthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    }
+    if (!payrollMonthInput.__wired) {
+      payrollMonthInput.addEventListener('change', () => {
+        // Only render if we're on the report tab
+        const reportTab = document.getElementById('payrollTabReport');
+        if (reportTab && reportTab.style.display !== 'none') {
+          renderPayrollFrame({
+            getEmployees: () => employees,
+            getTemporaryEmployees: () => temporaryEmployees,
+            month: payrollMonthInput.value
+          });
+        }
+        // Ensure monthly balances exist for the selected month
+        try {
+          const month = payrollMonthInput.value;
+          if (month && /^\d{4}-\d{2}$/.test(month)) {
+            const everyone = [...employees, ...temporaryEmployees];
+            everyone.forEach(emp => { try { ensureMonthlyBalance(emp.id, month); } catch {} });
+          }
+        } catch {}
+      });
+      payrollMonthInput.__wired = true;
+    }
+  }
 }
 
 // Client Payment Modal controls
@@ -2067,10 +2084,16 @@ function ensureCurrentMonthBalances() {
   }
 }
 // Render a printable payroll frame
-function renderPayrollFrame() {
+function renderPayrollFrame(opts) {
+  // If options are provided, pass-through to module with explicit month
+  if (opts && typeof opts === 'object') {
+    return payrollRenderFrame(opts);
+  }
+  const monthEl = document.getElementById('payrollMonth');
   payrollRenderFrame({
     getEmployees: () => employees,
     getTemporaryEmployees: () => temporaryEmployees,
+    month: monthEl ? monthEl.value : null,
   });
 }
 
