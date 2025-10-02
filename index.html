@@ -162,7 +162,7 @@
                 </style>
                     <style id="payroll-print-styles">
                     /* Print-specific optimizations for payroll report */
-                    @media print {
+                        @media print {
                         @page {
                             size: A4 landscape;
                             margin: 10mm;
@@ -190,13 +190,16 @@
                         }
     
                         /* Hide non-essential elements */
-                        #payrollTabReport button,
-                        #payrollTabReport .btn {
-                            display: none !important;
-                        }
+                            #payrollTabReport button,
+                            #payrollTabReport .btn { display: none !important; }
+                            /* If printing-payroll class is present, hide everything except the report area */
+                            body.printing-payroll * { visibility: hidden !important; }
+                            body.printing-payroll #payrollTabReport, 
+                            body.printing-payroll #payrollTabReport * { visibility: visible !important; }
+                            body.printing-payroll #payrollTabReport { position: absolute !important; left: 0; top: 0; right: 0; }
     
-                        /* Ensure full content visibility */
-                        #payrollTabReport td {
+                            /* Ensure full content visibility */
+                            #payrollTabReport td {
                             overflow: visible !important;
                             text-overflow: clip !important;
                             white-space: normal !important;

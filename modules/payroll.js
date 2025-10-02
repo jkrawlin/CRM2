@@ -24,7 +24,27 @@ export function initPayroll(context) {
   const exportCsvBtn = document.getElementById('exportPayrollCsvBtn');
   const printBtn = document.getElementById('printPayrollBtn');
   if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportPayrollCsv(getEmployees(), getTemporaryEmployees()));
-  if (printBtn) printBtn.addEventListener('click', () => window.print());
+  if (printBtn) printBtn.addEventListener('click', () => {
+    try {
+      // Ensure the report tab is active and rendered before printing
+      setPayrollSubTab('report', { getEmployees, getTemporaryEmployees, getSearchQuery });
+      // Render with currently selected month (if any)
+      try {
+        const monthEl = document.getElementById('payrollMonth');
+        renderPayrollFrame({ getEmployees, getTemporaryEmployees, month: monthEl ? monthEl.value : null });
+      } catch {}
+      // Make sure the report pane is visible
+      const reportPane = document.getElementById('payrollTabReport');
+      if (reportPane) reportPane.style.display = '';
+    } catch {}
+    // Add a temporary class to print only the report content
+    document.body.classList.add('printing-payroll');
+    setTimeout(() => {
+      window.print();
+      // Cleanup class shortly after print is triggered
+      setTimeout(() => document.body.classList.remove('printing-payroll'), 250);
+    }, 100);
+  });
 }
 
 export function sortPayroll(column, deps) {
