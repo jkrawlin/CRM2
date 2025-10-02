@@ -13,12 +13,13 @@
             .sidebar-collapsed #openSidebarBtn { display: inline-flex !important; }
         </style>
         <style id="payslip-print-css">
-            /* Print-only payslip: scope to body.printing-payslip so other prints (like Payroll) are unaffected */
+            /* Print-only payslip: hide everything except the payslip area using display none to avoid extra pages */
             @media print {
-                /* Only keep the payslip area in the document flow when explicitly printing payslip */
-                body.printing-payslip > :not(#payslipPrintArea) { display: none !important; }
-                body.printing-payslip #payslipPrintArea { display: block !important; width: 100%; padding: 16mm; margin: 0; }
-                /* Do not set @page here to avoid conflicts with other print contexts */
+                /* Only keep the print area in the document flow */
+                body > :not(#payslipPrintArea) { display: none !important; }
+                #payslipPrintArea { display: block !important; width: 100%; padding: 16mm; margin: 0; }
+                /* Page setup for A4 portrait */
+                @page { size: A4 portrait; margin: 0; }
                 html, body { margin: 0; height: auto; }
                 /* Basic styles for slip */
                 .payslip { font-family: Inter, Arial, sans-serif; color: #111827; }
@@ -161,7 +162,7 @@
                 </style>
                     <style id="payroll-print-styles">
                     /* Print-specific optimizations for payroll report */
-                        @media print {
+                    @media print {
                         @page {
                             size: A4 landscape;
                             margin: 10mm;
@@ -188,15 +189,14 @@
                             letter-spacing: -0.5px !important;
                         }
     
-                        /* Hide non-essential elements in the on-screen report */
+                        /* Hide non-essential elements */
                         #payrollTabReport button,
-                        #payrollTabReport .btn { display: none !important; }
-                        /* Professional print template: when printing-payroll, only show the print area */
-                        body.printing-payroll > :not(#payrollPrintArea) { display: none !important; }
-                        body.printing-payroll #payrollPrintArea { display: block !important; width: 100%; margin: 0; padding: 10mm; }
+                        #payrollTabReport .btn {
+                            display: none !important;
+                        }
     
-                            /* Ensure full content visibility */
-                            #payrollTabReport td {
+                        /* Ensure full content visibility */
+                        #payrollTabReport td {
                             overflow: visible !important;
                             text-overflow: clip !important;
                             white-space: normal !important;
@@ -218,39 +218,6 @@
                         border-radius: 2px;
                     }
                     </style>
-                        <style id="payroll-report-print-template">
-                            /* Screen: keep hidden */
-                            #payrollPrintArea { display: none; }
-                            /* Print styles for the professional template */
-                            @media print {
-                                #payrollPrintArea { background: #fff; color: #111827; }
-                                #payrollPrintArea .report-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom: 12px; }
-                                #payrollPrintArea .brand { font-weight: 800; color:#4F46E5; font-size: 16px; }
-                                #payrollPrintArea .report-title { font-size: 16px; font-weight: 800; margin: 0; }
-                                #payrollPrintArea .report-subtitle { color:#6B7280; font-size: 10px; margin-top: 2px; }
-                                #payrollPrintArea .meta { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px 12px; margin: 6px 0 10px; font-size: 10px; }
-                                #payrollPrintArea .meta .label { color:#6B7280; }
-                                #payrollPrintArea .meta .value { font-weight:600; color:#111827; }
-                                #payrollPrintArea table { width: 100%; border-collapse: collapse; font-size: 9px; }
-                                #payrollPrintArea thead th { background:#F3F4F6; color:#374151; text-transform:uppercase; letter-spacing: 0.02em; font-weight:700; font-size:8px; padding: 4px 3px; border: 1px solid #E5E7EB; }
-                                #payrollPrintArea tbody td { border: 1px solid #E5E7EB; padding: 3px; vertical-align: top; font-size: 9px; }
-                                #payrollPrintArea .right { text-align: right; }
-                                #payrollPrintArea .mono-text { font-family: 'Consolas','Monaco','Courier New',monospace; font-size: 8px; letter-spacing: -0.3px; }
-                                #payrollPrintArea .foot { margin-top: 10px; color:#6B7280; font-size: 10px; text-align: right; }
-                                /* Column sizing */
-                                #payrollPrintArea colgroup col:nth-child(1){ width: 24px; }
-                                #payrollPrintArea colgroup col:nth-child(2){ width: 160px; }
-                                #payrollPrintArea colgroup col:nth-child(3){ width: 60px; }
-                                #payrollPrintArea colgroup col:nth-child(4){ width: 80px; }
-                                #payrollPrintArea colgroup col:nth-child(5){ width: 90px; }
-                                #payrollPrintArea colgroup col:nth-child(6){ width: 80px; }
-                                /* Account/IBAN grow */
-                                #payrollPrintArea colgroup col:nth-child(7){ width: auto; }
-                                #payrollPrintArea colgroup col:nth-child(8){ width: auto; }
-                                #payrollPrintArea colgroup col:nth-child(9){ width: 80px; }
-                                #payrollPrintArea colgroup col:nth-child(10){ width: 90px; }
-                            }
-                        </style>
 </head>
 <body>
     <!-- Login Page with modern design -->
@@ -1049,9 +1016,6 @@
             </div>
         </div>
     </section>
-
-    <!-- Dedicated print container for Payroll professional report template -->
-    <div id="payrollPrintArea" aria-hidden="true"></div>
                 </main>
             </div>
         </div>
@@ -1897,6 +1861,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251002-06"></script>
+    <script type="module" src="script.js?v=20251002-07"></script>
 </body>
 </html>

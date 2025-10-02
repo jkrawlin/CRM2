@@ -24,164 +24,7 @@ export function initPayroll(context) {
   const exportCsvBtn = document.getElementById('exportPayrollCsvBtn');
   const printBtn = document.getElementById('printPayrollBtn');
   if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportPayrollCsv(getEmployees(), getTemporaryEmployees()));
-  if (printBtn) printBtn.addEventListener('click', () => printPayrollProfessional({ getEmployees, getTemporaryEmployees, getSearchQuery }));
-}
-
-function buildPayrollPrintHtml({ ym, combined, total }) {
-  const fmt = (n)=> `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-  const [yr, mo] = ym && ym.includes('-') ? ym.split('-') : [];
-  const monthTitle = ym ? new Date(Number(yr), Number(mo)-1, 1).toLocaleDateString(undefined,{year:'numeric', month:'long'}) : 'Current Month';
-  const header = `
-    <div class="report-header">
-      <div>
-        <div class="brand">CRM</div>
-        <h1 class="report-title">Payroll Report</h1>
-        <div class="report-subtitle">${monthTitle}</div>
-      </div>
-      <div style="text-align:right">
-        <div class="report-subtitle">Total Payroll</div>
-        <div class="report-title">${fmt(total)}</div>
-      </div>
-    </div>
-    <div class="meta">
-      <div><div class="label">Generated</div><div class="value">${new Date().toLocaleString()}</div></div>
-      <div><div class="label">Employees</div><div class="value">${combined.length}</div></div>
-      <div><div class="label">Period</div><div class="value">${monthTitle}</div></div>
-    </div>`;
-  const group = (arr,label)=>{
-    if (!arr.length) return '';
-    const rows = arr.map((emp,idx)=>{
-      return `<tr>
-        <td>${idx+1}</td>
-        <td><div style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.name}">${emp.name}</div></td>
-        <td>${emp._type==='Temporary'?'TEMP':'PERM'}</td>
-        <td><div style="max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.department||'-'}">${emp.department||'-'}</div></td>
-        <td class="mono-text">${emp.qid||'-'}</td>
-        <td><div style="max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${emp.bankName||'-'}">${emp.bankName||'-'}</div></td>
-        <td class="mono-text" style="word-break:break-word">${emp.bankAccountNumber||'-'}</td>
-        <td class="mono-text" style="word-break:break-word">${emp.bankIban||'-'}</td>
-        <td class="right mono-text">${fmt(emp.salary||0)}</td>
-        <td class="right mono-text" data-report-balance-for="${emp.id}">-</td>
-      </tr>`;
-    }).join('');
-    return `
-      <h3 style="margin:8px 0 4px 0;font-size:11px;font-weight:800;color:#374151;text-transform:uppercase">${label} (${arr.length})</h3>
-      <table>
-        <colgroup>
-          <col /><col /><col /><col /><col /><col /><col /><col /><col /><col />
-        </colgroup>
-        <thead>
-          <tr>
-            <th>#</th><th>NAME</th><th>TYPE</th><th>DEPT</th><th>QID</th><th>BANK</th><th>ACCOUNT</th><th>IBAN</th><th>SALARY</th><th>BALANCE</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
-  };
-  const byType = { Employee: combined.filter(x=>x._type==='Employee'), Temporary: combined.filter(x=>x._type==='Temporary') };
-  const body = `
-    <section class="report">
-      ${header}
-      ${group(byType.Employee, 'Permanent Employees')}
-      ${group(byType.Temporary, 'Temporary Employees')}
-      <div class="foot">CRM • Confidential</div>
-    </section>`;
-  const styles = `
-    <style>
-      @page { size: A4 landscape; margin: 10mm; }
-      html, body { margin:0; padding:0; }
-      body { font-family: Inter, Arial, sans-serif; color:#111827; }
-      .report-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom: 12px; }
-      .brand { font-weight: 800; color:#4F46E5; font-size: 16px; }
-      .report-title { font-size: 16px; font-weight: 800; margin: 0; }
-      .report-subtitle { color:#6B7280; font-size: 10px; margin-top: 2px; }
-      .meta { display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px 12px; margin: 6px 0 10px; font-size: 10px; }
-      .meta .label { color:#6B7280; }
-      .meta .value { font-weight:600; color:#111827; }
-      table { width: 100%; border-collapse: collapse; font-size: 9px; }
-      thead th { background:#F3F4F6; color:#374151; text-transform:uppercase; letter-spacing: 0.02em; font-weight:700; font-size:8px; padding: 4px 3px; border: 1px solid #E5E7EB; }
-      tbody td { border: 1px solid #E5E7EB; padding: 3px; vertical-align: top; font-size: 9px; }
-      .right { text-align: right; }
-      .mono-text { font-family: 'Consolas','Monaco','Courier New',monospace; font-size: 8px; letter-spacing: -0.3px; }
-      .foot { margin-top: 10px; color:#6B7280; font-size: 10px; text-align: right; }
-    </style>`;
-  return `<!doctype html><html><head><meta charset="utf-8">${styles}<title>Payroll Report - ${monthTitle}</title></head><body>${body}</body></html>`;
-}
-
-async function printPayrollProfessional({ getEmployees, getTemporaryEmployees, getSearchQuery }) {
-  try {
-    // Ensure data and month
-    const monthEl = document.getElementById('payrollMonth');
-    let ym = monthEl ? monthEl.value : '';
-    if (!/^\d{4}-\d{2}$/.test(ym)) {
-      const now = new Date();
-      ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    }
-    const employees = getEmployees().map(e => ({ ...e, _type: 'Employee' }));
-    const temps = getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' }));
-    const combined = [...employees, ...temps].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-    const total = combined.reduce((s,e)=> s + Number(e.salary||0), 0);
-
-    // Precompute balances for selected month to avoid async fill after print
-    const mapBalances = new Map();
-    try {
-      const [yStr, mStr] = ym.split('-');
-      const y = Number(yStr), m = Number(mStr);
-      const prev = new Date(y, m - 2, 1);
-      const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-      const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-      const { db } = await import('../firebase-config.js');
-      for (const emp of combined) {
-        let carryover = 0;
-        try {
-          const prevRef = doc(db, 'balances', `${emp.id}_${prevYm}`);
-          const prevDoc = await getDoc(prevRef);
-          if (prevDoc.exists()) carryover = Number(prevDoc.data().balance || 0) || 0;
-        } catch {}
-        const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
-        const slipsThisMonth = psSnap.docs.map(d => d.data()).filter(d => (d.period || '') === ym);
-        const basic = slipsThisMonth.length
-          ? Number(slipsThisMonth.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0].basic || emp.salary || 0)
-          : Number(emp.salary || 0);
-        const advances = slipsThisMonth.reduce((s, p) => s + Number(p.advance || 0), 0);
-        const paySnap = await getDocs(query(collection(db, 'payments'), where('employeeId', '==', emp.id)));
-        const paymentsThisMonth = paySnap.docs
-          .map(d => d.data())
-          .filter(p => (p.date || '').startsWith(ym + '-') && !Boolean(p.isAdvance))
-          .reduce((s, p) => s + Number(p.amount || 0) + Number(p.overtime || 0), 0);
-        const balance = Math.max(0, Number(carryover) + basic - advances - paymentsThisMonth);
-        mapBalances.set(emp.id, balance);
-      }
-    } catch {}
-
-    // Inject precomputed balances into a cloned list for printing
-    const withBalances = combined.map(e => ({ ...e, __balance: mapBalances.has(e.id) ? mapBalances.get(e.id) : null }));
-    const html = buildPayrollPrintHtml({ ym, combined: withBalances, total });
-
-    // Open a dedicated print window and write content
-    const w = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=800');
-    if (!w) { alert('Pop-up blocked. Please allow pop-ups to print.'); return; }
-    w.document.open();
-    // Enhance: inject balances if precomputed
-    const enhanced = html.replace(/data-report-balance-for=\"(.*?)\">-</g, (m, id) => {
-      const val = withBalances.find(x=>x.id===id)?.__balance;
-      if (val==null) return m;
-      const fmt = (n)=> `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-      return `data-report-balance-for="${id}">${fmt(val)}`;
-    });
-    w.document.write(enhanced);
-    w.document.close();
-    // Ensure print after content loads
-    const printAfterLoad = () => { try { w.focus(); } catch {} try { w.print(); } catch {} try { w.close(); } catch {} };
-    if (w.document.readyState === 'complete') {
-      setTimeout(printAfterLoad, 100);
-    } else {
-      w.onload = () => setTimeout(printAfterLoad, 100);
-    }
-  } catch (e) {
-    console.warn('printPayrollProfessional failed', e);
-    try { window.print(); } catch {}
-  }
+  if (printBtn) printBtn.addEventListener('click', () => printPayrollProfessional({ getEmployees, getTemporaryEmployees }));
 }
 
 export function sortPayroll(column, deps) {
@@ -298,6 +141,222 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
   const handler = () => computeAndFillCurrentBalances(sorted).catch(()=>{});
   document.removeEventListener('payroll:recompute-balances', handler);
   document.addEventListener('payroll:recompute-balances', handler, { once: true });
+}
+
+// Build a professional, standalone HTML document for printing the payroll (A4 landscape)
+function buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, totals }) {
+  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const row = (emp, idx) => {
+    const bal = balancesMap.get(emp.id) ?? 0;
+    const type = emp._type === 'Temporary' ? 'TEMP' : 'PERM';
+    return `
+      <tr>
+        <td>${idx + 1}</td>
+        <td class="emp">${esc(emp.name || '')}</td>
+        <td><span class="badge ${type==='TEMP'?'temp':'perm'}">${type}</span></td>
+        <td>${esc(emp.department || '-')}</td>
+        <td class="mono">${esc(emp.qid || '-')}</td>
+        <td>${esc(emp.bankName || '-')}</td>
+        <td class="mono">${esc(emp.bankAccountNumber || '-')}</td>
+        <td class="mono">${esc(emp.bankIban || '-')}</td>
+        <td class="num">${fmt(emp.salary || 0)}</td>
+        <td class="num">${fmt(bal)}</td>
+      </tr>`;
+  };
+  const table = (title, list) => !list.length ? '' : `
+    <div class="section">
+      <div class="section-title">${esc(title)} <span class="muted">(${list.length})</span></div>
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Company</th>
+            <th>QID</th>
+            <th>Bank</th>
+            <th>Account</th>
+            <th>IBAN</th>
+            <th>Monthly</th>
+            <th>Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map((e,i)=>row(e,i)).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const html = `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Payroll Report — ${esc(monthTitle)}</title>
+    <style>
+      @page { size: A4 landscape; margin: 10mm; }
+      html, body { margin:0; padding:0; }
+      body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:#111827; }
+      .report { padding: 0; }
+      .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom: 10px; }
+      .brand { font-weight: 800; font-size: 18px; color:#4F46E5; letter-spacing: .2px; }
+      .title-wrap { text-align:right; }
+      .title { font-weight: 800; font-size: 16px; margin: 0; }
+      .subtitle { font-size: 11px; color:#6B7280; margin-top: 2px; }
+      .summary { display:grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
+      .card { border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
+      .card .label { font-size:10px; color:#6B7280; text-transform:uppercase; letter-spacing:.02em; }
+      .card .value { font-size:14px; font-weight:800; }
+      .section { margin-top: 10px; }
+      .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color:#374151; margin-bottom: 4px; }
+      .section-title .muted { color:#6B7280; font-weight:600; }
+      table.grid { width:100%; border-collapse: collapse; font-size: 9px; }
+      table.grid th, table.grid td { border:1px solid #E5E7EB; padding: 3px 4px; vertical-align: top; }
+      table.grid thead th { background:#F3F4F6; color:#374151; text-align:left; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+      td.emp { font-weight: 700; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 9px; letter-spacing: -0.2px; word-break: break-word; }
+      .badge { display:inline-block; padding:1px 4px; font-size:8px; border-radius:3px; font-weight:700; }
+      .badge.perm { background:#ECFDF5; color:#065F46; }
+      .badge.temp { background:#FEF3C7; color:#92400E; }
+      .signatures { display:flex; gap: 16px; margin-top: 12px; }
+      .sign { flex:1; border-top:1px solid #E5E7EB; padding-top:6px; font-size:10px; }
+      .footer { margin-top: 8px; color:#6B7280; font-size: 10px; text-align:right; }
+      /* Avoid breaking rows across pages */
+      table.grid, table.grid tr, table.grid td, table.grid th { page-break-inside: avoid; }
+    </style>
+  </head>
+  <body>
+    <div class="report">
+      <div class="header">
+        <div class="brand">Payroll Report</div>
+        <div class="title-wrap">
+          <div class="title">${esc(monthTitle)}</div>
+          <div class="subtitle">${combined.length} employees • Total Payroll ${fmt(totals.totalSalaries)} • Total Outstanding ${fmt(totals.totalBalances)}</div>
+        </div>
+      </div>
+      <div class="summary">
+        <div class="card"><div class="label">Employees</div><div class="value">${combined.length}</div></div>
+        <div class="card"><div class="label">Permanent</div><div class="value">${byType.Employee.length}</div></div>
+        <div class="card"><div class="label">Temporary</div><div class="value">${byType.Temporary.length}</div></div>
+        <div class="card"><div class="label">Total Payroll</div><div class="value">${fmt(totals.totalSalaries)}</div></div>
+      </div>
+      ${table('Permanent Employees', byType.Employee)}
+      ${table('Temporary Employees', byType.Temporary)}
+      <div class="signatures">
+        <div class="sign">Prepared by</div>
+        <div class="sign">Reviewed by</div>
+        <div class="sign">Approved by</div>
+      </div>
+      <div class="footer">Generated on ${new Date().toLocaleString()}</div>
+    </div>
+    <script>
+      window.addEventListener('load', function() {
+        setTimeout(function(){ window.print(); setTimeout(function(){ window.close(); }, 300); }, 50);
+      });
+    </script>
+  </body>
+  </html>`;
+  return html;
+}
+
+// Compute balances for a given month and return a Map<employeeId, balance>
+async function computeMonthlyBalancesForList(list, ym) {
+  const out = new Map();
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) {
+    list.forEach(e => out.set(e.id, 0));
+    return out;
+  }
+  try {
+    const [yStr, mStr] = ym.split('-');
+    const y = Number(yStr), m = Number(mStr);
+    const prev = new Date(y, m - 2, 1); // previous month
+    const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2,'0')}`;
+    const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { db } = await import('../firebase-config.js');
+    for (const emp of list) {
+      try {
+        // Previous month carryover
+        let carryover = 0;
+        try {
+          const prevRef = doc(db, 'balances', `${emp.id}_${prevYm}`);
+          const prevDoc = await getDoc(prevRef);
+          if (prevDoc.exists()) carryover = Number(prevDoc.data().balance || 0) || 0;
+        } catch {}
+
+        // Payslips for selected month
+        const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId', '==', emp.id)));
+        const slipsThisMonth = psSnap.docs.map(d => d.data()).filter(d => (d.period || '') === ym);
+        const basic = slipsThisMonth.length
+          ? Number(slipsThisMonth.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0].basic || emp.salary || 0)
+          : Number(emp.salary || 0);
+        const advances = slipsThisMonth.reduce((s, p) => s + Number(p.advance || 0), 0);
+
+        // Payments within selected month (exclude advances)
+        const paySnap = await getDocs(query(collection(db, 'payments'), where('employeeId', '==', emp.id)));
+        const paymentsThisMonth = paySnap.docs
+          .map(d => d.data())
+          .filter(p => (p.date || '').startsWith(ym + '-') && !Boolean(p.isAdvance))
+          .reduce((s, p) => s + Number(p.amount || 0) + Number(p.overtime || 0), 0);
+
+        const balance = Math.max(0, Number(carryover) + basic - advances - paymentsThisMonth);
+        out.set(emp.id, balance);
+      } catch {
+        out.set(emp.id, 0);
+      }
+    }
+  } catch {
+    list.forEach(e => out.set(e.id, 0));
+  }
+  return out;
+}
+
+// Open a dedicated window and print the professional report
+export async function printPayrollProfessional({ getEmployees, getTemporaryEmployees }) {
+  try {
+    // Determine month
+    const monthEl = document.getElementById('payrollMonth');
+    let ym = monthEl && monthEl.value ? monthEl.value : '';
+    if (!ym) {
+      const now = new Date();
+      ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
+      if (monthEl) monthEl.value = ym;
+    }
+    const [yr, mo] = ym.split('-');
+    const monthTitle = ym ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
+
+    // Build data sets
+    const combined = [
+      ...getEmployees().map(e => ({ ...e, _type: 'Employee' })),
+      ...getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' })),
+    ].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+
+    const byType = {
+      Employee: combined.filter(e => e._type === 'Employee'),
+      Temporary: combined.filter(e => e._type === 'Temporary')
+    };
+
+    const balancesMap = await computeMonthlyBalancesForList(combined, ym);
+    const totals = {
+      totalSalaries: combined.reduce((s,e)=> s + Number(e.salary||0), 0),
+      totalBalances: combined.reduce((s,e)=> s + Number(balancesMap.get(e.id) || 0), 0),
+    };
+
+    const html = buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, totals });
+    const w = window.open('', 'payrollPrint', 'noopener,noreferrer,width=1200,height=800');
+    if (!w) { window.print(); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } catch (e) {
+    try { console.warn('Payroll print failed, falling back to window.print()', e); } catch {}
+    window.print();
+  }
 }
 
 // Compute current salary balance for each employee based on payslips minus payments of the current month
