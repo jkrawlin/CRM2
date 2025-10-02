@@ -113,7 +113,7 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
         <td class="px-2 py-1 font-semibold text-gray-900 truncate">${emp.name}</td>
         <td class="px-2 py-1">${typeBadge(emp._type)}</td>
         <td class="px-2 py-1 truncate">${emp.department || '-'}</td>
-        <td class="px-2 py-1 text-right tabular-nums" data-salary-for="${emp.id}">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+        <td class="px-2 py-1 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
         <td class="px-2 py-1 text-right tabular-nums" data-balance-for="${emp.id}">—</td>
   <td class="px-2 py-1 whitespace-nowrap w-[130px] min-w-[130px]">${formatDate(emp.joinDate)}</td>
         <td class="px-2 py-1">${emp.qid || '-'}</td>
@@ -134,8 +134,6 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
     `).join('');
   tbody.innerHTML = rows;
 
-  // After rendering, populate adjusted monthly salary (base - advances in current month)
-  computeAndFillAdjustedSalaries(sorted).catch(err => console.warn('Adjusted salary compute failed', err));
   // After rendering, populate current salary balance values
   computeAndFillCurrentBalances(sorted).catch(err => console.warn('Balance compute failed', err));
 
@@ -143,43 +141,6 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
   const handler = () => computeAndFillCurrentBalances(sorted).catch(()=>{});
   document.removeEventListener('payroll:recompute-balances', handler);
   document.addEventListener('payroll:recompute-balances', handler, { once: true });
-}
-
-// Compute adjusted salary for current month (base salary minus advances in payslips for the month)
-async function computeAndFillAdjustedSalaries(list) {
-  try {
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const { db } = await import('../firebase-config.js');
-    const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-    for (const emp of list) {
-      try {
-        const psSnap = await getDocs(query(
-          collection(db, 'payslips'),
-          where('employeeId', '==', emp.id),
-          where('period', '==', ym)
-        ));
-        const slips = psSnap.docs.map(d => d.data());
-        const advances = slips.reduce((s, p) => s + Number(p.advance || 0), 0);
-        const base = Number(emp.salary || 0);
-        const adjusted = Math.max(0, base - advances);
-        const cell = document.querySelector(`[data-salary-for="${emp.id}"]`);
-        if (cell) {
-          if (advances > 0) {
-            const badge = `<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-700" title="Advance applied: ${fmt(advances)}">advance</span>`;
-            cell.innerHTML = `${fmt(adjusted)} ${badge}`;
-          } else {
-            cell.textContent = fmt(adjusted);
-          }
-        }
-      } catch (e) {
-        // On error, leave the base salary as-is
-      }
-    }
-  } catch (e) {
-    console.warn('computeAndFillAdjustedSalaries overall failure', e);
-  }
 }
 
 // Compute current salary balance for each employee based on payslips minus payments of the current month

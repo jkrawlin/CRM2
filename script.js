@@ -36,14 +36,14 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251002-01';
+} from './modules/payroll.js?v=20250929-12';
 // bump cache
 // Utilities used in this file (masking account numbers in Payroll modal)
 import { maskAccount } from './modules/utils.js?v=20250929-08';
 import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
 import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
-import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20250930-03';
+import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
 import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20250929-01';
@@ -390,6 +390,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderPayrollTable();
   // Ensure monthly balances snapshot exists for the current month
   try { ensureCurrentMonthBalances(); } catch {}
+  // Reconcile all balances shortly after sign-in to ensure carryovers are persisted
+  try { setTimeout(() => { try { reconcileAllBalances(); } catch {} }, 5000); } catch {}
     } else {
       // User is signed out
       if (loginPage) loginPage.style.display = '';
@@ -891,7 +893,17 @@ function setupEventListeners() {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     payrollMonthEl.value = payrollMonthEl.value || ym;
-    payrollMonthEl.addEventListener('change', () => renderPayrollFrame());
+    payrollMonthEl.addEventListener('change', () => {
+      renderPayrollFrame();
+      // Ensure monthly balances exist for the selected month
+      try {
+        const month = payrollMonthEl.value;
+        if (month && /^\d{4}-\d{2}$/.test(month)) {
+          const everyone = [...employees, ...temporaryEmployees];
+          everyone.forEach(emp => { try { ensureMonthlyBalance(emp.id, month); } catch {} });
+        }
+      } catch {}
+    });
   }
   // Client Transactions controls
   const clientBillingMonthEl = document.getElementById('clientBillingMonth');
@@ -2422,6 +2434,15 @@ async function savePaymentThenPrint() {
     await addDoc(collection(db, 'payments'), record);
     showToast('Salary payment saved', 'success');
     try { window.__payrollBalancesInvalidate?.(); } catch {}
+    // Update monthly balance snapshot for payment month via carryover function
+    try {
+      const paymentMonth = String((record.date||'')).slice(0,7);
+      if (paymentMonth && /^\d{4}-\d{2}$/.test(paymentMonth)) {
+        await updateEmployeeBalance(emp.id, paymentMonth, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
+      }
+      // Notify any listeners to recompute UI balances
+      try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
+    } catch (e) { console.warn('Balance update failed (payment)', e); }
     // Also update the payroll table immediately if it's on screen
     try {
       const payrollSection = document.getElementById('payrollSection');
@@ -2430,7 +2451,7 @@ async function savePaymentThenPrint() {
       }
     } catch {}
     // Persist the monthly balance snapshot for this employee and month
-    try { await upsertMonthlyBalanceFor(emp.id, new Date(payDate)); } catch (e) { console.warn('Balance upsert failed (payment)', e); }
+  try { await upsertMonthlyBalanceFor(emp.id, new Date(payDate)); } catch (e) { console.warn('Balance upsert failed (payment)', e); }
     // Also create a non-advance payslip entry for this payment so it appears under Salary Payslips
     try {
       const dObj = new Date(payDate);
@@ -2539,13 +2560,11 @@ async function savePayslipThenPrint() {
   try {
     await addDoc(collection(db, 'payslips'), record);
     showToast('Payslip saved', 'success');
-    // Proactively refresh payroll table to reflect advances in Monthly Salary column and balances
+    // CRITICAL: Update balance for this period using carryover-aware function
     try {
-      const payrollSection = document.getElementById('payrollSection');
-      if (payrollSection && payrollSection.style.display !== 'none') {
-        renderPayrollTable();
-      }
-    } catch {}
+      await updateEmployeeBalance(emp.id, period, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
+      try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
+    } catch (e) { console.warn('Balance update failed (payslip)', e); }
     // If Payroll Details modal is open for this employee, refresh the payslips tab
     try {
       const modal = document.getElementById('payrollModal');
@@ -3243,6 +3262,93 @@ async function upsertMonthlyBalanceFor(employeeId, dateObj) {
   } catch (e) {
     console.warn('upsertMonthlyBalanceFor failed', e);
   }
+}
+
+// Carryover-aware balance recompute and persistence for a given employee and YYYY-MM
+async function updateEmployeeBalance(employeeId, month, employeeData) {
+  const ym = String(month || '').slice(0,7);
+  if (!employeeId || !/^\d{4}-\d{2}$/.test(ym)) return 0;
+  try {
+    const [yearStr, monthStr] = ym.split('-');
+    const year = Number(yearStr), m = Number(monthStr);
+    const prev = new Date(year, m - 2, 1);
+    const prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+
+    // Previous carryover
+    let carryover = 0;
+    try {
+      const prevDoc = await getDoc(doc(db, 'balances', `${employeeId}_${prevKey}`));
+      if (prevDoc.exists()) carryover = Number(prevDoc.data().balance || 0) || 0;
+    } catch {}
+
+    // Month payslips: basic override + advances sum
+    const psSnap = await getDocs(query(collection(db, 'payslips'), where('employeeId','==', employeeId)));
+    const slips = psSnap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const curSlips = slips.filter(s => (s.period||'') === ym);
+    const basic = curSlips.length
+      ? Number(curSlips.sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0))[0].basic || employeeData?.salary || 0)
+      : Number(employeeData?.salary || 0);
+    const advances = curSlips.reduce((sum, s) => sum + Number(s.advance || 0), 0);
+
+    // Month payments (exclude advances)
+    const paySnap = await getDocs(query(collection(db,'payments'), where('employeeId','==', employeeId)));
+    const payments = paySnap.docs
+      .map(d => ({ id:d.id, ...d.data() }))
+      .filter(p => String(p.date||'').startsWith(ym+'-') && !Boolean(p.isAdvance))
+      .reduce((sum, p) => sum + Number(p.amount||0) + Number(p.overtime||0), 0);
+
+    const balance = Math.max(0, Number(carryover) + Number(basic) - Number(advances) - Number(payments));
+    const isTemp = String(employeeData?._type || employeeData?._which || '').toLowerCase().includes('temp');
+    const payload = cleanData({
+      employeeId,
+      employeeType: isTemp ? 'Temporary' : 'Permanent',
+      employeeName: employeeData?.name || '',
+      department: employeeData?.department || '',
+      position: employeeData?.position || '',
+      qid: employeeData?.qid || '',
+      month: ym,
+      carryover: Number(carryover),
+      basic: Number(basic),
+      advances: Number(advances),
+      payments: Number(payments),
+      balance: Number(balance),
+      updatedAt: serverTimestamp(),
+      updatedBy: auth?.currentUser?.uid || null,
+      updatedByEmail: auth?.currentUser?.email || null,
+    });
+    await setDoc(doc(db, 'balances', `${employeeId}_${ym}`), payload);
+    return balance;
+  } catch (e) {
+    console.warn('updateEmployeeBalance failed', e);
+    return 0;
+  }
+}
+
+// Ensure a balance doc exists for an employee and month; compute if missing
+async function ensureMonthlyBalance(employeeId, month) {
+  const ym = String(month||'').slice(0,7);
+  if (!employeeId || !/^\d{4}-\d{2}$/.test(ym)) return;
+  try {
+    const ref = doc(db, 'balances', `${employeeId}_${ym}`);
+    const snap = await getDoc(ref);
+    if (snap.exists()) return;
+    const all = [...employees, ...temporaryEmployees];
+    const emp = all.find(e => e.id === employeeId);
+    if (!emp) return;
+    const isTemp = temporaryEmployees.some(e => e.id === employeeId);
+    await updateEmployeeBalance(employeeId, ym, { ...emp, _type: isTemp ? 'Temporary' : 'Permanent' });
+  } catch (e) { console.warn('ensureMonthlyBalance failed', e); }
+}
+
+// Reconcile all employees for the current month
+async function reconcileAllBalances() {
+  const ym = new Date().toISOString().slice(0,7);
+  const everyone = [...employees, ...temporaryEmployees];
+  for (const emp of everyone) {
+    const isTemp = temporaryEmployees.some(e => e.id === emp.id);
+    try { await updateEmployeeBalance(emp.id, ym, { ...emp, _type: isTemp ? 'Temporary' : 'Permanent' }); } catch (e) { console.warn('reconcile balance failed', emp?.name, e); }
+  }
+  try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
 }
 
 // Print from preview: copy preview HTML into print area and trigger print
