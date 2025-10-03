@@ -45,7 +45,7 @@ service cloud.firestore {
       // Allow only these keys (others are optional)
       return d.keys().hasOnly([
         'name','email','position','department','salary','joinDate',
-        'qid','phone','qidPdfUrl','passportPdfUrl',
+        'qid','phone','qidPdfUrl','passportPdfUrl','qidExpiry','passportExpiry',
         'bankName','bankAccountNumber','bankIban','profileImageUrl'
         ,'terminated','terminatedAt'
       ]);
@@ -64,6 +64,8 @@ service cloud.firestore {
         && (!('phone' in d) || (d.phone is string && d.phone.size() <= 32))
         && (!('qidPdfUrl' in d) || (d.qidPdfUrl is string && d.qidPdfUrl.size() <= 2048))
         && (!('passportPdfUrl' in d) || (d.passportPdfUrl is string && d.passportPdfUrl.size() <= 2048))
+    && (!('qidExpiry' in d) || isValidISODate(d.qidExpiry))
+    && (!('passportExpiry' in d) || isValidISODate(d.passportExpiry))
         && (!('bankName' in d) || (d.bankName is string && d.bankName.size() <= 200))
         && (!('bankAccountNumber' in d) || (d.bankAccountNumber is string && d.bankAccountNumber.size() <= 40))
         && (!('bankIban' in d) || (d.bankIban is string && d.bankIban.size() <= 40))

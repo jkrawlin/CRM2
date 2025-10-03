@@ -20,10 +20,16 @@ export function initPayroll(context) {
   if (tabReportBtn) tabReportBtn.addEventListener('click', () => setPayrollSubTab('report', { getEmployees, getTemporaryEmployees, getSearchQuery }));
   setPayrollSubTab('table', { getEmployees, getTemporaryEmployees, getSearchQuery });
 
-  // Export/Print controls
+  // Export/Print controls (rewired for Month Report)
   const exportCsvBtn = document.getElementById('exportPayrollCsvBtn');
   const printBtn = document.getElementById('printPayrollBtn');
-  if (exportCsvBtn) exportCsvBtn.addEventListener('click', () => exportPayrollCsv(getEmployees(), getTemporaryEmployees()));
+  if (exportCsvBtn) exportCsvBtn.addEventListener('click', async () => {
+    try {
+      const monthEl = document.getElementById('payrollMonth');
+      const ym = monthEl?.value || '';
+      await exportMonthReportCsv({ ym, getEmployees, getTemporaryEmployees });
+    } catch (e) { console.warn('Export failed', e); }
+  });
   if (printBtn) printBtn.addEventListener('click', () => printPayrollProfessional({ getEmployees, getTemporaryEmployees }));
 }
 
@@ -141,6 +147,318 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
   const handler = () => computeAndFillCurrentBalances(sorted).catch(()=>{});
   document.removeEventListener('payroll:recompute-balances', handler);
   document.addEventListener('payroll:recompute-balances', handler, { once: true });
+}
+
+// =========================
+// Monthly Report — Data + UI + Print (Rewired)
+// =========================
+
+// Get YYYY-MM date range [start, end] inclusive in YYYY-MM-DD format
+function getMonthRange(ym) {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return ['',''];
+  const [y, m] = ym.split('-').map(Number);
+  const start = `${ym}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const end = `${ym}-${String(lastDay).padStart(2,'0')}`;
+  return [start, end];
+}
+
+// Build all month report data in one go (aggregated queries per collection)
+async function buildMonthReportData({ ym, getEmployees, getTemporaryEmployees }) {
+  const perm = (getEmployees?.() || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Employee' }));
+  const temps = (getTemporaryEmployees?.() || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Temporary' }));
+  const all = [...perm, ...temps];
+  const byId = new Map(all.map(e => [e.id, e]));
+  const [start, end] = getMonthRange(ym);
+  const monthTitle = ym ? new Date(ym + '-01').toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
+
+  // Short-circuit empty
+  if (!all.length) {
+    return { ym, monthTitle, employees: [], perm: [], temps: [], summary: { count:0, perm:0, temps:0, salary:0, outstanding:0 } };
+  }
+
+  const { collection, getDocs, query, where, doc, getDoc, orderBy } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  const { db } = await import('../firebase-config.js');
+
+  // Fetch payslips for the month in one query
+  let payslips = [];
+  try {
+    const psSnap = await getDocs(query(collection(db, 'payslips'), where('period', '==', ym)));
+    payslips = psSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch {}
+
+  // Fetch payments within month range in one query (string-based date range)
+  let payments = [];
+  try {
+    if (start && end) {
+      const paySnap = await getDocs(query(collection(db, 'payments'), where('date', '>=', start), where('date', '<=', end)));
+      payments = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+  } catch {}
+
+  // Group payslips by employeeId
+  const psByEmp = new Map();
+  for (const ps of payslips) {
+    const k = ps.employeeId || '';
+    if (!k) continue;
+    if (!psByEmp.has(k)) psByEmp.set(k, []);
+    psByEmp.get(k).push(ps);
+  }
+  // Group payments by employeeId (exclude advances)
+  const payByEmp = new Map();
+  for (const p of payments) {
+    const k = p.employeeId || '';
+    if (!k) continue;
+    if (p.isAdvance) continue; // exclude advances from payment sum
+    const amt = Number(p.amount || 0) + Number(p.overtime || 0);
+    if (!payByEmp.has(k)) payByEmp.set(k, 0);
+    payByEmp.set(k, payByEmp.get(k) + (isFinite(amt) ? amt : 0));
+  }
+
+  // Compute carryover from previous month balances doc per employee
+  const prev = (() => {
+    const [y, m] = ym.split('-').map(Number);
+    const prevDate = new Date(y, m - 2, 1);
+    return `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2,'0')}`;
+  })();
+  const carryoverMap = new Map();
+  await Promise.all(all.map(async (e) => {
+    try {
+      const ref = doc(db, 'balances', `${e.id}_${prev}`);
+      const snap = await getDoc(ref);
+      const bal = snap.exists() ? Number(snap.data().balance || 0) : 0;
+      carryoverMap.set(e.id, isFinite(bal) ? bal : 0);
+    } catch { carryoverMap.set(e.id, 0); }
+  }));
+
+  // Build enriched rows
+  const rows = all.map(e => {
+    const slips = (psByEmp.get(e.id) || []).slice().sort((a,b)=> (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    const latestBasic = slips.length ? Number(slips[0].basic || e.salary || 0) : Number(e.salary || 0);
+    const advances = (psByEmp.get(e.id) || []).reduce((s, ps) => s + (Number(ps.advance || 0) || 0), 0);
+    const paid = Number(payByEmp.get(e.id) || 0);
+    const carry = Number(carryoverMap.get(e.id) || 0);
+    const balance = Math.max(0, (carry + latestBasic) - advances - paid);
+    return {
+      ...e,
+      _basic: isFinite(latestBasic) ? latestBasic : 0,
+      _advances: isFinite(advances) ? advances : 0,
+      _paid: isFinite(paid) ? paid : 0,
+      _carry: isFinite(carry) ? carry : 0,
+      _balance: isFinite(balance) ? balance : 0,
+    };
+  }).sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+
+  const permRows = rows.filter(r => r._type === 'Employee');
+  const tempRows = rows.filter(r => r._type === 'Temporary');
+  const totalSalary = rows.reduce((s, r) => s + Number(r._basic || 0), 0);
+  const totalOutstanding = rows.reduce((s, r) => s + Number(r._balance || 0), 0);
+
+  return {
+    ym,
+    monthTitle,
+    employees: rows,
+    perm: permRows,
+    temps: tempRows,
+    summary: {
+      count: rows.length,
+      perm: permRows.length,
+      temps: tempRows.length,
+      salary: totalSalary,
+      outstanding: totalOutstanding,
+    }
+  };
+}
+
+function fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+function escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function renderMonthReportInto(frame, data) {
+  if (!frame) return;
+  const { monthTitle, employees, perm, temps, summary } = data;
+  const badge = (t) => t === 'Temporary' ? '<span class="compact-badge bg-amber-100 text-amber-800">TEMP</span>' : '<span class="compact-badge bg-emerald-100 text-emerald-800">PERM</span>';
+  const row = (e, i) => `
+    <tr class="border-b border-gray-100">
+      <td class="px-1 py-1 text-gray-500">${i+1}</td>
+      <td class="px-1 py-1 font-semibold text-gray-900 truncate" title="${escHtml(e.name||'')}">${escHtml(e.name||'')}</td>
+      <td class="px-1 py-1">${badge(e._type)}</td>
+      <td class="px-1 py-1 truncate" title="${escHtml(e.department||'-')}">${escHtml(e.department||'-')}</td>
+      <td class="px-1 py-1 mono-text">${escHtml(e.qid||'-')}</td>
+      <td class="px-1 py-1 truncate" title="${escHtml(e.bankName||'-')}">${escHtml(e.bankName||'-')}</td>
+      <td class="px-1 py-1 mono-text" style="word-break:break-all">${escHtml(e.bankAccountNumber||'-')}</td>
+      <td class="px-1 py-1 mono-text" style="word-break:break-all">${escHtml(e.bankIban||'-')}</td>
+      <td class="px-1 py-1 text-right font-mono font-semibold">${fmtCurrency(e._basic)}</td>
+      <td class="px-1 py-1 text-right font-mono font-semibold">${fmtCurrency(e._balance)}</td>
+    </tr>`;
+  const section = (title, list) => {
+    if (!list.length) return '';
+    return `
+      <div class="mb-4">
+        <h3 class="text-xs font-bold text-gray-700 mb-1 uppercase">${escHtml(title)} <span class="text-gray-500 font-normal">(${list.length})</span></h3>
+        <div class="overflow-x-auto">
+          <table class="w-full" style="font-size:9px;">
+            <thead>
+              <tr class="bg-gray-50 text-gray-600 uppercase font-semibold" style="font-size:8px;">
+                <th class="text-left px-1 py-1" style="width:20px;">#</th>
+                <th class="text-left px-1 py-1" style="width:140px;">Name</th>
+                <th class="text-left px-1 py-1" style="width:50px;">Type</th>
+                <th class="text-left px-1 py-1" style="width:110px;">Company</th>
+                <th class="text-left px-1 py-1" style="width:110px;">QID</th>
+                <th class="text-left px-1 py-1" style="width:110px;">Bank</th>
+                <th class="text-left px-1 py-1" style="width:140px;">Account</th>
+                <th class="text-left px-1 py-1" style="width:170px;">IBAN</th>
+                <th class="text-right px-1 py-1" style="width:80px;">Monthly</th>
+                <th class="text-right px-1 py-1" style="width:80px;">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map((e,i)=>row(e,i)).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  };
+
+  frame.innerHTML = `
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Payroll Report</div>
+        <div class="text-lg font-extrabold text-gray-900">${escHtml(monthTitle)}</div>
+      </div>
+      <div class="text-right">
+        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Totals</div>
+        <div class="text-sm font-extrabold text-gray-900">Payroll ${fmtCurrency(summary.salary)}</div>
+        <div class="text-sm font-extrabold text-gray-900">Outstanding ${fmtCurrency(summary.outstanding)}</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-4 gap-2 mb-2 text-[11px]">
+      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Employees</div><div class="font-extrabold">${summary.count}</div></div>
+      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Permanent</div><div class="font-extrabold">${summary.perm}</div></div>
+      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Temporary</div><div class="font-extrabold">${summary.temps}</div></div>
+      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Generated</div><div class="font-extrabold">${new Date().toLocaleString()}</div></div>
+    </div>
+    ${section('Permanent Employees', perm)}
+    ${section('Temporary Employees', temps)}
+  `;
+}
+
+// Build a professional, standalone HTML document for printing the payroll (A4 landscape) from precomputed data
+function buildPayrollPrintHtmlFromData({ ym, monthTitle, employees, perm, temps, summary }) {
+  const fmt = fmtCurrency;
+  const esc = escHtml;
+  const row = (emp, idx) => {
+    const type = emp._type === 'Temporary' ? 'TEMP' : 'PERM';
+    return `
+      <tr>
+        <td>${idx + 1}</td>
+        <td class="emp">${esc(emp.name || '')}</td>
+        <td><span class="badge ${type==='TEMP'?'temp':'perm'}">${type}</span></td>
+        <td>${esc(emp.department || '-')}</td>
+        <td class="mono">${esc(emp.qid || '-')}</td>
+        <td>${esc(emp.bankName || '-')}</td>
+        <td class="mono">${esc(emp.bankAccountNumber || '-')}</td>
+        <td class="mono">${esc(emp.bankIban || '-')}</td>
+        <td class="num">${fmt(emp._basic || 0)}</td>
+        <td class="num">${fmt(emp._balance || 0)}</td>
+      </tr>`;
+  };
+  const table = (title, list) => !list.length ? '' : `
+    <div class="section">
+      <div class="section-title">${esc(title)} <span class="muted">(${list.length})</span></div>
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Company</th>
+            <th>QID</th>
+            <th>Bank</th>
+            <th>Account</th>
+            <th>IBAN</th>
+            <th>Monthly</th>
+            <th>Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map((e,i)=>row(e,i)).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  const html = `<!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Payroll Report — ${esc(monthTitle)}</title>
+    <style>
+      @page { size: A4 landscape; margin: 10mm; }
+      html, body { margin:0; padding:0; }
+      body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color:#111827; }
+      .report { padding: 0; }
+      .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom: 10px; }
+      .brand { font-weight: 800; font-size: 18px; color:#4F46E5; letter-spacing: .2px; }
+      .title-wrap { text-align:right; }
+      .title { font-weight: 800; font-size: 16px; margin: 0; }
+      .subtitle { font-size: 11px; color:#6B7280; margin-top: 2px; }
+      .summary { display:grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0 10px; }
+      .card { border:1px solid #e5e7eb; border-radius:6px; padding:8px; }
+      .card .label { font-size:10px; color:#6B7280; text-transform:uppercase; letter-spacing:.02em; }
+      .card .value { font-size:14px; font-weight:800; }
+      .section { margin-top: 10px; }
+      .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; color:#374151; margin-bottom: 4px; }
+      .section-title .muted { color:#6B7280; font-weight:600; }
+      table.grid { width:100%; border-collapse: collapse; font-size: 9px; }
+      table.grid th, table.grid td { border:1px solid #E5E7EB; padding: 3px 4px; vertical-align: top; }
+      table.grid thead th { background:#F3F4F6; color:#374151; text-align:left; }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+      td.emp { font-weight: 700; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 9px; letter-spacing: -0.2px; word-break: break-word; }
+      .badge { display:inline-block; padding:1px 4px; font-size:8px; border-radius:3px; font-weight:700; }
+      .badge.perm { background:#ECFDF5; color:#065F46; }
+      .badge.temp { background:#FEF3C7; color:#92400E; }
+      .signatures { display:flex; gap: 16px; margin-top: 12px; }
+      .sign { flex:1; border-top:1px solid #E5E7EB; padding-top:6px; font-size:10px; }
+      .footer { margin-top: 8px; color:#6B7280; font-size: 10px; text-align:right; }
+      table.grid, table.grid tr, table.grid td, table.grid th { page-break-inside: avoid; }
+    </style>
+  </head>
+  <body>
+    <div class="report">
+      <div class="header">
+        <div class="brand">Payroll Report</div>
+        <div class="title-wrap">
+          <div class="title">${esc(monthTitle)}</div>
+          <div class="subtitle">${summary.count} employees • Total Payroll ${fmt(summary.salary)} • Total Outstanding ${fmt(summary.outstanding)}</div>
+        </div>
+      </div>
+      <div class="summary">
+        <div class="card"><div class="label">Employees</div><div class="value">${summary.count}</div></div>
+        <div class="card"><div class="label">Permanent</div><div class="value">${summary.perm}</div></div>
+        <div class="card"><div class="label">Temporary</div><div class="value">${summary.temps}</div></div>
+        <div class="card"><div class="label">Total Payroll</div><div class="value">${fmt(summary.salary)}</div></div>
+      </div>
+      ${table('Permanent Employees', perm)}
+      ${table('Temporary Employees', temps)}
+      <div class="signatures">
+        <div class="sign">Prepared by</div>
+        <div class="sign">Reviewed by</div>
+        <div class="sign">Approved by</div>
+      </div>
+      <div class="footer">Generated on ${new Date().toLocaleString()}</div>
+    </div>
+    <script>
+      (function(){
+        function afterPaint(cb){ try{ requestAnimationFrame(()=>requestAnimationFrame(cb)); }catch(_){ setTimeout(cb,200);} }
+        function doPrint(){ try{ window.focus(); }catch(_){} try{ window.print(); }catch(_){} }
+        window.addEventListener('load', function(){ afterPaint(function(){ setTimeout(doPrint, 200); }); });
+        window.onafterprint = function(){ try{ window.close(); }catch(_){} };
+        setTimeout(function(){ try{ if (document.readyState==='complete') { afterPaint(function(){ setTimeout(doPrint,200); }); } }catch(_){} }, 1200);
+      })();
+    </script>
+  </body>
+  </html>`;
+  return html;
 }
 
 // Build a professional, standalone HTML document for printing the payroll (A4 landscape)
@@ -343,6 +661,9 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
     if (!ym) { alert('Please select a month'); return; }
     const monthTitle = new Date(ym + '-01').toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
 
+    // Build data first (single pass)
+    const data = await buildMonthReportData({ ym, getEmployees, getTemporaryEmployees });
+
     // Open the print window immediately (sync with user gesture) to avoid popup blockers
     const printWindow = window.open('about:blank', 'payroll-print', 'width=1200,height=800');
     if (!printWindow) { alert('Please allow pop-ups to print the payroll report'); return; }
@@ -355,29 +676,14 @@ export async function printPayrollProfessional({ getEmployees, getTemporaryEmplo
       preDoc.close();
     } catch {}
 
-    // Prepare lists (exclude terminated) and tag types
-    const perm = ((getEmployees && getEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Employee' }));
-    const temps = ((getTemporaryEmployees && getTemporaryEmployees()) || []).filter(e => !e.terminated).map(e => ({ ...e, _type: 'Temporary' }));
-    const combined = [...perm, ...temps].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
-
-    // Compute balances for selected month
-    const balancesMap = await computeMonthlyBalancesForList(combined, ym);
-
-    // Totals
-    let totalSalary = 0, totalBalance = 0;
-    combined.forEach(e => {
-      totalSalary += Number(e.salary || 0);
-      totalBalance += Number(balancesMap.get(e.id) || 0);
-    });
-
-    // Build full HTML document
-    const htmlContent = buildPayrollPrintHtml({
+    // Build full HTML document from precomputed data
+    const htmlContent = buildPayrollPrintHtmlFromData({
       ym,
-      monthTitle,
-      combined,
-      byType: { Employee: perm, Temporary: temps },
-      balancesMap,
-      totals: { salary: totalSalary, balance: totalBalance }
+      monthTitle: data.monthTitle,
+      employees: data.employees,
+      perm: data.perm,
+      temps: data.temps,
+      summary: data.summary,
     });
 
     try {
@@ -544,104 +850,19 @@ export function renderPayrollFrame({ getEmployees, getTemporaryEmployees, month 
     if (monthEl) monthEl.value = defaultYm;
     ym = defaultYm;
   }
-  const [yr, mo] = ym ? ym.split('-') : ['',''];
-
-  const combined = [
-    ...getEmployees().map(e => ({ ...e, _type: 'Employee' })),
-    ...getTemporaryEmployees().map(e => ({ ...e, _type: 'Temporary' })),
-  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-  const total = combined.reduce((sum, e) => sum + Number(e.salary || 0), 0);
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  const monthTitle = ym ? new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Month';
-
-  const byType = {
-    Employee: combined.filter(e => e._type === 'Employee'),
-    Temporary: combined.filter(e => e._type === 'Temporary')
-  };
-
-  const badge = (t) => {
-    const isTemp = t === 'Temporary';
-    const cls = isTemp ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
-    return `<span class="compact-badge ${cls}">${isTemp ? 'TEMP' : 'PERM'}</span>`;
-  };
-
-  const renderGroup = (label, items) => {
-    if (!items.length) return '';
-    return `
-      <div class="mb-4">
-        <h3 class="text-xs font-bold text-gray-700 mb-2 uppercase">${label} (${items.length})</h3>
-        <div class="overflow-x-hidden">
-          <table class="w-full" style="font-size:9px;">
-            <thead>
-              <tr class="bg-gray-50 text-gray-600 uppercase font-semibold" style="font-size:8px;">
-                <th class="text-left" style="width:20px;padding:2px">#</th>
-                <th class="text-left" style="width:120px;padding:2px">NAME</th>
-                <th class="text-left" style="width:50px;padding:2px">TYPE</th>
-                <th class="text-left" style="width:60px;padding:2px">DEPT</th>
-                <th class="text-left" style="width:70px;padding:2px">QID</th>
-                <th class="text-left" style="width:60px;padding:2px">BANK</th>
-                <th class="text-left" style="padding:2px">ACCOUNT</th>
-                <th class="text-left" style="padding:2px">IBAN</th>
-                <th class="text-right" style="width:70px;padding:2px">SALARY</th>
-                <th class="text-right" style="width:70px;padding:2px">BALANCE</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${items.map((emp, idx) => {
-                const showAccount = emp.bankAccountNumber || '-';
-                const showIban = emp.bankIban || '-';
-                return `
-                  <tr class="border-b border-gray-100 hover:bg-gray-50">
-                    <td class="text-gray-500" style="padding:2px;font-size:8px">${idx + 1}</td>
-                    <td style="padding:2px;font-size:8px">
-                      <div class="font-semibold text-gray-900 truncate" title="${emp.name}">${emp.name}</div>
-                    </td>
-                    <td style="padding:2px">${badge(emp._type)}</td>
-                    <td class="text-gray-600 truncate" style="padding:2px;font-size:8px" title="${emp.department || '-'}">${emp.department || '-'}</td>
-                    <td class="text-gray-600 mono-text" style="padding:2px;font-size:8px">${emp.qid || '-'}</td>
-                    <td class="text-gray-600 truncate" style="padding:2px;font-size:8px" title="${emp.bankName || '-'}">${emp.bankName || '-'}</td>
-                    <td class="text-gray-600 mono-text" style="padding:2px;font-size:8px;word-break:break-all">${showAccount}</td>
-                    <td class="text-gray-600 mono-text" style="padding:2px;font-size:8px;word-break:break-all">${showIban}</td>
-                    <td class="text-right font-mono font-semibold" style="padding:2px;font-size:8px">${fmt(emp.salary || 0)}</td>
-                    <td class="text-right font-mono font-semibold" style="padding:2px;font-size:8px" data-report-balance-for="${emp.id}">-</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-  };
-
-  const groupsHtml = [
-    renderGroup('Permanent Employees', byType.Employee),
-    renderGroup('Temporary Employees', byType.Temporary)
-  ].join('');
-
+  // Show skeleton while loading
   frame.innerHTML = `
-    <div class="print:hidden flex items-start justify-between mb-3">
-      <div>
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Payroll Report</div>
-        <div class="text-lg font-extrabold text-gray-900">${monthTitle}</div>
-      </div>
-      <div class="text-right">
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Total</div>
-        <div class="text-lg font-extrabold text-gray-900">${fmt(total)}</div>
-      </div>
-    </div>
-    <div class="hidden print:block text-center mb-2">
-      <h1 class="text-sm font-bold">PAYROLL REPORT - ${monthTitle.toUpperCase()}</h1>
-      <div class="text-xs">Total Payroll: ${fmt(total)}</div>
-    </div>
-    ${groupsHtml}
-    <div class="print:hidden text-xs text-gray-500 mt-4">
-      Generated on ${new Date().toLocaleDateString()} • ${combined.length} Total Employees
-    </div>
+    <div class="flex items-center gap-2 text-gray-600 text-sm"><span class="inline-block w-3 h-3 border-2 border-gray-300 border-t-indigo-600 rounded-full animate-spin"></span> Building month report…</div>
   `;
-  // After rendering, compute and populate balances for the selected month
-  try { computeAndFillReportBalancesForMonth(combined, ym).catch(()=>{}); } catch {}
+  // Build and render data
+  buildMonthReportData({ ym, getEmployees, getTemporaryEmployees })
+    .then((data) => {
+      renderMonthReportInto(frame, data);
+    })
+    .catch((e) => {
+      console.warn('Month report build failed', e);
+      frame.innerHTML = `<div class="text-sm text-rose-600">Failed to build month report. Please try again.</div>`;
+    });
 }
 
 // Compute balances for the report frame for a specific month (ym = YYYY-MM)
@@ -738,36 +959,52 @@ export function setPayrollSubTab(which, deps) {
   }
 }
 
+export async function exportMonthReportCsv({ ym, getEmployees, getTemporaryEmployees }) {
+  try {
+    const monthEl = document.getElementById('payrollMonth');
+    const selYm = ym || monthEl?.value || '';
+    if (!/^\d{4}-\d{2}$/.test(selYm)) { alert('Please select a valid month'); return; }
+    const data = await buildMonthReportData({ ym: selYm, getEmployees, getTemporaryEmployees });
+    const headers = ['Name','Type','Company','QID','Bank Name','Account Number','IBAN','Monthly Basic','Advances','Paid','Carryover Prev','Outstanding Balance'];
+    const rows = data.employees.map(e => [
+      quoteCsv(e.name || ''),
+      quoteCsv(e._type || ''),
+      quoteCsv(e.department || ''),
+      quoteCsv(e.qid || ''),
+      quoteCsv(e.bankName || ''),
+      quoteCsv(e.bankAccountNumber || ''),
+      quoteCsv(e.bankIban || ''),
+      String(Number(e._basic || 0)),
+      String(Number(e._advances || 0)),
+      String(Number(e._paid || 0)),
+      String(Number(e._carry || 0)),
+      String(Number(e._balance || 0))
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `payroll-${selYm}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.warn('CSV export failed', e);
+    alert('Failed to export CSV.');
+  }
+}
+
+// Backward-compatible export for existing imports (script.js imports exportPayrollCsv)
 export function exportPayrollCsv(employees, temporaryEmployees) {
-  const combined = [
-    ...employees.map(e => ({ ...e, _type: 'Employee' })),
-    ...temporaryEmployees.map(e => ({ ...e, _type: 'Temporary' })),
-  ].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-
-  const headers = ['Name','Type','Company','QID','Bank Name','Account Number','IBAN','Monthly Salary'];
-  const rows = combined.map(e => [
-    quoteCsv(e.name || ''),
-    quoteCsv(e._type || ''),
-    quoteCsv(e.department || ''),
-    quoteCsv(e.qid || ''),
-    quoteCsv(e.bankName || ''),
-    quoteCsv(e.bankAccountNumber || ''),
-    quoteCsv(e.bankIban || ''),
-    String(Number(e.salary || 0))
-  ].join(','));
-
-  const csv = [headers.join(','), ...rows].join('\r\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  a.href = url;
-  a.download = `payroll-${ym}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  try {
+    const monthEl = document.getElementById('payrollMonth');
+    const ym = monthEl?.value || '';
+    return exportMonthReportCsv({ ym, getEmployees: () => employees || [], getTemporaryEmployees: () => temporaryEmployees || [] });
+  } catch (e) {
+    console.warn('exportPayrollCsv fallback failed', e);
+  }
 }
 
 function quoteCsv(val) {

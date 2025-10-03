@@ -1177,6 +1177,23 @@
                         </div>
                     </div>
 
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="qidExpiry" class="label">
+                                <i class="fas fa-calendar-times label-icon"></i>
+                                Qatar ID Expiry Date
+                            </label>
+                            <input type="date" id="qidExpiry" class="input" />
+                        </div>
+                        <div class="form-group">
+                            <label for="passportExpiry" class="label">
+                                <i class="fas fa-passport label-icon"></i>
+                                Passport Expiry Date
+                            </label>
+                            <input type="date" id="passportExpiry" class="input" />
+                        </div>
+                    </div>
+
                     <!-- Bank details -->
                     <div class="form-row">
                         <div class="form-group">
@@ -1317,6 +1334,14 @@
                                         <div class="text-xs text-gray-500">Monthly Salary</div>
                                         <div id="viewSalary" class="text-gray-900 font-semibold tabular-nums">&nbsp;</div>
                                     </div>
+                                    <div>
+                                        <div class="text-xs text-gray-500">Qatar ID Expiry</div>
+                                        <div id="viewQidExpiryShort" class="text-gray-900 font-semibold">&nbsp;</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xs text-gray-500">Passport Expiry</div>
+                                        <div id="viewPassportExpiryShort" class="text-gray-900 font-semibold">&nbsp;</div>
+                                    </div>
                                     <div id="viewAttendanceWrap" class="hidden">
                                         <div class="text-xs text-gray-500">Attendance</div>
                                         <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -1361,6 +1386,14 @@
                             <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
                                 <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-id-card text-indigo-500"></i> Qatar ID</dt>
                                 <dd id="viewQid" class="text-gray-900 tabular-nums">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-calendar-times text-indigo-500"></i> Qatar ID Expiry</dt>
+                                <dd id="viewQidExpiry" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-passport text-indigo-500"></i> Passport Expiry</dt>
+                                <dd id="viewPassportExpiry" class="text-gray-900">&nbsp;</dd>
                             </div>
                         </dl>
                     </div>

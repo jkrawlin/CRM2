@@ -36,13 +36,8 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251003-01';
-// cache-bust payroll module
-// (Note: update version to ensure latest code loads in browsers)
-// The previous line will be overridden by the next import if bundlers/deduping are used; in pure ESM the first import wins.
-// bump cache
+} from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { maskAccount } from './modules/utils.js?v=20250929-08';
 import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
 import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
@@ -1909,6 +1904,8 @@ async function handleFormSubmit(e) {
     salary: parseFloat(document.getElementById('salary').value),
     joinDate: document.getElementById('joinDate').value,
     qid: (document.getElementById('qid')?.value || '').trim(),
+    qidExpiry: (document.getElementById('qidExpiry')?.value || '').trim() || undefined,
+    passportExpiry: (document.getElementById('passportExpiry')?.value || '').trim() || undefined,
     phone: (document.getElementById('phone')?.value || '').trim(),
     bankName: (document.getElementById('bankName')?.value || '').trim(),
     bankAccountNumber: (document.getElementById('bankAccountNumber')?.value || '').trim(),
@@ -2934,7 +2931,7 @@ window.sortTable = function(column, which) {
 // Edit employee
 window.editEmployee = function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
-  const employee = list.find(emp => emp.id === id);
+  let employee = list.find(emp => emp.id === id);
   if (employee) {
     // Open modal in edit mode (prevents clearing fields)
     openEmployeeModal(which === 'temporary' ? 'temporary' : 'employees', 'edit');
@@ -2951,6 +2948,8 @@ window.editEmployee = function(id, which) {
     setVal('salary', employee.salary);
     setVal('joinDate', employee.joinDate);
   setVal('qid', employee.qid || '');
+  setVal('qidExpiry', employee.qidExpiry || '');
+  setVal('passportExpiry', employee.passportExpiry || '');
     setVal('phone', employee.phone || '');
   setVal('bankName', employee.bankName || '');
   setVal('bankAccountNumber', employee.bankAccountNumber || '');
@@ -2961,6 +2960,21 @@ window.editEmployee = function(id, which) {
     const passStatus = document.getElementById('passportPdfStatus');
     if (qidStatus) qidStatus.textContent = employee.qidPdfUrl ? 'Uploaded' : '';
     if (passStatus) passStatus.textContent = employee.passportPdfUrl ? 'Uploaded' : '';
+    // If expiry fields are missing locally, try a quick fetch to populate the inputs
+    try {
+      if (!employee.qidExpiry || !employee.passportExpiry) {
+        const base = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+        getDoc(doc(db, base, id)).then((snap) => {
+          if (snap && snap.exists()) {
+            const fresh = snap.data();
+            const qidEx = document.getElementById('qidExpiry');
+            const passEx = document.getElementById('passportExpiry');
+            if (qidEx && fresh.qidExpiry) qidEx.value = fresh.qidExpiry;
+            if (passEx && fresh.passportExpiry) passEx.value = fresh.passportExpiry;
+          }
+        }).catch(()=>{});
+      }
+    } catch {}
   }
 }
 
@@ -2977,8 +2991,19 @@ function renderEmployeeTable() {
 // View employee (read-only modal)
 window.viewEmployee = async function(id, which) {
   const list = which === 'temporary' ? temporaryEmployees : employees;
-  const emp = list.find(e => e.id === id);
+  let emp = list.find(e => e.id === id);
   if (!emp) return;
+  // If expiry fields are missing locally, fetch a fresh copy to ensure we display up-to-date values
+  try {
+    if (!emp.qidExpiry && !emp.passportExpiry) {
+      const base = which === 'temporary' ? 'temporaryEmployees' : 'employees';
+      const snap = await getDoc(doc(db, base, id));
+      if (snap && snap.exists()) {
+        const fresh = snap.data();
+        emp = { ...emp, ...fresh };
+      }
+    }
+  } catch {}
   const byId = (x) => document.getElementById(x);
 
   // Open modal immediately to improve perceived performance
@@ -3017,6 +3042,31 @@ window.viewEmployee = async function(id, which) {
     } catch {}
     setText('viewEmail', emp.email || '');
     setText('viewQid', emp.qid || '-');
+  setText('viewQidExpiry', emp.qidExpiry ? formatDate(emp.qidExpiry) : '-');
+  setText('viewPassportExpiry', emp.passportExpiry ? formatDate(emp.passportExpiry) : '-');
+  // Also fill short badges in Overview
+    setText('viewQidExpiryShort', emp.qidExpiry ? formatDate(emp.qidExpiry) : '-');
+    setText('viewPassportExpiryShort', emp.passportExpiry ? formatDate(emp.passportExpiry) : '-');
+    // Visual status for expiries (expired/red, soon/orange, ok/neutral)
+    try {
+      const qidEl = document.getElementById('viewQidExpiryShort');
+      const passEl = document.getElementById('viewPassportExpiryShort');
+      const updateStatus = (el, ymd) => {
+        if (!el) return;
+        el.classList.remove('text-rose-600','text-amber-600');
+        if (!ymd) return;
+        const d = new Date(ymd);
+        if (!isNaN(d.getTime())) {
+          const today = new Date();
+          today.setHours(0,0,0,0);
+          const diffDays = Math.floor((d - today) / 86400000);
+          if (diffDays < 0) el.classList.add('text-rose-600');
+          else if (diffDays <= 30) el.classList.add('text-amber-600');
+        }
+      };
+      updateStatus(qidEl, emp.qidExpiry);
+      updateStatus(passEl, emp.passportExpiry);
+    } catch {}
     setText('viewPhone', emp.phone || '-');
     setText('viewPosition', emp.position || '');
     setText('viewDepartment', deptText);
