@@ -38,8 +38,8 @@ import {
   exportPayrollCsv as payrollExportPayrollCsv,
 } from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20250929-10';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20250929-09';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251003-01';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251003-01';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
@@ -2948,8 +2948,11 @@ window.editEmployee = function(id, which) {
     setVal('salary', employee.salary);
     setVal('joinDate', employee.joinDate);
   setVal('qid', employee.qid || '');
-  setVal('qidExpiry', employee.qidExpiry || '');
-  setVal('passportExpiry', employee.passportExpiry || '');
+  // Resolve possible legacy/alternate keys for expiry dates
+  const qidExVal = employee.qidExpiry || employee.qidExpiryDate || employee.qatarIdExpiry || employee.qid_expiry || employee.qidExpire || employee.qidExpiryDt || employee.qidExpiryDateStr || '';
+  const passExVal = employee.passportExpiry || employee.passportExpiryDate || employee.passport_expiry || employee.passportExpire || employee.passportExpiryDt || employee.passportExpiryDateStr || '';
+  setVal('qidExpiry', qidExVal);
+  setVal('passportExpiry', passExVal);
     setVal('phone', employee.phone || '');
   setVal('bankName', employee.bankName || '');
   setVal('bankAccountNumber', employee.bankAccountNumber || '');
@@ -2969,8 +2972,10 @@ window.editEmployee = function(id, which) {
             const fresh = snap.data();
             const qidEx = document.getElementById('qidExpiry');
             const passEx = document.getElementById('passportExpiry');
-            if (qidEx && fresh.qidExpiry) qidEx.value = fresh.qidExpiry;
-            if (passEx && fresh.passportExpiry) passEx.value = fresh.passportExpiry;
+            const qidVal = fresh.qidExpiry || fresh.qidExpiryDate || fresh.qatarIdExpiry || fresh.qid_expiry || fresh.qidExpire || fresh.qidExpiryDt || fresh.qidExpiryDateStr || '';
+            const passVal = fresh.passportExpiry || fresh.passportExpiryDate || fresh.passport_expiry || fresh.passportExpire || fresh.passportExpiryDt || fresh.passportExpiryDateStr || '';
+            if (qidEx) qidEx.value = qidVal;
+            if (passEx) passEx.value = passVal;
           }
         }).catch(()=>{});
       }
@@ -3000,7 +3005,10 @@ window.viewEmployee = async function(id, which) {
       const snap = await getDoc(doc(db, base, id));
       if (snap && snap.exists()) {
         const fresh = snap.data();
-        emp = { ...emp, ...fresh };
+        // Merge and normalize possible legacy field names
+        const qidEx = fresh.qidExpiry || fresh.qidExpiryDate || fresh.qatarIdExpiry || fresh.qid_expiry || fresh.qidExpire || fresh.qidExpiryDt || fresh.qidExpiryDateStr;
+        const passEx = fresh.passportExpiry || fresh.passportExpiryDate || fresh.passport_expiry || fresh.passportExpire || fresh.passportExpiryDt || fresh.passportExpiryDateStr;
+        emp = { ...emp, ...fresh, qidExpiry: emp.qidExpiry || qidEx, passportExpiry: emp.passportExpiry || passEx };
       }
     }
   } catch {}

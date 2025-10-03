@@ -1,5 +1,5 @@
 // Temporary employees module
-import { formatDate } from './utils.js';
+import { formatDate, getExpiryIndicator } from './utils.js';
 
 let tempSortColumn = '';
 let tempSortOrder = 'asc';
@@ -84,10 +84,14 @@ export function renderTemporaryTable({ getTemporaryEmployees, getSearchQuery, ge
     }
   }
 
-  tbody.innerHTML = sorted.map((employee) => `
+  tbody.innerHTML = sorted.map((employee) => {
+    const indicator = getExpiryIndicator(employee);
+    const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
+    const title = indicator.title;
+    return `
     <tr class="hover:bg-gray-50 ${employee.terminated ? 'terminated-row' : ''}">
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'temporary')">
-        ${employee.name}
+        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span><span class="employee-name-text">${employee.name}</span></span>
         ${employee.terminated ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class="fas fa-user-slash"></i> Terminated</span>' : ''}
       </td>
       <td class="px-3 py-2">${employee.email}</td>
@@ -107,5 +111,5 @@ export function renderTemporaryTable({ getTemporaryEmployees, getSearchQuery, ge
         </div>
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 }

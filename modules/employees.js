@@ -1,5 +1,5 @@
 // Employees module: table rendering and sorting
-import { formatDate } from './utils.js';
+import { formatDate, getExpiryIndicator } from './utils.js';
 
 let sortColumn = '';
 let sortOrder = 'asc';
@@ -19,10 +19,10 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   const emptyState = document.getElementById('emptyState');
   if (!tbody || !emptyState) return;
 
-  const employees = getEmployees();
-  const currentSearch = (getSearchQuery && getSearchQuery()) || '';
-  const currentDepartmentFilter = (getDepartmentFilter && getDepartmentFilter()) || '';
-  const showTerminated = (getShowTerminated && getShowTerminated()) || true;
+  const employees = (typeof getEmployees === 'function') ? getEmployees() : [];
+  const currentSearch = (typeof getSearchQuery === 'function' && getSearchQuery()) || '';
+  const currentDepartmentFilter = (typeof getDepartmentFilter === 'function' && getDepartmentFilter()) || '';
+  const showTerminated = (typeof getShowTerminated === 'function' && getShowTerminated()) || true;
 
   const filtered = employees.filter(emp => {
     const matchesDept = !currentDepartmentFilter || emp.department === currentDepartmentFilter;
@@ -69,7 +69,7 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
 
   function deptClass(dept) {
     if (!dept) return '';
-    const normalized = dept.toLowerCase().replace(/\s+/g, '-');
+    const normalized = String(dept).toLowerCase().replace(/\s+/g, '-');
     switch (normalized) {
       case 'hr':
       case 'human-resources': return 'human-resources';
@@ -82,11 +82,16 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
     }
   }
 
-  tbody.innerHTML = sorted.map((employee) => `
-    <tr class="hover:bg-gray-50 ${employee.terminated ? 'terminated-row' : ''}" ${employee.terminated ? 'style="background-color:#fff1f2;"' : ''}>
+  tbody.innerHTML = sorted.map((employee) => {
+    const indicator = getExpiryIndicator(employee);
+    const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
+    const title = indicator.title;
+    const termRow = !!employee.terminated;
+    return `
+    <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style="background-color:#fff1f2;"' : ''}>
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">
-        ${employee.name}
-        ${employee.terminated ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class="fas fa-user-slash"></i> Terminated</span>' : ''}
+        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span><span class="employee-name-text">${employee.name}</span></span>
+        ${termRow ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class=\"fas fa-user-slash\"></i> Terminated</span>' : ''}
       </td>
       <td class="px-3 py-2">${employee.email}</td>
       <td class="px-3 py-2">${employee.phone || '-'}</td>
@@ -104,6 +109,6 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
           <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}', 'employees')"><i class="fas fa-trash"></i></button>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
