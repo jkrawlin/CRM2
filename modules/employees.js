@@ -102,6 +102,15 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       </td>
       <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
       <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
+      <td class="px-3 py-2">
+        <div class="flex items-center gap-2">
+          <span class="px-2 py-0.5 rounded text-xs font-semibold ${termRow ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}">${termRow ? 'Terminated' : 'Active'}</span>
+          <span class="inline-flex items-center" title="${title}">
+            <span class="${dotClass}" aria-hidden="true"></span>&nbsp;
+            <span class="text-xs ${indicator.color==='red' ? 'text-rose-600' : 'text-emerald-600'}">${indicator.color==='red' ? 'Expiring Soon' : 'OK'}</span>
+          </span>
+        </div>
+      </td>
       <td class="px-3 py-2 text-center">
         <div class="action-buttons">
           <button class="action-btn view-btn" onclick="viewEmployee('${employee.id}', 'employees')"><i class="fas fa-eye"></i></button>
