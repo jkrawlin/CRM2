@@ -924,3 +924,8 @@ body.modal-open #openSidebarBtn {
         display: none !important;
     }
 }
+
+/* --- Expiry indicator: definitive override (must be last) --- */
+/* Ensure the dot remains visible even when row styles set background on all descendants */
+.expiry-dot.green { background-color: var(--accent) !important; }
+.expiry-dot.red { background-color: var(--danger) !important; }
