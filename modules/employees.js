@@ -84,14 +84,14 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
 
   tbody.innerHTML = sorted.map((employee) => {
     const indicator = getExpiryIndicator(employee);
-    const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
-    const title = indicator.title;
+  // Map indicator to new status-dot
+  const statusColor = indicator.color === 'red' ? 'red' : 'green';
+  const title = indicator.title;
     const termRow = !!employee.terminated;
     return `
     <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style="background-color:#fff1f2;"' : ''}>
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">
         <span class="employee-name-text">${employee.name}</span>
-        ${termRow ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class=\"fas fa-user-slash\"></i> Terminated</span>' : ''}
       </td>
       <td class="px-3 py-2">${employee.email}</td>
       <td class="px-3 py-2">${employee.phone || '-'}</td>
@@ -102,14 +102,10 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       </td>
       <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
       <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-3 py-2">
-        <div class="flex items-center gap-2">
-          <span class="px-2 py-0.5 rounded text-xs font-semibold ${termRow ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}">${termRow ? 'Terminated' : 'Active'}</span>
-          <span class="inline-flex items-center" title="${title}">
-            <span class="${dotClass}" aria-hidden="true"></span>&nbsp;
-            <span class="text-xs ${indicator.color==='red' ? 'text-rose-600' : 'text-emerald-600'}">${indicator.color==='red' ? 'Expiring Soon' : 'OK'}</span>
-          </span>
-        </div>
+      <td class="px-3 py-2 status-cell">
+        <span class="inline-flex items-center justify-center w-full" title="${title}" aria-label="${title}">
+          <span class="status-dot" data-color="${statusColor}"></span>
+        </span>
       </td>
       <td class="px-3 py-2 text-center">
         <div class="action-buttons">

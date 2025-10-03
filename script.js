@@ -38,8 +38,8 @@ import {
   exportPayrollCsv as payrollExportPayrollCsv,
 } from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251003-01';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251003-01';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-03';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251003-03';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';

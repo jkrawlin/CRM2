@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
-    <link rel="stylesheet" href="assets/tailwind.css?v=20250929-20" />
-    <link rel="stylesheet" href="styles.css?v=20251003-03" />
+    <link rel="stylesheet" href="assets/tailwind.css?v=20251003-04" />
+    <link rel="stylesheet" href="styles.css?v=20251004-03" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
         <style id="sidebar-toggle-css">
@@ -935,8 +935,8 @@
                                             tr.terminated-row:hover > th,
                                             tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
                                             /* Force all descendants to inherit background to avoid white patches (but preserve status dots) */
-                                            tr.terminated-row *:not(.expiry-dot) { background-color: #fff1f2 !important; }
-                                            tr.terminated-row:hover *:not(.expiry-dot) { background-color: #ffe4e6 !important; }
+                                            tr.terminated-row *:not(.expiry-dot):not(.status-dot) { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
                         <col class="w-[16%]" />  <!-- Name -->
@@ -960,7 +960,7 @@
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Company <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3">Status</th>
+                            <th class="text-center font-semibold px-4 py-3">Status</th>
                             <th class="text-center font-semibold px-4 py-3">Actions</th>
                         </tr>
                     </thead>
@@ -989,8 +989,8 @@
                                             tr.terminated-row > td { background-color: #fff1f2 !important; }
                                             tr.terminated-row:hover > th,
                                             tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
-                                            tr.terminated-row *:not(.expiry-dot) { background-color: #fff1f2 !important; }
-                                            tr.terminated-row:hover *:not(.expiry-dot) { background-color: #ffe4e6 !important; }
+                                            tr.terminated-row *:not(.expiry-dot):not(.status-dot) { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
                         <col class="w-[16%]" />  <!-- Name -->
@@ -1904,6 +1904,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251003-01"></script>
+    <script type="module" src="script.js?v=20251004-04"></script>
 </body>
 </html>
