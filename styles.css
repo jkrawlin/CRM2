@@ -475,16 +475,30 @@ body {
 }
 
 /* Expiry indicator dot shown before employee name */
-.expiry-dot{
-    display:inline-block;
-    width:12px;
-    height:12px;
-    border-radius:9999px;
-    margin-right:6px;
-    vertical-align:-1px;
+.expiry-dot {
+    display: inline-block !important;
+    width: 12px !important;
+    height: 12px !important;
+    min-width: 12px !important;
+    min-height: 12px !important;
+    border-radius: 9999px !important;
+    margin-right: 6px !important;
+    vertical-align: -1px !important;
+    flex-shrink: 0 !important;
 }
-.expiry-dot.green{ background:var(--accent); }
-.expiry-dot.red{ background:var(--danger); }
+.expiry-dot.green { 
+    background: var(--accent) !important;
+    background-color: var(--accent) !important;
+}
+.expiry-dot.red { 
+    background: var(--danger) !important;
+    background-color: var(--danger) !important;
+}
+
+/* Ensure parent container displays dots properly */
+.inline-flex .expiry-dot {
+    align-self: center;
+}
 
 /* Department badges */
 .department-badge { display: inline-block; padding: 0.25rem 0.625rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
@@ -925,7 +939,3 @@ body.modal-open #openSidebarBtn {
     }
 }
 
-/* --- Expiry indicator: definitive override (must be last) --- */
-/* Ensure the dot remains visible even when row styles set background on all descendants */
-.expiry-dot.green { background-color: var(--accent) !important; }
-.expiry-dot.red { background-color: var(--danger) !important; }
