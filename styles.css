@@ -934,6 +934,27 @@ body.modal-open #openSidebarBtn {
     outline-offset: 2px;
 }
 
+/* Fix the Actions column alignment */
+.data-table th:last-child,
+.data-table td:last-child { text-align: center; }
+
+/* Ensure action buttons container is properly centered (override older definitions) */
+.action-buttons {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 4px !important;
+}
+
+/* Tighter action button style */
+.action-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 4px 8px !important;
+    font-size: 0.75rem !important;
+}
+
 /* Print styles */
 @media print {
     .header-actions,
