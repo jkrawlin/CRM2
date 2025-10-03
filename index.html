@@ -934,9 +934,9 @@
                                             tr.terminated-row > td { background-color: #fff1f2 !important; }
                                             tr.terminated-row:hover > th,
                                             tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
-                                            /* Force all descendants to inherit background to avoid white patches */
-                                            tr.terminated-row * { background-color: #fff1f2 !important; }
-                                            tr.terminated-row:hover * { background-color: #ffe4e6 !important; }
+                                            /* Force all descendants to inherit background to avoid white patches (but preserve status dots) */
+                                            tr.terminated-row *:not(.expiry-dot) { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover *:not(.expiry-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
                         <col class="w-[16%]" />  <!-- Name -->
@@ -987,8 +987,8 @@
                                             tr.terminated-row > td { background-color: #fff1f2 !important; }
                                             tr.terminated-row:hover > th,
                                             tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
-                                            tr.terminated-row * { background-color: #fff1f2 !important; }
-                                            tr.terminated-row:hover * { background-color: #ffe4e6 !important; }
+                                            tr.terminated-row *:not(.expiry-dot) { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover *:not(.expiry-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
                         <col class="w-[16%]" />  <!-- Name -->
