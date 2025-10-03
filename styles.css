@@ -971,3 +971,34 @@ body.modal-open #openSidebarBtn {
     }
 }
 
+/* ------------------------------------------------------------ */
+/* Status dot indicator using data-color attribute (appended)   */
+/* Added to resolve mismatch between HTML <span class="status-dot" data-color="..."> */
+/* and previously missing CSS attribute selectors.              */
+/* ------------------------------------------------------------ */
+.status-dot {
+    display: inline-block !important;
+    width: 10px !important;
+    height: 10px !important;
+    min-width: 10px !important;
+    min-height: 10px !important;
+    border-radius: 9999px !important;
+    vertical-align: middle !important;
+    flex-shrink: 0 !important;
+}
+
+.status-dot[data-color="green"] {
+    background: #10B981 !important;
+    background-color: #10B981 !important;
+}
+
+.status-dot[data-color="red"] {
+    background: #EF4444 !important;
+    background-color: #EF4444 !important;
+}
+
+/* Ensure visibility in all row states */
+tr.terminated-row .status-dot[data-color="red"] { background-color: #EF4444 !important; }
+tr.terminated-row .status-dot[data-color="green"] { background-color: #10B981 !important; }
+
+
