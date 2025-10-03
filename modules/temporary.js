@@ -91,7 +91,7 @@ export function renderTemporaryTable({ getTemporaryEmployees, getSearchQuery, ge
     return `
     <tr class="hover:bg-gray-50 ${employee.terminated ? 'terminated-row' : ''}">
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'temporary')">
-        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span><span class="employee-name-text">${employee.name}</span></span>
+        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span>&nbsp;<span class="employee-name-text">${employee.name}</span></span>
         ${employee.terminated ? '<span class="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-100 text-rose-800"><i class="fas fa-user-slash"></i> Terminated</span>' : ''}
       </td>
       <td class="px-3 py-2">${employee.email}</td>

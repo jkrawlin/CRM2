@@ -482,7 +482,7 @@ body {
     min-width: 12px !important;
     min-height: 12px !important;
     border-radius: 9999px !important;
-    margin-right: 6px !important;
+     margin-right: 6px !important; /* Enforce spacing so the dot doesn't touch the name even if other CSS resets margins */
     vertical-align: -1px !important;
     flex-shrink: 0 !important;
 }
