@@ -84,14 +84,13 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
 
   tbody.innerHTML = sorted.map((employee) => {
     const indicator = getExpiryIndicator(employee);
-  // Map indicator to new status-dot
-  const statusColor = indicator.color === 'red' ? 'red' : 'green';
-  const title = indicator.title;
+    const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
+    const title = indicator.title;
     const termRow = !!employee.terminated;
     return `
-    <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style="background-color:#fff1f2;"' : ''}>
+    <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style=\"background-color:#fff1f2;\"' : ''}>
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">
-        <span class="employee-name-text">${employee.name}</span>
+        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span>&nbsp;<span class="employee-name-text">${employee.name}</span></span>
       </td>
       <td class="px-3 py-2">${employee.email}</td>
       <td class="px-3 py-2">${employee.phone || '-'}</td>
@@ -102,11 +101,6 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       </td>
       <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
       <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-3 py-2 status-cell">
-        <span class="inline-flex items-center justify-center w-full" title="${title}" aria-label="${title}">
-          <span class="status-dot" data-color="${statusColor}"></span>
-        </span>
-      </td>
       <td class="px-3 py-2 text-center">
         <div class="action-buttons">
           <button class="action-btn view-btn" onclick="viewEmployee('${employee.id}', 'employees')"><i class="fas fa-eye"></i></button>

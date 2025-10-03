@@ -504,33 +504,6 @@ tr.terminated-row .expiry-dot.green { background-color: var(--accent) !important
     align-self: center;
 }
 
-/* Status column specific presentation (single dot only) */
-td.status-cell { text-align: center !important; }
-td.status-cell .expiry-dot {
-    margin-right: 0 !important;
-    width: 14px !important;
-    height: 14px !important;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.06), 0 0 0 4px #fff;
-    display: inline-block !important;
-}
-tr.terminated-row td.status-cell .expiry-dot.red { box-shadow: 0 0 0 2px rgba(190,0,33,0.15), 0 0 0 4px #fff; }
-tr.terminated-row td.status-cell .expiry-dot.green { box-shadow: 0 0 0 2px rgba(0,110,60,0.15), 0 0 0 4px #fff; }
-
-/* New unified status-dot (independent of legacy expiry-dot) */
-.status-dot {
-    width: 16px;
-    height: 16px;
-    display: inline-block;
-    border-radius: 50%;
-    position: relative;
-    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0,0,0,0.05);
-}
-.status-dot[data-color="green"] { background: var(--accent) !important; background-color: var(--accent) !important; }
-.status-dot[data-color="red"] { background: var(--danger) !important; background-color: var(--danger) !important; animation: pulse-expire 1.6s ease-in-out infinite; }
-/* Defensive override if any parent sets background on * */
-tr.terminated-row .status-dot[data-color="green"], tr.terminated-row .status-dot[data-color="red"] { background-clip: padding-box; }
-@keyframes pulse-expire { 0%,100% { transform: scale(1); box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(239,68,68,0.25);} 50% { transform: scale(1.08); box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(239,68,68,0.15);} }
-tr.terminated-row .status-dot { box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0,0,0,0.08); }
 
 /* Department badges */
 .department-badge { display: inline-block; padding: 0.25rem 0.625rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
@@ -971,34 +944,5 @@ body.modal-open #openSidebarBtn {
     }
 }
 
-/* ------------------------------------------------------------ */
-/* Status dot indicator using data-color attribute (appended)   */
-/* Added to resolve mismatch between HTML <span class="status-dot" data-color="..."> */
-/* and previously missing CSS attribute selectors.              */
-/* ------------------------------------------------------------ */
-.status-dot {
-    display: inline-block !important;
-    width: 10px !important;
-    height: 10px !important;
-    min-width: 10px !important;
-    min-height: 10px !important;
-    border-radius: 9999px !important;
-    vertical-align: middle !important;
-    flex-shrink: 0 !important;
-}
-
-.status-dot[data-color="green"] {
-    background: #10B981 !important;
-    background-color: #10B981 !important;
-}
-
-.status-dot[data-color="red"] {
-    background: #EF4444 !important;
-    background-color: #EF4444 !important;
-}
-
-/* Ensure visibility in all row states */
-tr.terminated-row .status-dot[data-color="red"] { background-color: #EF4444 !important; }
-tr.terminated-row .status-dot[data-color="green"] { background-color: #10B981 !important; }
 
 
