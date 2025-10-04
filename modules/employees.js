@@ -1,5 +1,5 @@
 // Employees module: table rendering and sorting
-import { formatDate, getExpiryIndicator, getEmployeeStatus } from './utils.js';
+import { formatDate, getEmployeeStatus } from './utils.js';
 
 let sortColumn = '';
 let sortOrder = 'asc';
@@ -45,15 +45,23 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   const sorted = [...filtered];
   if (sortColumn) {
     sorted.sort((a, b) => {
+      if (sortColumn === 'status') {
+        const orderMap = { active:0, valid:0, 'expiring-soon':1, expiring:1, 'expiring_soon':1, pending:2, unknown:3 };
+        const derive = (emp) => {
+          const raw = (emp.status || '').toString().toLowerCase();
+          if (raw) return raw;
+          const info = getEmployeeStatus(emp);
+          return info.status === 'expiring' ? 'expiring' : 'active';
+        };
+        const sa = derive(a), sb = derive(b);
+        const da = orderMap[sa] ?? 99, db = orderMap[sb] ?? 99;
+        if (da === db) return 0;
+        return sortOrder === 'asc' ? da - db : db - da;
+      }
       let va = a[sortColumn];
       let vb = b[sortColumn];
-      if (sortColumn === 'salary') {
-        va = Number(va);
-        vb = Number(vb);
-      } else {
-        va = (va ?? '').toString().toLowerCase();
-        vb = (vb ?? '').toString().toLowerCase();
-      }
+      if (sortColumn === 'salary') { va = Number(va); vb = Number(vb); }
+      else { va = (va ?? '').toString().toLowerCase(); vb = (vb ?? '').toString().toLowerCase(); }
       if (va < vb) return sortOrder === 'asc' ? -1 : 1;
       if (va > vb) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -83,34 +91,34 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   }
 
   tbody.innerHTML = sorted.map((employee) => {
-    const indicator = getExpiryIndicator(employee); // legacy inline dot (kept near name)
-    const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
-    const title = indicator.title;
-    const statusInfo = getEmployeeStatus(employee);
-    const statusDot = statusInfo.status === 'expiring'
-      ? `<span class="status-dot expiring" title="${statusInfo.tooltip}"></span>`
-      : `<span class="status-dot valid" title="${statusInfo.tooltip}"></span>`;
+  const statusInfo = getEmployeeStatus(employee);
+  const backendStatus = (employee.status || '').toString().toLowerCase();
+  let logical = backendStatus || statusInfo.status;
+  if (logical === 'valid') logical = 'active';
+  if (logical === 'expiring-soon' || logical === 'expiring_soon') logical = 'expiring';
+  let colorClass = 'valid';
+  if (logical === 'expiring') colorClass = 'expiring';
+  if (!logical) { logical = 'pending'; colorClass = 'gray'; }
+  const label = logical === 'expiring' ? 'Expiring Soon' : (logical === 'pending' ? 'Pending Review' : 'Active');
+  const inlineColor = colorClass === 'expiring' ? '#EF4444' : (colorClass === 'valid' ? '#10B981' : '#9CA3AF');
+  const statusDot = `<span class="status-dot ${colorClass}" aria-label="Status: ${label}" title="${label}" style="background:${inlineColor};display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:middle;"></span>`;
     const termRow = !!employee.terminated;
     return `
-    <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style=\"background-color:#fff1f2;\"' : ''}>
-      <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'employees')">
-        <span class="inline-flex items-center"><span class="${dotClass}" title="${title}" aria-label="${title}"></span>&nbsp;<span class="employee-name-text">${employee.name}</span></span>
-      </td>
-      <td class="px-3 py-2">${employee.email}</td>
-      <td class="px-3 py-2">${employee.phone || '-'}</td>
-      <td class="px-3 py-2">${employee.qid || '-'}</td>
-  <td class="px-3 py-2 text-center">${statusDot}</td>
-  <td class="px-3 py-2">${employee.position}</td>
-      <td class="px-3 py-2">
-        <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
-      </td>
-      <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-0 py-2 text-center">
-        <div class="action-buttons">
-          <button class="action-btn view-btn" onclick="viewEmployee('${employee.id}', 'employees')"><i class="fas fa-eye"></i></button>
-          <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}', 'employees')"><i class="fas fa-edit"></i></button>
-          <button class="action-btn delete-btn" onclick="openDeleteModal('${employee.id}', 'employees')"><i class="fas fa-trash"></i></button>
+    <tr class=\"employee-row ${termRow ? 'terminated-row' : ''}\" ${termRow ? 'style=\\\"background-color:#fff1f2;\\\"' : ''}>
+      <td data-label=\"Name\" class=\"col-name cell-name px-4 py-5 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer\" onclick=\"viewEmployee('${employee.id}', 'employees')\">${employee.name}</td>
+      <td data-label=\"Email\" class=\"col-email px-4 py-5\">${employee.email}</td>
+      <td data-label=\"Phone\" class=\"col-phone px-3 py-5 text-center\">${employee.phone || '-'} </td>
+      <td data-label=\"Qatar ID\" class=\"col-qid px-3 py-5 text-center\">${employee.qid || '-'} </td>
+  <td data-label=\"Status\" class=\"col-status px-2 py-5 text-center\">${statusDot}</td>
+      <td data-label=\"Position\" class=\"col-position px-4 py-5\">${employee.position}</td>
+      <td data-label=\"Company\" class=\"col-company px-4 py-5\"><span class=\"department-badge ${deptClass(employee.department)}\">${employee.department}</span></td>
+      <td data-label=\"Salary\" class=\"col-salary px-3 py-5 text-center tabular-nums\">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+      <td data-label=\"Join Date\" class=\"col-join px-4 py-5 whitespace-nowrap text-right\">${formatDate(employee.joinDate)}</td>
+      <td data-label=\"Actions\" class=\"col-actions px-2 py-5 text-center\">
+        <div class=\"action-buttons\">
+          <button class=\"action-btn view-btn\" onclick=\"viewEmployee('${employee.id}', 'employees')\"><i class=\"fas fa-eye\"></i></button>
+          <button class=\"action-btn edit-btn\" onclick=\"editEmployee('${employee.id}', 'employees')\"><i class=\"fas fa-edit\"></i></button>
+          <button class=\"action-btn delete-btn\" onclick=\"openDeleteModal('${employee.id}', 'employees')\"><i class=\"fas fa-trash\"></i></button>
         </div>
       </td>
     </tr>`;

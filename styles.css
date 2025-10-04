@@ -461,14 +461,20 @@ body {
 
 .data-table tbody tr:hover td:first-child { padding-left: calc(var(--spacing-lg) + 6px); }
 
-/* Align special columns */
-.data-table th:nth-child(5),
-.data-table td:nth-child(5) { text-align: right; }
-.data-table th:nth-child(6),
-.data-table td:nth-child(6) { text-align: left; }
-/* Center alignment for Actions column (now last) will be handled by last-child rule; Status column is 5th */
-.data-table th:nth-child(5),
-.data-table td:nth-child(5) { text-align: center !important; }
+/* Column alignment via semantic column classes (avoids fragile nth-child selectors) */
+.data-table th.col-name, .data-table td.col-name { text-align: left; }
+.data-table th.col-email, .data-table td.col-email { text-align: left; }
+.data-table th.col-phone, .data-table td.col-phone { text-align: left; }
+.data-table th.col-qid, .data-table td.col-qid { text-align: left; }
+.data-table th.col-status, .data-table td.col-status { text-align: center; padding-left: 0; padding-right: 0; }
+.data-table th.col-position, .data-table td.col-position { text-align: left; }
+.data-table th.col-company, .data-table td.col-company { text-align: left; }
+.data-table th.col-salary, .data-table td.col-salary { text-align: right; }
+.data-table th.col-join, .data-table td.col-join { text-align: left; }
+.data-table th.col-actions, .data-table td.col-actions { text-align: center; }
+
+/* Numeric alignment utility */
+.tabular-nums { font-variant-numeric: tabular-nums; }
 
 /* Employee name styling */
 .employee-name {
@@ -957,6 +963,8 @@ body.modal-open #openSidebarBtn {
     padding-right: 0 !important;
 }
 
+/* (status-col legacy class removed; now using col-status) */
+
 /* Tighter action button style */
 .action-btn {
     display: inline-flex !important;
@@ -979,22 +987,31 @@ body.modal-open #openSidebarBtn {
 /* Status indicator dots */
 .status-dot {
     display: inline-block !important;
-    width: 12px !important;
-    height: 12px !important;
-    min-width: 12px !important;
-    min-height: 12px !important;
+    width: 14px !important;
+    height: 14px !important;
+    min-width: 14px !important;
+    min-height: 14px !important;
     border-radius: 50% !important;
     cursor: help !important;
     transition: all var(--transition-fast) !important;
+    position: relative !important;
+    top: 1px; /* subtle optical alignment */
+    border: 2px solid #fff !important; /* creates a crisp edge against mixed row backgrounds */
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.06) !important; /* neutral outer ring for visibility */
 }
 .status-dot.valid {
     background-color: #10B981 !important;
-    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2) !important;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.35) !important;
 }
 .status-dot.expiring {
     background-color: #EF4444 !important;
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
-    animation: pulse 2s infinite !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.4) !important;
+    animation: pulse 1.8s infinite !important;
+}
+/* Neutral / pending status */
+.status-dot.gray {
+    background-color: #9CA3AF !important; /* gray-400 */
+    box-shadow: 0 0 0 2px rgba(156, 163, 175, 0.45) !important;
 }
 @keyframes pulse {
     0%, 100% { transform: scale(1); opacity: 1; }
@@ -1002,6 +1019,71 @@ body.modal-open #openSidebarBtn {
 }
 tr.terminated-row .status-dot.valid { background-color: #10B981 !important; }
 tr.terminated-row .status-dot.expiring { background-color: #EF4444 !important; }
+
+
+
+/* ================================================ */
+/* Employee Directory Redesign                      */
+/* ================================================ */
+.employee-table { table-layout: fixed; border-collapse: separate; border-spacing: 0 8px; width: 100%; }
+.employee-table thead th { background: #F8FAFC; font-weight: 700; font-size: 16px; line-height: 1.2; color:#334155; }
+.employee-table tbody tr.employee-row { background: #FFFFFF; transition: background .25s, box-shadow .25s; border-radius: 14px; }
+.employee-table tbody tr.employee-row:hover { background: #F1F5F9; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.employee-table tbody tr.employee-row td:first-child { border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
+.employee-table tbody tr.employee-row td:last-child { border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
+.employee-table td { font-size: 14px; line-height: 1.3; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.employee-table td, .employee-table th { min-height: 66px; }
+.employee-table .cell-name { font-weight: 600; }
+.employee-table tbody tr.employee-row:nth-child(even) { background: #FBFDFF; }
+
+/* Column width guidance (desktop) */
+.employee-table .col-name { width: 23%; }
+.employee-table .col-email { width: 22%; }
+.employee-table .col-phone { width: 9%; }
+.employee-table .col-qid { width: 9%; }
+.employee-table .col-status { width: 7%; }
+/* Let the status dot ring show fully */
+.employee-table td.col-status { overflow: visible !important; }
+.employee-table .col-position { width: 12%; }
+.employee-table .col-company { width: 7%; }
+.employee-table .col-salary { width: 6%; }
+.employee-table .col-join { width: 10%; }
+.employee-table .col-actions { width: 7%; }
+
+/* Alignment refinements */
+.employee-table th.col-phone, .employee-table td.col-phone,
+.employee-table th.col-qid, .employee-table td.col-qid,
+.employee-table th.col-salary, .employee-table td.col-salary { text-align: center; }
+.employee-table th.col-join, .employee-table td.col-join { text-align: right; }
+
+/* Status pill */
+.status-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; border-radius:9999px; line-height:1; }
+.status-pill.active { background:#ECFDF5; color:#047857; border:1px solid #A7F3D0; }
+.status-pill.expiring { background:#FEF2F2; color:#B91C1C; border:1px solid #FECACA; animation:pulse-soft 2.2s infinite; }
+@keyframes pulse-soft { 0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0.45);} 50% { box-shadow:0 0 0 6px rgba(239,68,68,0);} }
+
+/* Actions */
+.employee-table .action-buttons { gap:6px; }
+
+/* Responsive transformation to cards */
+@media (max-width: 900px) {
+    .employee-table thead { display:none; }
+    .employee-table, .employee-table tbody, .employee-table tr, .employee-table td { display:block; width:100%; }
+    .employee-table tbody tr.employee-row { margin-bottom:16px; padding:10px 14px; box-shadow:0 4px 14px rgba(0,0,0,0.06); border-radius:16px; }
+    .employee-table tbody tr.employee-row td { padding:6px 4px !important; min-height:auto; display:flex; justify-content:space-between; align-items:center; }
+    .employee-table tbody tr.employee-row td::before { content:attr(data-label); font-weight:600; color:#64748B; flex:0 0 46%; text-align:left; padding-right:10px; }
+    .employee-table .col-actions { text-align:right !important; }
+    .employee-table .action-buttons { justify-content:flex-end; }
+    .employee-table .col-name { width:100%; }
+}
+
+/* Focus accessibility */
+.employee-table td:focus-within, .employee-table td:focus { outline:2px solid #6366F1; outline-offset:2px; }
+
+/* Terminated row overrides */
+.employee-table tr.terminated-row { background:#FFF1F2 !important; }
+.employee-table tr.terminated-row:hover { background:#FFE4E6 !important; }
+.employee-table tr.terminated-row .status-pill.active { background:#DCFCE7; }
 
 
 

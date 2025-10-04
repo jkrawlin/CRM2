@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
     <link rel="stylesheet" href="assets/tailwind.css?v=20251003-04" />
-    <link rel="stylesheet" href="styles.css?v=20251004-03" />
+    <link rel="stylesheet" href="styles.css?v=20251004-11" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
         <style id="sidebar-toggle-css">
@@ -311,12 +311,22 @@
                 <div></div>
                 <div class="flex items-center gap-3">
                     <!-- Notifications Bell (no functionality yet) -->
-                    <button id="notificationsBtn" class="btn btn-ghost relative" title="Notifications" aria-label="Notifications">
-                        <i class="fas fa-bell"></i>
-                        <!-- Hidden badge dot (toggle visibility later via JS) -->
-                        <span id="notificationsBadge" class="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white hidden"></span>
-                        <span class="sr-only">Notifications</span>
-                    </button>
+                                        <span class="notifications-wrapper relative inline-flex">
+                                            <button id="notificationsBtn" class="btn btn-ghost relative" title="Notifications" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                                                    <i class="fas fa-bell"></i>
+                                                    <span id="notificationsBadge" class="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white hidden"></span>
+                                                    <span class="sr-only">Notifications</span>
+                                            </button>
+                                            <div id="notificationsPanel" class="hidden" role="region" aria-label="Notifications" tabindex="-1">
+                                                <div class="notif-header">
+                                                    <h4 class="notif-title">Alerts</h4>
+                                                    <button type="button" id="notificationsClearBtn" class="notif-clear" title="Dismiss" aria-label="Dismiss notifications"><i class="fas fa-times"></i></button>
+                                                </div>
+                                                <div id="notificationsList" class="notif-list empty">
+                                                    <div class="notif-empty text-gray-500 text-sm">No alerts</div>
+                                                </div>
+                                            </div>
+                                        </span>
                     <div class="user-badge flex items-center gap-2 bg-gray-50 border-2 border-gray-100 rounded-lg px-3 py-2">
                         <div class="user-avatar w-8 h-8 rounded-md bg-gradient-to-br from-indigo-500 to-indigo-400 text-white flex items-center justify-center text-sm font-semibold" id="userAvatar">A</div>
                         <span class="user-email text-sm font-medium text-gray-700" id="userName">admin@company.com</span>
@@ -924,7 +934,7 @@
     <div class="card overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Employee Directory</h3></div>
             <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed text-sm">
+                <table class="min-w-full table-fixed text-sm data-table">
                                         <style>
                                             /* Visual indicator for terminated employees */
                                             tr.terminated-row { background-color: #fff1f2; }
@@ -952,16 +962,16 @@
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name')">Name <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email')">Email <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone')">Phone <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Company <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-0 py-3 cursor-pointer" onclick="sortTable('actions')">Actions <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-name text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name')">Name <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-email text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email')">Email <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-phone text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone')">Phone <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-qid text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-status text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
+                            <th class="col-position text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position')">Position <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-company text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Company <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-salary text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-join text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-actions text-center font-semibold px-0 py-3 cursor-pointer" onclick="sortTable('actions')">Actions <i class="fas fa-sort ml-1"></i></th>
                         </tr>
                     </thead>
                     <tbody id="employeeTableBody" class="divide-y divide-gray-100"></tbody>
@@ -980,7 +990,7 @@
         <div class="card overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Temporary Employees</h3></div>
             <div class="overflow-x-auto">
-                <table class="min-w-full text-sm table-fixed">
+                <table class="min-w-full text-sm table-fixed data-table employee-table" aria-label="Temporary Employees">
                                         <style>
                                             /* Visual indicator for terminated temporary employees */
                                             tr.terminated-row { background-color: #fff1f2; }
@@ -1006,16 +1016,16 @@
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name','temporary')">Name <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email','temporary')">Email <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone','temporary')">Phone <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid','temporary')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status','temporary')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position','temporary')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department','temporary')">Company <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary','temporary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate','temporary')">Join Date <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-0 py-3 cursor-pointer" onclick="sortTable('actions','temporary')">Actions <i class="fas fa-sort ml-1"></i></th>
+                            <th scope="col" class="col-name text-center font-semibold px-5 py-4 text-base tracking-wide" onclick="sortTable('name','temporary')">Name <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-email text-left font-semibold px-5 py-4 text-base tracking-wide" onclick="sortTable('email','temporary')">Email <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-phone text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('phone','temporary')">Phone <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-qid text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('qid','temporary')">Qatar ID <i class="fas a-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-status text-center font-semibold px-3 py-4 text-base tracking-wide" onclick="sortTable('status','temporary')">Status <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-position text-left font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('position','temporary')">Position <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-company text-left font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('department','temporary')">Company <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-salary text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('salary','temporary')">Salary <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-join text-right font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('joinDate','temporary')">Join Date <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-actions text-center font-semibold px-2 py-4 text-base tracking-wide" onclick="sortTable('actions','temporary')">Actions <i class="fas fa-sort ml-1 text-sm"></i></th>
                         </tr>
                     </thead>
                     <tbody id="tempEmployeeTableBody" class="divide-y divide-gray-100"></tbody>
@@ -1906,6 +1916,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251004-04"></script>
+    <script type="module" src="script.js?v=20251004-09"></script>
 </body>
 </html>

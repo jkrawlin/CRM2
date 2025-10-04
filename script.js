@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251003-02';
+import { db, auth, storage } from './firebase-config.js?v=20251004-01';
 import {
   collection,
   getDocs,
@@ -38,8 +38,8 @@ import {
   exportPayrollCsv as payrollExportPayrollCsv,
 } from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-03';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251003-03';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-10';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251004-10';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
@@ -78,6 +78,182 @@ let __unsubFundCashflows = null;
 // Bank-style fund: opening is stored in stats/fund; keep a live cache and unsub
 let __fundOpening = 0;
 let __unsubFundStats = null;
+
+// =====================
+// Notifications (expiring documents)
+// =====================
+let __notifications = []; // { id, type:'expiry', message, employeeId, which }
+let __notifPanelOpen = false;
+
+function __injectNotificationStylesOnce() {
+  if (document.getElementById('notificationsStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'notificationsStyles';
+  style.textContent = `
+    .notifications-wrapper { position: relative; }
+    #notificationsPanel { position: absolute; top: 110%; right: 0; width: 320px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.15); padding:10px 10px 12px; z-index:9999; flex-direction:column; gap:8px; }
+    /* Hidden state handled by Tailwind 'hidden' class; show state when not hidden */
+    #notificationsPanel.hidden { display:none !important; }
+    #notificationsPanel:not(.hidden) { display:flex; }
+    #notificationsPanel:focus { outline: 2px solid #6366F1; outline-offset:2px; }
+    .notif-header { display:flex; align-items:center; justify-content:space-between; padding:2px 4px 4px; }
+    .notif-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#334155; margin:0; }
+    .notif-clear { background:transparent; border:none; color:#64748B; cursor:pointer; padding:4px; border-radius:6px; }
+    .notif-clear:hover { background:#F1F5F9; color:#334155; }
+    .notif-list { max-height:360px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+    .notif-item { display:flex; align-items:flex-start; gap:8px; background:#F8FAFC; border:1px solid #E2E8F0; padding:8px 10px; border-radius:10px; font-size:12.5px; line-height:1.3; position:relative; }
+    .notif-item.expiry { border-color:#FECACA; background:#FEF2F2; }
+    .notif-icon { width:26px; height:26px; border-radius:8px; background:#FEE2E2; color:#B91C1C; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+    .notif-item.expiry .notif-icon { background:#FEE2E2; color:#B91C1C; }
+    .notif-msg { flex:1; color:#334155; }
+    .notif-meta { font-size:11px; color:#64748B; margin-top:2px; }
+    .notif-emp-link { color:#2563EB; font-weight:600; cursor:pointer; text-decoration:none; }
+    .notif-emp-link:hover { text-decoration:underline; }
+    .notif-empty { text-align:center; padding:12px 4px; font-size:12px; }
+    #notificationsBadge { transition: transform .25s ease, opacity .25s ease; }
+    .notif-dismiss { position:absolute; top:6px; right:6px; background:transparent; border:none; color:#64748B; cursor:pointer; padding:2px 4px; border-radius:6px; font-size:11px; }
+    .notif-dismiss:hover { background:#E2E8F0; color:#334155; }
+  `;
+  document.head.appendChild(style);
+}
+
+function __setNotifications(list) {
+  __notifications = list;
+  __renderNotifications();
+}
+
+function __addOrUpdateExpiryNotification(emp, which, tooltip) {
+  if (!emp || !emp.id) return;
+  const id = `expiry-${which}-${emp.id}`;
+  const days = /expires in ([-\d]+) day/.exec(tooltip || '') || /expired (\d+) day/.exec(tooltip || '');
+  const existingIdx = __notifications.findIndex(n => n.id === id);
+  const message = tooltip || 'Document expiring soon';
+  if (existingIdx >= 0) {
+    __notifications[existingIdx].message = message;
+  } else {
+    __notifications.push({ id, type:'expiry', message, employeeId: emp.id, which });
+  }
+}
+
+function __pruneExpiryNotifications(validIds) {
+  __notifications = __notifications.filter(n => !(n.type === 'expiry' && !validIds.has(n.id)));
+}
+
+function __renderNotifications() {
+  const badge = document.getElementById('notificationsBadge');
+  const panel = document.getElementById('notificationsPanel');
+  const listEl = document.getElementById('notificationsList');
+  if (!badge || !panel || !listEl) return;
+  const count = __notifications.length;
+  if (count > 0) {
+    badge.classList.remove('hidden');
+    badge.setAttribute('aria-label', `${count} notification${count===1?'':'s'}`);
+  } else {
+    badge.classList.add('hidden');
+  }
+  listEl.innerHTML = '';
+  if (count === 0) {
+    listEl.classList.add('empty');
+    listEl.innerHTML = '<div class="notif-empty">No alerts</div>';
+    return;
+  }
+  listEl.classList.remove('empty');
+  __notifications.forEach(n => {
+    const div = document.createElement('div');
+    div.className = `notif-item ${n.type}`;
+    const icon = n.type === 'expiry' ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-info-circle"></i>';
+    div.innerHTML = `
+      <div class="notif-icon" aria-hidden="true">${icon}</div>
+      <div class="notif-msg">
+        ${n.message.replace(/(Qatar ID|Passport)/g, '<strong>$1</strong>')}<div class="notif-meta"><a data-notif-view href="#" class="notif-emp-link" data-which="${n.which}" data-eid="${n.employeeId}">View</a></div>
+      </div>
+      <button class="notif-dismiss" data-notif-dismiss="${n.id}" title="Dismiss" aria-label="Dismiss">✕</button>`;
+    listEl.appendChild(div);
+  });
+}
+
+function __toggleNotificationsPanel(force) {
+  const btn = document.getElementById('notificationsBtn');
+  const panel = document.getElementById('notificationsPanel');
+  if (!btn || !panel) return;
+  const wantOpen = force !== undefined ? force : !__notifPanelOpen;
+  __notifPanelOpen = wantOpen;
+  if (wantOpen) {
+    panel.classList.remove('hidden');
+    btn.setAttribute('aria-expanded','true');
+    setTimeout(()=> panel.focus(), 0);
+  } else {
+    panel.classList.add('hidden');
+    btn.setAttribute('aria-expanded','false');
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const btn = document.getElementById('notificationsBtn');
+  const panel = document.getElementById('notificationsPanel');
+  if (!btn || !panel) return;
+  if (e.target === btn || btn.contains(e.target)) {
+    e.preventDefault();
+    __toggleNotificationsPanel();
+    return;
+  }
+  if (panel.contains(e.target)) {
+    const dismissId = e.target.getAttribute('data-notif-dismiss');
+    if (dismissId) {
+      __notifications = __notifications.filter(n => n.id !== dismissId);
+      __renderNotifications();
+    }
+    const link = e.target.closest('[data-notif-view]');
+    if (link) {
+      const eid = link.getAttribute('data-eid');
+      const which = link.getAttribute('data-which');
+      if (eid) {
+        window.viewEmployee && window.viewEmployee(eid, which);
+        __toggleNotificationsPanel(false);
+      }
+    }
+    return;
+  }
+  // click outside
+  if (__notifPanelOpen) __toggleNotificationsPanel(false);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && __notifPanelOpen) {
+    __toggleNotificationsPanel(false);
+  }
+});
+
+function __rebuildExpiryNotifications() {
+  const utils = window.__utils || {};
+  // Fallback: import function via dynamic if not already collected; but we rely on modules already imported
+  // We'll reconstruct statuses using the same logic in modules: getEmployeeStatus
+  // We can call getEmployeeStatus via a cached reference from modules by creating a lightweight mirror using a global injection if needed; simpler: duplicate minimal logic here
+  // Instead, leverage employeesRenderTable side-effect? Too indirect. We'll compute statuses directly below replicating minimal logic.
+  const today = new Date();
+  const thirtyDaysFromNow = new Date(today);
+  thirtyDaysFromNow.setDate(today.getDate() + 30);
+  const all = [...employees, ...temporaryEmployees.map(e => ({ ...e, __which:'temporary'}))];
+  const validIds = new Set();
+  all.forEach(emp => {
+    const which = emp.__which ? 'temporary' : 'employees';
+    let tooltipParts = [];
+    let status = 'valid';
+    const check = (val, label) => {
+      if (!val) return; const d = new Date(val); if (isNaN(d.getTime())) return; const daysUntil = Math.ceil((d - today)/(1000*60*60*24)); if (d <= thirtyDaysFromNow) { status='expiring'; const msg = daysUntil < 0 ? `${label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil)===1?'':'s'} ago` : `${label} expires in ${daysUntil} day${daysUntil===1?'':'s'}`; tooltipParts.push(msg);} };
+    check(emp.qidExpiry || emp.qid_expiry || emp.QIDExpiry || emp.qidExpire || emp.qidExpireDate, 'Qatar ID');
+    check(emp.passportExpiry || emp.passport_expiry || emp.PassportExpiry || emp.passportExpire || emp.passportExpireDate, 'Passport');
+    if (status === 'expiring') {
+      const id = `expiry-${which}-${emp.id}`;
+      validIds.add(id);
+      __addOrUpdateExpiryNotification(emp, which, tooltipParts.join('; '));
+    }
+  });
+  __pruneExpiryNotifications(validIds);
+  __renderNotifications();
+}
+
+__injectNotificationStylesOnce();
 
 // =====================
 // Generic Grid Engine (Excel-like) for Accounts tables
@@ -431,8 +607,9 @@ function loadEmployeesRealtime() {
   unsubscribeEmployees = onSnapshot(
     q,
     (snapshot) => {
-      employees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      renderEmployeeTable();
+  employees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  renderEmployeeTable();
+  __rebuildExpiryNotifications();
       updateStats();
       updateDepartmentFilter();
       // Keep payroll in sync as data arrives
@@ -454,8 +631,9 @@ function loadTemporaryRealtime() {
   unsubscribeTemporary = onSnapshot(
     q,
     (snapshot) => {
-      temporaryEmployees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      renderTemporaryTable();
+  temporaryEmployees = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+  renderTemporaryTable();
+  __rebuildExpiryNotifications();
       // Keep payroll in sync as data arrives
       renderPayrollTable();
       try { ensureCurrentMonthBalances(); } catch {}
