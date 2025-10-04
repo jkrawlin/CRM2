@@ -86,6 +86,7 @@ let __notifications = []; // { id, type:'expiry', message, employeeId, which }
 let __notifPanelOpen = false;
 let __notifPanelPortalled = false;
 let __notifRepositionHandlerAttached = false;
+let __notifUserInteractionEnabled = false; // becomes true after first trusted user action
 
 function __injectNotificationStylesOnce() {
   if (document.getElementById('notificationsStyles')) return;
@@ -94,7 +95,7 @@ function __injectNotificationStylesOnce() {
   style.textContent = `
     .notifications-wrapper { position: relative; }
     /* Base panel styles (will be portalled to body to avoid clipping) */
-    #notificationsPanel { position: fixed; width: 340px; max-height: 480px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 32px rgba(15,23,42,0.18); padding:10px 10px 12px; z-index:50000; flex-direction:column; gap:8px; overflow-y:auto; overscroll-behavior:contain; }
+  #notificationsPanel { position: fixed; width: 340px; max-height: 480px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 12px 42px rgba(15,23,42,0.22); padding:10px 10px 12px; z-index:120500; flex-direction:column; gap:8px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
     /* Hidden state handled by Tailwind 'hidden' class; show state when not hidden */
     #notificationsPanel.hidden { display:none !important; }
     #notificationsPanel:not(.hidden) { display:flex; }
@@ -203,6 +204,7 @@ function __toggleNotificationsPanel(force) {
   const btn = document.getElementById('notificationsBtn');
   let panel = document.getElementById('notificationsPanel');
   if (!btn || !panel) return;
+  if (!__notifUserInteractionEnabled) return; // prevent auto-open before any user action
   const wantOpen = force !== undefined ? force : !__notifPanelOpen;
   __notifPanelOpen = wantOpen;
   if (wantOpen) {
@@ -224,6 +226,7 @@ function __toggleNotificationsPanel(force) {
 }
 
 document.addEventListener('click', (e) => {
+  if (e.isTrusted) __notifUserInteractionEnabled = true; // enable after real user click
   const btn = document.getElementById('notificationsBtn');
   const panel = document.getElementById('notificationsPanel');
   if (!btn || !panel) return;
@@ -254,6 +257,7 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  if (e.isTrusted) __notifUserInteractionEnabled = true;
   if (e.key === 'Escape' && __notifPanelOpen) {
     __toggleNotificationsPanel(false);
   }
@@ -289,6 +293,15 @@ function __rebuildExpiryNotifications() {
 }
 
 __injectNotificationStylesOnce();
+
+// Force closed state on DOM ready and delay enabling toggle to block any premature scripted interaction
+document.addEventListener('DOMContentLoaded', () => {
+  const panel = document.getElementById('notificationsPanel');
+  const btn = document.getElementById('notificationsBtn');
+  if (panel) panel.classList.add('hidden');
+  if (btn) btn.setAttribute('aria-expanded','false');
+  setTimeout(()=> { __notifUserInteractionEnabled = true; }, 150);
+});
 
 // =====================
 // Generic Grid Engine (Excel-like) for Accounts tables
