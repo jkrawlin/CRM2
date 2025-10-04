@@ -1559,7 +1559,17 @@ try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
 // =====================
 document.addEventListener('click', (e) => {
   if (e.target && (e.target.id === 'ledgerPrintBtn' || e.target.closest?.('#ledgerPrintBtn'))) {
-    try { const r = buildAndPrintLedger(); if (r && typeof r.catch === 'function') r.catch(err=>console.error('Ledger print failed (async)', err)); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
+    try {
+      // Prefer module print function if available
+      if (typeof printLedger === 'function') {
+        printLedger();
+      } else {
+        buildAndPrintLedger && buildAndPrintLedger();
+      }
+    } catch (err) {
+      console.error('Ledger print failed', err);
+      showToast && showToast('Failed to prepare ledger for print','error');
+    }
   }
 });
 
