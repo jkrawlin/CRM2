@@ -939,15 +939,15 @@
                                             tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
-                        <col class="w-[14%]" />  <!-- Name -->
-                        <col class="w-[11%]" />  <!-- Email -->
-                        <col class="w-[10%]" />  <!-- Phone -->
-                        <col class="w-[10%]" />  <!-- Qatar ID -->
-                        <col class="w-[6%]" />   <!-- Status (NEW) -->
-                        <col class="w-[19%]" />  <!-- Position (adjusted) -->
+                        <col class="w-[13%]" />  <!-- Name -->
+                        <col class="w-[10%]" />  <!-- Email -->
+                        <col class="w-[9%]" />   <!-- Phone -->
+                        <col class="w-[9%]" />   <!-- Qatar ID -->
+                        <col class="w-[6%]" />   <!-- Status -->
+                        <col class="w-[18%]" />  <!-- Position -->
                         <col class="w-[11%]" />  <!-- Company -->
                         <col class="w-[11%]" />  <!-- Monthly Salary -->
-                        <col class="w-[6%]" />   <!-- Join Date -->
+                        <col class="w-[9%]" />   <!-- Join Date -->
                         <col class="w-[4%]" />   <!-- Actions -->
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
@@ -957,7 +957,7 @@
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone')">Phone <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-4 py-3">Status</th>
+                            <th class="text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Company <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
@@ -993,16 +993,16 @@
                                             tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
                                         </style>
                     <colgroup>
-                        <col class="w-[14%]" />  <!-- Name -->
-                        <col class="w-[11%]" />  <!-- Email -->
-                        <col class="w-[10%]" />  <!-- Phone -->
-                        <col class="w-[10%]" />  <!-- Qatar ID -->
-                        <col class="w-[6%]" />   <!-- Status (NEW) -->
-                        <col class="w-[21%]" />  <!-- Position (adjusted) -->
-                        <col class="w-[10%]" />  <!-- Company -->
-                        <col class="w-[10%]" />  <!-- Monthly Salary -->
-                        <col class="w-[6%]" />  <!-- Join Date -->
-                        <col class="w-[2%]" />   <!-- Actions -->
+                        <col class="w-[13%]" />  <!-- Name -->
+                        <col class="w-[10%]" />  <!-- Email -->
+                        <col class="w-[9%]" />   <!-- Phone -->
+                        <col class="w-[9%]" />   <!-- Qatar ID -->
+                        <col class="w-[6%]" />   <!-- Status -->
+                        <col class="w-[18%]" />  <!-- Position -->
+                        <col class="w-[11%]" />  <!-- Company -->
+                        <col class="w-[11%]" />  <!-- Monthly Salary -->
+                        <col class="w-[9%]" />   <!-- Join Date -->
+                        <col class="w-[4%]" />   <!-- Actions -->
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
@@ -1011,7 +1011,7 @@
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone','temporary')">Phone <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid','temporary')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position','temporary')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="text-center font-semibold px-4 py-3">Status</th>
+                            <th class="text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status','temporary')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department','temporary')">Company <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary','temporary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
                             <th class="text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate','temporary')">Join Date <i class="fas fa-sort ml-1"></i></th>
