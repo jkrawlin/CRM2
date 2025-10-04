@@ -77,11 +77,14 @@ export function renderLedgerTable() {
     return;
   }
 
-  // Filter to day (exact prefix) or month + account
+  // Helper to extract pure date portion (YYYY-MM-DD) even if timestamp present
+  const dateOnly = (d) => (d || '').slice(0, 10);
+
+  // Filter to exact day or to month range
   const rows = _txns.filter(t => {
-    const d = t.date || '';
-    if (dayVal) return d.startsWith(dayVal) && t.accountId === accId; // allow timestamps (date prefix)
-    return (!ym || d.startsWith(ym + '-')) && t.accountId === accId;
+    const dOnly = dateOnly(t.date);
+    if (dayVal) return dOnly === dayVal && t.accountId === accId;
+    return (!ym || dOnly.startsWith(ym + '-')) && t.accountId === accId;
   });
   if (!rows.length) {
     tbody.innerHTML = '';
@@ -96,12 +99,12 @@ export function renderLedgerTable() {
   const openingBase = Number(account?.opening || 0);
   let opening = openingBase;
   if (dayVal) {
-    // For a specific day: opening = base opening + all transactions strictly before that day
-    const prior = _txns.filter(t => t.accountId === accId && (t.date||'') < dayVal);
+    // Opening before selected day (compare by date-only)
+    const prior = _txns.filter(t => t.accountId === accId && dateOnly(t.date) < dayVal);
     for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
   } else if (ym) {
-    // For a month: opening = base opening + all transactions before first of that month
-    const prior = _txns.filter(t => t.accountId === accId && (t.date||'') < `${ym}-01`);
+    const firstOfMonth = `${ym}-01`;
+    const prior = _txns.filter(t => t.accountId === accId && dateOnly(t.date) < firstOfMonth);
     for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
   }
 
