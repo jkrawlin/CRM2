@@ -1592,11 +1592,23 @@ try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
 // =====================
 document.addEventListener('click', (e) => {
   if (e.target && (e.target.id === 'ledgerPrintBtn' || e.target.closest?.('#ledgerPrintBtn'))) {
-    try { buildAndPrintLedger(); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
+    try { const r = buildAndPrintLedger(); if (r && typeof r.catch === 'function') r.catch(err=>console.error('Ledger print failed (async)', err)); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
   }
 });
 
-function buildAndPrintLedger() {
+function ensureLedgerPrintArea() {
+  let host = document.getElementById('ledgerPrintArea');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'ledgerPrintArea';
+    host.style.display = 'none';
+    host.setAttribute('data-auto-created','1');
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
+async function buildAndPrintLedger() {
   const accSel = document.getElementById('ledgerAccountFilter');
   const monthEl = document.getElementById('ledgerMonth');
   const dayEl = document.getElementById('ledgerDay');
@@ -1605,74 +1617,79 @@ function buildAndPrintLedger() {
   const accountName = accSel.options[accSel.selectedIndex]?.text || 'Ledger';
   const monthVal = monthEl?.value || '';
   let dayVal = dayEl?.value || '';
-  // Fallback: if dayVal empty but structured view has a day (user clicked fast), pull from it
-  if (!dayVal && window.__ledgerCurrentView?.day) dayVal = window.__ledgerCurrentView.day;
+  if (!dayVal && window.__ledgerCurrentView?.day) dayVal = window.__ledgerCurrentView.day; // fast-click fallback
 
-  // Diagnostics collection (will aid root cause analysis) ------------------
-  const diag = {};
+  // Attempt to ensure latest render (especially after day change)
+  try { renderLedgerTable?.(); } catch {}
+
+  const startTs = performance.now();
+  const maxWaitMs = 900; // < 1s
+  const pollInterval = 90;
+
+  function currentReadyState() {
+    const view = window.__ledgerCurrentView;
+    const visibleRows = tableBody.querySelectorAll('tr').length;
+    let structuredReady = false;
+    if (dayVal) {
+      structuredReady = !!(view && (view.day === dayVal) && Array.isArray(view.transactions));
+    } else {
+      structuredReady = !!(view && Array.isArray(view.transactions));
+    }
+    return { view, visibleRows, structuredReady };
+  }
+
+  // Wait (poll) until either the structured view is ready or we have visible rows for the chosen day
+  await new Promise(res => {
+    (function waitLoop(){
+      const {view, visibleRows, structuredReady} = currentReadyState();
+      const age = performance.now() - startTs;
+      if (structuredReady || visibleRows > 0 || age > maxWaitMs) return res();
+      setTimeout(waitLoop, pollInterval);
+    })();
+  });
+
+  const diag = { phase:'pre-build', dayInputValue: dayEl?.value||'', effectiveDay: dayVal };
+  let rowsHtml = '';
+  const view = window.__ledgerCurrentView;
   try {
-    diag.dayInputValue = dayEl?.value || '';
-    diag.dayEffective = dayVal;
-    diag.accountSelectedId = accSel.value;
-    diag.accountSelectedText = accountName;
-    diag.visibleTableRowCount = tableBody.querySelectorAll('tr').length;
-    diag.firstFiveVisibleRows = Array.from(tableBody.querySelectorAll('tr')).slice(0,5).map(r => r.textContent.trim());
-    const firstRow = tableBody.querySelector('tr');
-    if (firstRow) {
-      const firstDateCell = firstRow.querySelector('td,th');
-      diag.visibleFirstRowDateCell = firstDateCell ? firstDateCell.textContent.trim() : null;
-    }
-    diag.__ledgerCurrentViewExists = !!window.__ledgerCurrentView;
-    if (window.__ledgerCurrentView) {
-      const v = window.__ledgerCurrentView;
-      diag.viewDay = v.day;
-      diag.viewTxnCount = Array.isArray(v.transactions) ? v.transactions.length : -1;
-      diag.viewFirstFiveTxnDates = (v.transactions||[]).slice(0,5).map(t => ({date:t.date, raw:t.rawDate, type:t.type, amt:t.amount}));
-    }
+    diag.viewDay = view?.day;
+    diag.viewTxnCount = Array.isArray(view?.transactions) ? view.transactions.length : -1;
   } catch {}
 
-  // Decide strategy:
-  // 1. If a specific day chosen AND there are already rows in the on-screen table -> clone those directly.
-  // 2. Else build from structured view (window.__ledgerCurrentView) with grouping (month/all view).
-  let rowsHtml = '';
+  const visibleRowsNow = Array.from(tableBody.querySelectorAll('tr'));
+  // Build day view
   if (dayVal) {
-    const visibleRows = Array.from(tableBody.querySelectorAll('tr'));
-    // Heuristic: visible table for day view should include opening + (n tx) + totals => >= 2 rows
-    if (visibleRows.length >= 2) {
-      rowsHtml = visibleRows.map(tr => tr.outerHTML).join('');
-      diag.path = 'DOM-clone-day';
-    } else {
+    if (visibleRowsNow.length >= 2) {
+      rowsHtml = visibleRowsNow.map(tr => tr.outerHTML).join('');
+      diag.path = 'clone-visible-day';
+    } else if (view && Array.isArray(view.transactions)) {
       diag.path = 'structured-day';
-      try { renderLedgerTable?.(); } catch {}
-      const view = window.__ledgerCurrentView;
-      if (view && Array.isArray(view.transactions)) {
-        const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-        let dayTxns = view.transactions.filter(t => t.date === dayVal || t.rawDate === dayVal);
-        if (!dayTxns.length && view.day === dayVal) dayTxns = view.transactions.slice();
-        let running = view.opening;
-        let debitDay = 0, creditDay = 0;
-        const out = [];
-        out.push(`<tr class=\"opening-row\"><td colspan=\"2\">Opening Balance</td><td></td><td></td><td style=\"text-align:right;\">${fmt(view.opening)}</td></tr>`);
-        for (const tx of dayTxns) {
-          const isIn = String(tx.type).toLowerCase()==='in';
-          const amt = Number(tx.amount||0);
-          if (isIn) { debitDay += amt; running += amt; } else { creditDay += amt; running -= amt; }
-          const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
-          out.push(`<tr>
-            <td>${escapeHtml(tx.date || dayVal)}</td>
-            <td>${escapeHtml(desc||'')}</td>
-            <td style=\"text-align:right;\">${isIn?fmt(amt):''}</td>
-            <td style=\"text-align:right;\">${!isIn?fmt(amt):''}</td>
-            <td style=\"text-align:right;\">${fmt(running)}</td>
-          </tr>`);
-        }
-        out.push(`<tr class=\"grand-total-row\"><td colspan=\"2\">Day Totals</td><td style=\"text-align:right;\">${fmt(debitDay)}</td><td style=\"text-align:right;\">${fmt(creditDay)}</td><td style=\"text-align:right;\">${fmt(running)}</td></tr>`);
-        rowsHtml = out.join('');
+      const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+      let dayTxns = view.transactions.filter(t => t.date === dayVal || t.rawDate === dayVal);
+      if (!dayTxns.length && view.day === dayVal) dayTxns = view.transactions.slice();
+      let running = view.opening;
+      let debitDay = 0, creditDay = 0;
+      const out = [];
+      out.push(`<tr class="opening-row"><td colspan="2">Opening Balance</td><td></td><td></td><td style="text-align:right;">${fmt(view.opening)}</td></tr>`);
+      for (const tx of dayTxns) {
+        const isIn = String(tx.type).toLowerCase()==='in';
+        const amt = Number(tx.amount||0);
+        if (isIn) { debitDay += amt; running += amt; } else { creditDay += amt; running -= amt; }
+        const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
+        out.push(`<tr>
+          <td>${escapeHtml(tx.date || dayVal)}</td>
+          <td>${escapeHtml(desc||'')}</td>
+          <td style="text-align:right;">${isIn?fmt(amt):''}</td>
+          <td style="text-align:right;">${!isIn?fmt(amt):''}</td>
+          <td style="text-align:right;">${fmt(running)}</td>
+        </tr>`);
       }
-      if (!rowsHtml) rowsHtml = `<tr><td colspan=\"5\" style=\"text-align:center;padding:12px;\">No entries for ${escapeHtml(dayVal)}</td></tr>`;
+      out.push(`<tr class="grand-total-row"><td colspan="2">Day Totals</td><td style="text-align:right;">${fmt(debitDay)}</td><td style="text-align:right;">${fmt(creditDay)}</td><td style="text-align:right;">${fmt(running)}</td></tr>`);
+      rowsHtml = out.join('');
+    } else {
+      diag.path = 'no-data-day';
     }
-  } else {
-    const view = window.__ledgerCurrentView;
+  } else { // Month / All
     if (view && Array.isArray(view.transactions) && view.transactions.length) {
       diag.path = 'structured-month';
       const groups = view.transactions.reduce((m, t) => { (m[t.date] = m[t.date] || []).push(t); return m; }, {});
@@ -1680,7 +1697,7 @@ function buildAndPrintLedger() {
       let running = view.opening;
       const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
       const rows = [];
-      rows.push(`<tr class=\"opening-row\"><td colspan=\"2\">Opening Balance</td><td></td><td></td><td style=\"text-align:right;\">${fmt(view.opening)}</td></tr>`);
+      rows.push(`<tr class="opening-row"><td colspan="2">Opening Balance</td><td></td><td></td><td style="text-align:right;">${fmt(view.opening)}</td></tr>`);
       for (const d of orderedDates) {
         const dayTxns = groups[d];
         let debitDay=0, creditDay=0;
@@ -1692,30 +1709,31 @@ function buildAndPrintLedger() {
           rows.push(`<tr>
             <td>${escapeHtml(d)}</td>
             <td>${escapeHtml(desc||'')}</td>
-            <td style=\"text-align:right;\">${isIn?fmt(amt):''}</td>
-            <td style=\"text-align:right;\">${!isIn?fmt(amt):''}</td>
-            <td style=\"text-align:right;\">${fmt(running)}</td>
+            <td style="text-align:right;">${isIn?fmt(amt):''}</td>
+            <td style="text-align:right;">${!isIn?fmt(amt):''}</td>
+            <td style="text-align:right;">${fmt(running)}</td>
           </tr>`);
         }
-        rows.push(`<tr class=\"day-total-row\"><td colspan=\"2\">Day Total ${escapeHtml(d)}</td><td style=\"text-align:right;\">${fmt(debitDay)}</td><td style=\"text-align:right;\">${fmt(creditDay)}</td><td style=\"text-align:right;\">${fmt(running)}</td></tr>`);
+        rows.push(`<tr class="day-total-row"><td colspan="2">Day Total ${escapeHtml(d)}</td><td style="text-align:right;">${fmt(debitDay)}</td><td style="text-align:right;">${fmt(creditDay)}</td><td style="text-align:right;">${fmt(running)}</td></tr>`);
       }
-      rows.push(`<tr class=\"grand-total-row\"><td colspan=\"2\">Grand Totals</td><td style=\"text-align:right;\">${fmt(view.debitSum)}</td><td style=\"text-align:right;\">${fmt(view.creditSum)}</td><td style=\"text-align:right;\">${fmt(view.closing)}</td></tr>`);
+      rows.push(`<tr class="grand-total-row"><td colspan="2">Grand Totals</td><td style="text-align:right;">${fmt(view.debitSum)}</td><td style="text-align:right;">${fmt(view.creditSum)}</td><td style="text-align:right;">${fmt(view.closing)}</td></tr>`);
       rowsHtml = rows.join('');
     } else {
       diag.path = 'dom-clone-month-fallback';
-      rowsHtml = [...tableBody.querySelectorAll('tr')].map(tr => tr.outerHTML).join('');
+      rowsHtml = visibleRowsNow.map(tr => tr.outerHTML).join('');
     }
   }
 
+  if (!rowsHtml) rowsHtml = `<tr><td colspan="5" style="text-align:center;padding:12px;">No entries${dayVal? ' for '+escapeHtml(dayVal):''}</td></tr>`;
+
   diag.rowsHtmlLength = rowsHtml.length;
-  try { console.groupCollapsed('[Ledger Print Diagnostic]'); console.log(diag); if (window.__ledgerCurrentView) console.log('Structured View Object', window.__ledgerCurrentView); console.groupEnd(); } catch {}
+  try { console.groupCollapsed('[Ledger Print Diagnostic]'); console.log(diag); if (view) console.log('Structured View', view); console.groupEnd(); } catch {}
 
   const now = new Date();
   const fmtDate = (d) => d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
   const rangeLabel = dayVal ? `Day: ${dayVal}` : (monthVal ? `Month: ${monthVal}` : 'All');
   const summary = document.getElementById('ledgerSummary')?.textContent || '';
-  const host = document.getElementById('ledgerPrintArea');
-  if (!host) return;
+  const host = ensureLedgerPrintArea();
   host.innerHTML = `
     <div class="lp-header">
       <div>
@@ -1731,7 +1749,7 @@ function buildAndPrintLedger() {
     ${summary ? `<div class="lp-summary"><strong>Summary:</strong> ${escapeHtml(summary)}</div>` : ''}
     <table>
       <thead><tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
-      <tbody>${rowsHtml || `<tr><td colspan='5' style='text-align:center;padding:12px;'>No entries</td></tr>`}</tbody>
+      <tbody>${rowsHtml}</tbody>
     </table>
     <div class="lp-footer">
       <div>Printed by CRM System</div>
@@ -1739,13 +1757,10 @@ function buildAndPrintLedger() {
     </div>
     <div class="lp-watermark">CONFIDENTIAL</div>
   `;
-  // Make sure it's visible only for print
   try { host.style.display = 'block'; } catch {}
-  // Force layout
   try { void host.offsetHeight; } catch {}
-  setTimeout(() => { try { window.print(); } catch {} }, 30);
-  // Hide again shortly after print dialog (best-effort)
-  setTimeout(() => { try { host.style.display='none'; } catch {} }, 2000);
+  setTimeout(() => { try { window.print(); } catch {} }, 60);
+  setTimeout(() => { try { host.style.display='none'; } catch {} }, 2500);
 }
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
