@@ -19,8 +19,31 @@ export function initLedger(deps) {
   try { populateAccountFilter(); } catch {}
   const monthFilter = document.getElementById('ledgerMonth');
   if (monthFilter) monthFilter.addEventListener('change', () => subscribeLedger());
-  const dayFilter = document.getElementById('ledgerDay');
-  if (dayFilter) dayFilter.addEventListener('change', () => renderLedgerTable());
+  // Attach day filter listener (may be dynamically injected, so retry if absent)
+  const attachDayListener = () => {
+    const df = document.getElementById('ledgerDay');
+    if (!df) return false;
+    if (!df.__ledgerBound) {
+      df.addEventListener('change', () => {
+        // When a day is chosen, optionally sync month input for clarity
+        const v = (df.value || '').trim();
+        if (v.length === 10) {
+          const monthInput = document.getElementById('ledgerMonth');
+          if (monthInput && !monthInput.disabled) monthInput.value = v.slice(0,7); // keep month aligned
+        }
+        renderLedgerTable();
+      });
+      df.__ledgerBound = true;
+    }
+    return true;
+  };
+  if (!attachDayListener()) {
+    let attempts = 0;
+    const iv = setInterval(() => {
+      attempts++;
+      if (attachDayListener() || attempts > 10) clearInterval(iv);
+    }, 500);
+  }
   const accFilter = document.getElementById('ledgerAccountFilter');
   if (accFilter) accFilter.addEventListener('change', () => renderLedgerTable());
 }
@@ -67,7 +90,9 @@ export function renderLedgerTable() {
   const monthEl = document.getElementById('ledgerMonth');
   const ym = monthEl?.value || '';
   const dayEl = document.getElementById('ledgerDay');
-  const dayVal = dayEl?.value || '';
+  let dayVal = dayEl?.value || '';
+  // Normalize day value to YYYY-MM-DD if larger timestamp entered
+  if (dayVal && dayVal.length > 10) dayVal = dayVal.slice(0,10);
   const accSel = document.getElementById('ledgerAccountFilter');
   const accId = accSel?.value || '';
   if (!accId) {
@@ -83,8 +108,11 @@ export function renderLedgerTable() {
   // Filter to exact day or to month range
   const rows = _txns.filter(t => {
     const dOnly = dateOnly(t.date);
-    if (dayVal) return dOnly === dayVal && t.accountId === accId;
-    return (!ym || dOnly.startsWith(ym + '-')) && t.accountId === accId;
+    if (dayVal) {
+      if (dOnly !== dayVal) return false;
+      return t.accountId === accId;
+    }
+    return (!ym || (dOnly.startsWith(ym + '-'))) && t.accountId === accId;
   });
   if (!rows.length) {
     tbody.innerHTML = '';
