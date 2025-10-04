@@ -77,10 +77,10 @@ export function renderLedgerTable() {
     return;
   }
 
-  // Filter to month and account
+  // Filter to day (exact prefix) or month + account
   const rows = _txns.filter(t => {
     const d = t.date || '';
-    if (dayVal) return (d === dayVal) && t.accountId === accId; // day filter overrides month granularity
+    if (dayVal) return d.startsWith(dayVal) && t.accountId === accId; // allow timestamps (date prefix)
     return (!ym || d.startsWith(ym + '-')) && t.accountId === accId;
   });
   if (!rows.length) {
@@ -95,7 +95,12 @@ export function renderLedgerTable() {
   const account = _accounts.find(a => a.id === accId);
   const openingBase = Number(account?.opening || 0);
   let opening = openingBase;
-  if (ym) {
+  if (dayVal) {
+    // For a specific day: opening = base opening + all transactions strictly before that day
+    const prior = _txns.filter(t => t.accountId === accId && (t.date||'') < dayVal);
+    for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
+  } else if (ym) {
+    // For a month: opening = base opening + all transactions before first of that month
     const prior = _txns.filter(t => t.accountId === accId && (t.date||'') < `${ym}-01`);
     for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
   }
