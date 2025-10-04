@@ -101,7 +101,7 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       </td>
       <td class="px-3 py-2 text-right tabular-nums">$${Number(employee.salary ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
       <td class="px-3 py-2 whitespace-nowrap">${formatDate(employee.joinDate)}</td>
-      <td class="px-3 py-2 text-center">
+      <td class="px-0 py-2 text-center">
         <div class="action-buttons">
           <button class="action-btn view-btn" onclick="viewEmployee('${employee.id}', 'employees')"><i class="fas fa-eye"></i></button>
           <button class="action-btn edit-btn" onclick="editEmployee('${employee.id}', 'employees')"><i class="fas fa-edit"></i></button>
