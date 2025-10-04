@@ -95,218 +95,92 @@ document.addEventListener('keydown', (e) => {
 });
 
 function __rebuildExpiryNotifications() {
-  const utils = window.__utils || {};
-  // Fallback: import function via dynamic if not already collected; but we rely on modules already imported
-  // We'll reconstruct statuses using the same logic in modules: getEmployeeStatus
-  // We can call getEmployeeStatus via a cached reference from modules by creating a lightweight mirror using a global injection if needed; simpler: duplicate minimal logic here
-  // Instead, leverage employeesRenderTable side-effect? Too indirect. We'll compute statuses directly below replicating minimal logic.
-  const today = new Date();
-  const thirtyDaysFromNow = new Date(today);
-  thirtyDaysFromNow.setDate(today.getDate() + 30);
-  const all = [...employees, ...temporaryEmployees.map(e => ({ ...e, __which:'temporary'}))];
-  const validIds = new Set();
-  all.forEach(emp => {
-    const which = emp.__which ? 'temporary' : 'employees';
-    let tooltipParts = [];
-    let status = 'valid';
-    const check = (val, label) => {
-      if (!val) return; const d = new Date(val); if (isNaN(d.getTime())) return; const daysUntil = Math.ceil((d - today)/(1000*60*60*24)); if (d <= thirtyDaysFromNow) { status='expiring'; const msg = daysUntil < 0 ? `${label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil)===1?'':'s'} ago` : `${label} expires in ${daysUntil} day${daysUntil===1?'':'s'}`; tooltipParts.push(msg);} };
-    check(emp.qidExpiry || emp.qid_expiry || emp.QIDExpiry || emp.qidExpire || emp.qidExpireDate, 'Qatar ID');
-    check(emp.passportExpiry || emp.passport_expiry || emp.PassportExpiry || emp.passportExpire || emp.passportExpireDate, 'Passport');
-    if (status === 'expiring') {
-      const id = `expiry-${which}-${emp.id}`;
-      validIds.add(id);
-      __addOrUpdateExpiryNotification(emp, which, tooltipParts.join('; '));
-    }
-  });
-  __pruneExpiryNotifications(validIds);
-  __renderNotifications();
-}
+  // Rebuild list of expiry-related notifications (QID / Passport within next 30 days or already expired)
+  try {
+    const today = new Date();
+    const horizon = new Date();
+    horizon.setDate(today.getDate() + 30);
 
-__injectNotificationStylesOnce();
+    // Collect all employees (permanent + temporary) tagging their origin
+    const all = [
+      ...(Array.isArray(employees) ? employees.map(e => ({ ...e, __which: 'employees' })) : []),
+      ...(Array.isArray(temporaryEmployees) ? temporaryEmployees.map(e => ({ ...e, __which: 'temporary' })) : []),
+    ];
 
-// Force closed state on DOM ready and delay enabling toggle to block any premature scripted interaction
-document.addEventListener('DOMContentLoaded', () => {
-  const panel = document.getElementById('notificationsPanel');
-  const btn = document.getElementById('notificationsBtn');
-  if (panel) panel.classList.add('hidden');
-  if (btn) btn.setAttribute('aria-expanded','false');
-  setTimeout(()=> { __notifUserInteractionEnabled = true; }, 150);
-});
+    const newIds = new Set();
 
-// =====================
-// Generic Grid Engine (Excel-like) for Accounts tables
-// =====================
-let __gridCache = (window.__gridCache ||= {}); // { [tableId]: { [rowKey]: {field:value} } }
-let __gridCtx = null; // { tbody, tableId, opts }
-let __gridSel = null; // { sr, sc, er, ec }
-let __gridEditing = null; // { r,c,cell,field,original }
-let __gridActive = false;
+    const ensureNotifHelpers = () => {
+      if (!Array.isArray(window.__notifications)) window.__notifications = [];
+      if (typeof window.__renderNotifications !== 'function') return; // rendering will be skipped if UI helper missing
+    };
 
-function __grid_injectStyles() {
-  if (document.getElementById('grid-styles-global')) return;
-  const s = document.createElement('style');
-  s.id = 'grid-styles-global';
-  s.textContent = `
-    /* Global grid styles (Accounts) */
-    td.grid-cell, th.grid-cell { border: 1px solid #e5e7eb; }
-    table:has(td.grid-cell) { border-collapse: separate; border-spacing: 0; }
-    td.grid-cell { position: relative; cursor: cell; }
-    td.grid-cell.readonly { background: #fafafa; color: #475569; }
-    td.grid-cell.grid-active { outline: 2px solid #4f46e5; outline-offset: -2px; background: #eef2ff; }
-    td.grid-cell.grid-selected { background: #eef2ff; }
-    td.grid-cell.editing { outline: 2px solid #22c55e; background: #ecfdf5; }
-    td.grid-cell[contenteditable="true"] { caret-color: #111827; }
-  `;
-  document.head.appendChild(s);
-}
-function __grid_fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`; }
-function __grid_parseNumber(s) { if (typeof s!=='string') return Number(s||0); const t=s.replace(/[^0-9.\-]/g,''); const v=Number(t); return isFinite(v)?v:0; }
-function __grid_isEditableCol(c) { const cols = __gridCtx?.opts?.editableCols || []; return cols.includes(c); }
-function __grid_isNumericCol(c) { const cols = __gridCtx?.opts?.numericCols || []; return cols.includes(c); }
-function __grid_getCell(r,c) { return __gridCtx?.tbody?.querySelector?.(`td.grid-cell[data-row="${r}"][data-col="${c}"]`)||null; }
-function __grid_clearSel() { if (!__gridCtx?.tbody) return; __gridCtx.tbody.querySelectorAll('td.grid-cell.grid-active, td.grid-cell.grid-selected').forEach(el=>el.classList.remove('grid-active','grid-selected')); }
-function __grid_applySel() {
-  if (!__gridCtx?.tbody || !__gridSel) return;
-  const { sr, sc, er, ec } = __gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec);
-  for (let r=r0;r<=r1;r++){ for(let c=c0;c<=c1;c++){ const cell=__grid_getCell(r,c); if (cell) cell.classList.add('grid-selected'); }}
-  const active=__grid_getCell(sr,sc); if (active) active.classList.add('grid-active');
-}
-function __grid_setActive(r,c,extend=false) {
-  if (!__gridCtx) return;
-  const maxR = (__gridCtx.tbody?.querySelectorAll('tr')?.length||1)-1;
-  const maxC = (__gridCtx.opts?.maxCols ?? 0);
-  r = Math.max(0, Math.min(maxR, r)); c = Math.max(0, Math.min(maxC, c));
-  if (!extend || !__gridSel) __gridSel = { sr:r, sc:c, er:r, ec:c }; else { __gridSel.er=r; __gridSel.ec=c; }
-  __grid_clearSel(); __grid_applySel();
-}
-function __grid_stopEdit(save) {
-  if (!__gridEditing) return;
-  const { r,c,cell,field,original } = __gridEditing;
-  const text = cell.textContent || '';
-  let display = text, toStore = text;
-  if (__grid_isNumericCol(c)) { const num = __grid_parseNumber(text); display = __grid_fmtCurrency(num); toStore = String(num); }
-  if (save) {
-    cell.setAttribute('data-raw', toStore);
-    const key = __gridCtx.opts.getRowKey(r);
-    const bucket = (__gridCache[__gridCtx.tableId] ||= {});
-    const row = (bucket[key] ||= {});
-    if (field) row[field] = __grid_isNumericCol(c) ? __grid_parseNumber(toStore) : text;
-    if (typeof __gridCtx.opts.recompute === 'function') { try { __gridCtx.opts.recompute(r, { rowKey:key, row }); } catch {} }
-  } else {
-    const d = __grid_isNumericCol(c) ? __grid_fmtCurrency(__grid_parseNumber(original)) : original; cell.textContent = d;
-  }
-  cell.removeAttribute('contenteditable'); cell.classList.remove('editing'); __gridEditing = null;
-}
-function __grid_startEdit(r,c) {
-  if (!__grid_isEditableCol(c)) return; const cell = __grid_getCell(r,c); if (!cell) return;
-  if (__gridEditing) __grid_stopEdit(false);
-  const field = cell.getAttribute('data-field'); const raw = cell.getAttribute('data-raw') || cell.textContent;
-  __gridEditing = { r,c,cell,field,original: raw };
-  cell.classList.add('editing'); cell.setAttribute('contenteditable','true');
-  if (__grid_isNumericCol(c)) { const v = __grid_parseNumber(raw); cell.textContent = String(v||0); }
-  const range=document.createRange(); range.selectNodeContents(cell); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
-}
-function makeTableGrid(tbody, opts) {
-  __grid_injectStyles(); if (!tbody) return;
-  const rows = Array.from(tbody.querySelectorAll('tr'));
-  if (!rows.length) return;
-  const maxCols = rows.reduce((m,tr)=>Math.max(m, tr.children.length-1), 0);
-  opts.maxCols = maxCols;
-  // Annotate cells
-  rows.forEach((tr, r) => {
-    Array.from(tr.children).forEach((td, c) => {
-      td.classList.add('grid-cell'); td.setAttribute('data-row', String(r)); td.setAttribute('data-col', String(c));
-      const field = opts.fields?.[c] || ''; if (field) td.setAttribute('data-field', field);
-      if ((opts.numericCols||[]).includes(c)) {
-        const raw = td.getAttribute('data-raw') || __grid_parseNumber(td.textContent||'');
-        td.setAttribute('data-raw', String(raw));
-      }
-      if (!(opts.editableCols||[]).includes(c)) td.classList.add('readonly');
-    });
-  });
-  // Context
-  __gridCtx = { tbody, tableId: opts.tableId, opts };
-  __gridActive = true; __grid_setActive(0,0);
-  // Wire events once per tbody
-  if (!tbody.__gridWired) {
-    tbody.addEventListener('mousedown', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; __gridActive = true; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_setActive(r,c, e.shiftKey); });
-    tbody.addEventListener('dblclick', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_startEdit(r,c); });
-    tbody.__gridWired = true;
-  }
-  if (!document.__gridKeyWired) {
-    document.addEventListener('keydown', (e) => {
-      if (!__gridActive) return; if (__gridEditing) { if (e.key==='Enter'){ e.preventDefault(); __grid_stopEdit(true); return;} if(e.key==='Escape'){ e.preventDefault(); __grid_stopEdit(false); return;} return; }
-      if (!__gridSel) return; const { sr, sc } = __gridSel;
-      if (e.key==='F2'){ e.preventDefault(); __grid_startEdit(sr,sc); return; }
-      if (e.key==='Enter'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
-      if (e.key==='Tab'){ e.preventDefault(); __grid_setActive(sr, sc + (e.shiftKey?-1:1)); return; }
-      if (e.key==='ArrowLeft'){ e.preventDefault(); __grid_setActive(sr, sc-1); return; }
-      if (e.key==='ArrowRight'){ e.preventDefault(); __grid_setActive(sr, sc+1); return; }
-      if (e.key==='ArrowUp'){ e.preventDefault(); __grid_setActive(sr-1, sc); return; }
-      if (e.key==='ArrowDown'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
-      if (typeof e.key === 'string' && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (__grid_isEditableCol(sc)) {
-          __grid_startEdit(sr,sc);
-          setTimeout(()=>{ try { if (__gridEditing?.cell) __gridEditing.cell.textContent = e.key; } catch {} }, 0);
-          e.preventDefault();
+    ensureNotifHelpers();
+
+    all.forEach(emp => {
+      if (!emp || !emp.id) return;
+      const expiries = [
+        { label: 'Qatar ID', value: emp.qidExpiry || emp.qid_expiry || emp.QIDExpiry || emp.qidExpire || emp.qidExpireDate },
+        { label: 'Passport', value: emp.passportExpiry || emp.passport_expiry || emp.PassportExpiry || emp.passportExpire || emp.passportExpireDate },
+      ];
+      const tooltipParts = [];
+      let anyExpiring = false;
+      expiries.forEach(ex => {
+        if (!ex.value) return;
+        const d = new Date(ex.value);
+        if (isNaN(d.getTime())) return;
+        if (d <= horizon) {
+          const daysUntil = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+            const msg = daysUntil < 0
+              ? `${ex.label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? '' : 's'} ago`
+              : `${ex.label} expires in ${daysUntil} day${daysUntil === 1 ? '' : 's'}`;
+          tooltipParts.push(msg);
+          anyExpiring = true;
         }
-      }
+      });
+      if (!anyExpiring) return;
+      const id = `expiry-${emp.__which}-${emp.id}`;
+      newIds.add(id);
+      // Upsert notification
+      let list = window.__notifications;
+      const existingIdx = list.findIndex(n => n.id === id);
+      const payload = {
+        id,
+        type: 'expiry',
+        message: tooltipParts.join('; '),
+        employeeId: emp.id,
+        which: emp.__which,
+        updated: Date.now(),
+      };
+      if (existingIdx >= 0) list[existingIdx] = { ...list[existingIdx], ...payload };
+      else list.push({ created: Date.now(), ...payload });
     });
-    document.addEventListener('copy', (e) => { if (!__gridActive || !__gridSel) return; const {sr,sc,er,ec}=__gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec); const out=[]; for(let r=r0;r<=r1;r++){const row=[]; for(let c=c0;c<=c1;c++){const cell=__grid_getCell(r,c); row.push(cell ? (cell.getAttribute('data-raw')||cell.textContent||'') : '');} out.push(row.join('\t'));} try{ e.clipboardData.setData('text/plain', out.join('\n')); e.preventDefault(); }catch{} });
-    document.addEventListener('paste', (e) => { if (!__gridActive || !__gridSel) return; const text=e.clipboardData?.getData('text/plain'); if (!text) return; const {sr,sc}=__gridSel; const rows=text.split(/\r?\n/); for (let i=0;i<rows.length;i++){ if (rows[i]==='') continue; const cols=rows[i].split('\t'); for (let j=0;j<cols.length;j++){ const r=sr+i, c=sc+j; if (!__grid_isEditableCol(c)) continue; const cell=__grid_getCell(r,c); if (!cell) continue; const field=cell.getAttribute('data-field'); const key=__gridCtx.opts.getRowKey(r); const bucket=(__gridCache[__gridCtx.tableId] ||= {}); const row=(bucket[key] ||= {}); const val=cols[j]; if (__grid_isNumericCol(c)) { const num=__grid_parseNumber(val); row[field]=num; cell.setAttribute('data-raw', String(num)); cell.textContent=__grid_fmtCurrency(num); } else { row[field]=val; cell.setAttribute('data-raw', val); cell.textContent=val; } if (typeof __gridCtx.opts.recompute==='function') { try { __gridCtx.opts.recompute(r,{rowKey:key,row}); } catch {} } } } e.preventDefault(); });
-    document.addEventListener('mousedown', (e) => { const accSec=document.getElementById('accountsSection'); if (accSec && !accSec.contains(e.target)) { if (__gridEditing) __grid_stopEdit(true); __gridActive=false; } });
-    document.__gridKeyWired = true;
+
+    // Remove obsolete expiry notifications
+    if (Array.isArray(window.__notifications)) {
+      const before = window.__notifications.length;
+      window.__notifications = window.__notifications.filter(n => !(/^expiry-/.test(n.id)) || newIds.has(n.id));
+      if (before !== window.__notifications.length) {
+        // changed
+      }
+    }
+    try { window.__renderNotifications && window.__renderNotifications(); } catch {}
+  } catch (e) {
+    console.warn('Failed to rebuild expiry notifications', e);
   }
 }
+// Expose setter for modules to update accounts shadow
+window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
 
-// Initialize the app
-document.addEventListener('DOMContentLoaded', () => {
-  // IMPORTANT: Hide app and show login immediately on load
-  const loginPage = document.getElementById('loginPage');
-  const appRoot = document.getElementById('appRoot');
-  if (loginPage) loginPage.style.display = '';
-  if (appRoot) appRoot.style.display = 'none';
-
-  // Theme toggle removed
-  setupEventListeners();
-  setDefaultJoinDate();
-  // Wire Accounts sub-tab buttons explicitly (in addition to delegated handler)
-  try { wireAccountsTabButtons(); } catch {}
-  // Always-available fallback to open cash txn modal even if module wiring hasn't attached yet
-  try {
-    window.__openCashTxnFallback = function(kind) {
-      const modal = document.getElementById('cashTxnModal');
-      if (!modal) return false;
-      const form = document.getElementById('cashTxnForm');
-      if (form) try { form.reset(); } catch {}
-      const d = document.getElementById('cfDate');
-      if (d) { try { d.valueAsDate = new Date(); } catch {} }
-      const typeSel = document.getElementById('cfType');
-      if (typeSel) {
-        const v = (kind === 'out') ? 'out' : 'in';
-        typeSel.value = v;
-        typeSel.disabled = true;
-      }
-      // Focus amount quickly
-      setTimeout(() => { try { document.getElementById('cfAmount')?.focus(); } catch {} }, 0);
-      modal.classList.add('show');
-      return true;
-    }
-  } catch {}
-  // Expose setter for modules to update accounts shadow
-  window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
-
-  // Stronger modal fix: ensure #editFundModal is appended to body to avoid stacking/scope issues
-  try {
+// Stronger modal fix: ensure #editFundModal is appended to body to avoid stacking/scope issues
+try {
     const efm = document.getElementById('editFundModal');
     if (efm && efm.parentElement !== document.body) {
       document.body.appendChild(efm);
       try { console.debug('[Fund] editFundModal moved to body'); } catch {}
     }
-  } catch {}
-  // When accounts update, refresh cashflow/ledger dropdowns if visible
-  window.addEventListener('accounts:updated', () => {
+} catch {}
+// When accounts update, refresh cashflow/ledger dropdowns if visible
+window.addEventListener('accounts:updated', () => {
     try { renderCashflowTable?.(); } catch {}
     try { refreshLedgerAccounts?.(); } catch {}
     try { updateAccountsFundCard(); } catch {}
@@ -318,9 +192,9 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAccountsOverview();
       }
     } catch {}
-  });
-  // Keep a cashflow shadow array to compute fund total
-  window.addEventListener('cashflow:updated', (e) => {
+});
+// Keep a cashflow shadow array to compute fund total
+window.addEventListener('cashflow:updated', (e) => {
     try { __cashflowShadow = Array.isArray(e.detail) ? e.detail.slice() : []; } catch { __cashflowShadow = []; }
     try { updateAccountsFundCard(); } catch {}
     // Update Overview metrics and Transactions filters/live table if those tabs are visible
@@ -328,10 +202,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const ovTab = document.getElementById('accountsTabOverview');
       if (ovTab && ovTab.style.display !== 'none') renderAccountsOverview();
     } catch {}
-  });
+});
 
-  // Auth state listener
-  onAuthStateChanged(auth, (user) => {
+// Auth state listener
+onAuthStateChanged(auth, (user) => {
     authInitialized = true;
     authed = !!user;
     updateAuthUI(user);
@@ -463,13 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
       try { if (__unsubFundAccounts) { __unsubFundAccounts(); __unsubFundAccounts = null; } } catch {}
       try { if (__unsubFundCashflows) { __unsubFundCashflows(); __unsubFundCashflows = null; } } catch {}
       try { if (__unsubFundStats) { __unsubFundStats(); __unsubFundStats = null; } } catch {}
-    employees = [];
-    temporaryEmployees = [];
+      employees = [];
+      temporaryEmployees = [];
       renderEmployeeTable();
       renderTemporaryTable();
-    try { renderClientsTable(); } catch {}
-    try { renderAssignmentsTable(); } catch {}
-  renderPayrollTable();
+      try { renderClientsTable(); } catch {}
+      try { renderAssignmentsTable(); } catch {}
+      renderPayrollTable();
       updateStats();
       updateDepartmentFilter();
       // Reset section visibility for next sign-in
@@ -477,7 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
       try { ensureCurrentMonthBalances(); } catch {}
     }
   });
-});
+
+
+// END auth state listener block
+
 
 // Real-time listener for employees
 function loadEmployeesRealtime() {
