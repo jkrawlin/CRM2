@@ -19,6 +19,8 @@ export function initLedger(deps) {
   try { populateAccountFilter(); } catch {}
   const monthFilter = document.getElementById('ledgerMonth');
   if (monthFilter) monthFilter.addEventListener('change', () => subscribeLedger());
+  const dayFilter = document.getElementById('ledgerDay');
+  if (dayFilter) dayFilter.addEventListener('change', () => renderLedgerTable());
   const accFilter = document.getElementById('ledgerAccountFilter');
   if (accFilter) accFilter.addEventListener('change', () => renderLedgerTable());
 }
@@ -64,6 +66,8 @@ export function renderLedgerTable() {
 
   const monthEl = document.getElementById('ledgerMonth');
   const ym = monthEl?.value || '';
+  const dayEl = document.getElementById('ledgerDay');
+  const dayVal = dayEl?.value || '';
   const accSel = document.getElementById('ledgerAccountFilter');
   const accId = accSel?.value || '';
   if (!accId) {
@@ -74,7 +78,11 @@ export function renderLedgerTable() {
   }
 
   // Filter to month and account
-  const rows = _txns.filter(t => (!ym || (t.date||'').startsWith(ym + '-')) && t.accountId === accId);
+  const rows = _txns.filter(t => {
+    const d = t.date || '';
+    if (dayVal) return (d === dayVal) && t.accountId === accId; // day filter overrides month granularity
+    return (!ym || d.startsWith(ym + '-')) && t.accountId === accId;
+  });
   if (!rows.length) {
     tbody.innerHTML = '';
     empty.classList.remove('hidden');
