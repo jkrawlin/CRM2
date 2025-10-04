@@ -1757,10 +1757,18 @@ async function buildAndPrintLedger() {
     </div>
     <div class="lp-watermark">CONFIDENTIAL</div>
   `;
+  // Make visible (only becomes visible in print due to CSS visibility rules)
   try { host.style.display = 'block'; } catch {}
+  // Force a reflow so the browser acknowledges the new DOM before scheduling frames
   try { void host.offsetHeight; } catch {}
-  setTimeout(() => { try { window.print(); } catch {} }, 60);
-  setTimeout(() => { try { host.style.display='none'; } catch {} }, 2500);
+  const doPrint = () => {
+    try { window.print(); } catch (e) { console.error('Print failed', e); }
+    finally { try { host.style.display='none'; } catch {} }
+  };
+  // Two consecutive rAF calls: first schedules after style & layout, second after paint
+  requestAnimationFrame(() => {
+    requestAnimationFrame(doPrint);
+  });
 }
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
