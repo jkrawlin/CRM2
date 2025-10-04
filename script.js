@@ -84,6 +84,8 @@ let __unsubFundStats = null;
 // =====================
 let __notifications = []; // { id, type:'expiry', message, employeeId, which }
 let __notifPanelOpen = false;
+let __notifPanelPortalled = false;
+let __notifRepositionHandlerAttached = false;
 
 function __injectNotificationStylesOnce() {
   if (document.getElementById('notificationsStyles')) return;
@@ -91,7 +93,8 @@ function __injectNotificationStylesOnce() {
   style.id = 'notificationsStyles';
   style.textContent = `
     .notifications-wrapper { position: relative; }
-    #notificationsPanel { position: absolute; top: 110%; right: 0; width: 320px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 28px rgba(0,0,0,0.15); padding:10px 10px 12px; z-index:9999; flex-direction:column; gap:8px; }
+    /* Base panel styles (will be portalled to body to avoid clipping) */
+    #notificationsPanel { position: fixed; width: 340px; max-height: 480px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 8px 32px rgba(15,23,42,0.18); padding:10px 10px 12px; z-index:50000; flex-direction:column; gap:8px; overflow-y:auto; overscroll-behavior:contain; }
     /* Hidden state handled by Tailwind 'hidden' class; show state when not hidden */
     #notificationsPanel.hidden { display:none !important; }
     #notificationsPanel:not(.hidden) { display:flex; }
@@ -172,16 +175,48 @@ function __renderNotifications() {
   });
 }
 
-function __toggleNotificationsPanel(force) {
+function __positionNotificationsPanel() {
   const btn = document.getElementById('notificationsBtn');
   const panel = document.getElementById('notificationsPanel');
+  if (!btn || !panel || panel.classList.contains('hidden')) return;
+  const rect = btn.getBoundingClientRect();
+  const panelWidth = panel.offsetWidth || 340;
+  const margin = 8;
+  let top = rect.bottom + margin;
+  let left = rect.right - panelWidth;
+  if (left < 8) left = 8;
+  const panelHeight = panel.offsetHeight || 0;
+  const maxTop = window.innerHeight - (panelHeight + 8);
+  if (top > maxTop) top = Math.max(8, rect.top - panelHeight - margin);
+  panel.style.top = `${Math.max(8, top)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+}
+
+function __attachNotifRepositionHandlers() {
+  if (__notifRepositionHandlerAttached) return;
+  __notifRepositionHandlerAttached = true;
+  window.addEventListener('resize', __positionNotificationsPanel, { passive: true });
+  window.addEventListener('scroll', __positionNotificationsPanel, { passive: true });
+}
+
+function __toggleNotificationsPanel(force) {
+  const btn = document.getElementById('notificationsBtn');
+  let panel = document.getElementById('notificationsPanel');
   if (!btn || !panel) return;
   const wantOpen = force !== undefined ? force : !__notifPanelOpen;
   __notifPanelOpen = wantOpen;
   if (wantOpen) {
+    // Portal to body if not already
+    if (!__notifPanelPortalled) {
+      document.body.appendChild(panel); // move out of potentially clipped container
+      __notifPanelPortalled = true;
+    }
     panel.classList.remove('hidden');
+    panel.classList.add('notif-anim');
     btn.setAttribute('aria-expanded','true');
-    setTimeout(()=> panel.focus(), 0);
+    __attachNotifRepositionHandlers();
+    // Allow layout to settle then position
+    requestAnimationFrame(() => { __positionNotificationsPanel(); setTimeout(()=> panel.focus(), 0); });
   } else {
     panel.classList.add('hidden');
     btn.setAttribute('aria-expanded','false');
