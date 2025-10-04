@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251005-01';
+import { db, auth, storage } from './firebase-config.js?v=20251005-02';
 import {
   collection,
   getDocs,
@@ -36,15 +36,15 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251003-03';
+} from './modules/payroll.js?v=20251005-01';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-11';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251004-11';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251005-01';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251005-01';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
-import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20251004-03';
+import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts, printLedger } from './modules/ledger.js?v=20251005-01';
 // Shared utilities (needed for payroll modal account masking & date formatting)
 import { maskAccount, formatDate } from './modules/utils.js';
 
