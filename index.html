@@ -5,13 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Employee Management System</title>
     <link rel="stylesheet" href="assets/tailwind.css?v=20251003-04" />
-    <link rel="stylesheet" href="styles.css?v=20251004-11" />
+    <link rel="stylesheet" href="styles.css?v=20251004-13" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
         <style id="sidebar-toggle-css">
             /* Ensure the sidebar can be collapsed even when Tailwind applies md:flex */
             .sidebar-collapsed #sidebar { display: none !important; }
             .sidebar-collapsed #openSidebarBtn { display: inline-flex !important; }
+        </style>
+        <style id="ledger-print-styles">
+            /* Professional Ledger Print Styles */
+            #ledgerPrintArea { display:none; font-family: Inter, Arial, sans-serif; color:#1f2937; }
+            #ledgerPrintArea .lp-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; }
+            #ledgerPrintArea .lp-brand { font-size:22px; font-weight:800; letter-spacing:.5px; color:#4F46E5; }
+            #ledgerPrintArea .lp-meta { font-size:11px; line-height:1.3; text-align:right; color:#475569; }
+            #ledgerPrintArea h2 { font-size:18px; font-weight:700; margin:0 0 4px; letter-spacing:.5px; }
+            #ledgerPrintArea .lp-range { font-size:12px; margin-bottom:6px; color:#334155; }
+            #ledgerPrintArea .lp-summary { font-size:12px; margin:8px 0 12px; padding:6px 10px; background:#F1F5F9; border:1px solid #E2E8F0; border-radius:6px; }
+            #ledgerPrintArea table { width:100%; border-collapse:separate; border-spacing:0; font-size:11px; }
+            #ledgerPrintArea thead th { background:#EEF2FF; color:#1e293b; font-weight:600; font-size:11px; padding:6px 6px; border:1px solid #e2e8f0; text-align:left; }
+            #ledgerPrintArea tbody td { padding:5px 6px; border:1px solid #e2e8f0; vertical-align:top; }
+            #ledgerPrintArea tbody tr:nth-child(even) { background:#F8FAFC; }
+            #ledgerPrintArea tbody tr.day-total-row { background:#F1F5F9; font-weight:600; }
+            #ledgerPrintArea tbody tr.opening-row { background:#E0F2FE; font-weight:600; }
+            #ledgerPrintArea tbody tr.grand-total-row { background:#DCFCE7; font-weight:700; }
+            #ledgerPrintArea .lp-footer { margin-top:14px; font-size:10px; color:#64748B; display:flex; justify-content:space-between; align-items:center; }
+            #ledgerPrintArea .lp-watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:64px; font-weight:800; color:rgba(99,102,241,0.06); pointer-events:none; user-select:none; }
+            #ledgerPrintArea .mono { font-family: 'SF Mono','Consolas','Courier New',monospace; letter-spacing:-0.25px; }
+            @media print {
+                /* Show ledger print area */
+                #ledgerPrintArea { display:block !important; position:static !important; }
+                /* Hide everything else via visibility so nesting doesn't matter */
+                body * { visibility:hidden !important; }
+                #ledgerPrintArea, #ledgerPrintArea * { visibility:visible !important; }
+                @page { size:A4 portrait; margin:12mm; }
+                a { color:inherit; text-decoration:none; }
+            }
         </style>
                 <style id="payroll-print-handler">
                     /* Keep payroll print area hidden on screen; shown only for print */
@@ -367,6 +396,9 @@
             </div>
         </section>
 
+    <!-- Hidden print container for Ledger -->
+    <div id="ledgerPrintArea"></div>
+
         <!-- Clients Section -->
         <section id="clientsSection" data-section="clients" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
@@ -616,7 +648,8 @@
                             <label class="text-sm text-gray-600">Account</label>
                             <select id="ledgerAccountFilter" class="input min-w-[240px]"></select>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-3 flex-wrap justify-end">
+                            <button id="ledgerPrintBtn" class="btn btn-primary" title="Print current ledger"><i class="fas fa-print"></i> <span class="hidden sm:inline">Print</span></button>
                             <div id="ledgerSummary" class="text-sm text-gray-600"></div>
                         </div>
                     </div>
@@ -1918,6 +1951,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251004-10"></script>
+    <script type="module" src="script.js?v=20251005-05"></script>
 </body>
 </html>

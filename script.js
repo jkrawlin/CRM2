@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251004-01';
+import { db, auth, storage } from './firebase-config.js?v=20251005-01';
 import {
   collection,
   getDocs,
@@ -38,13 +38,15 @@ import {
   exportPayrollCsv as payrollExportPayrollCsv,
 } from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-10';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251004-10';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-11';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251004-11';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
-import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20250929-01';
+import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20251004-03';
+// Shared utilities (needed for payroll modal account masking & date formatting)
+import { maskAccount, formatDate } from './modules/utils.js';
 
 let employees = [];
 let temporaryEmployees = [];
@@ -1584,6 +1586,169 @@ function setAccountsSubTab(which) {
 // Expose for inline handlers (fallback)
 // Note: module-scoped functions are not global; attach explicitly
 try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
+
+// =====================
+// Ledger Printing
+// =====================
+document.addEventListener('click', (e) => {
+  if (e.target && (e.target.id === 'ledgerPrintBtn' || e.target.closest?.('#ledgerPrintBtn'))) {
+    try { buildAndPrintLedger(); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
+  }
+});
+
+function buildAndPrintLedger() {
+  const accSel = document.getElementById('ledgerAccountFilter');
+  const monthEl = document.getElementById('ledgerMonth');
+  const dayEl = document.getElementById('ledgerDay');
+  const tableBody = document.getElementById('ledgerTableBody');
+  if (!accSel || !tableBody) return;
+  const accountName = accSel.options[accSel.selectedIndex]?.text || 'Ledger';
+  const monthVal = monthEl?.value || '';
+  let dayVal = dayEl?.value || '';
+  // Fallback: if dayVal empty but structured view has a day (user clicked fast), pull from it
+  if (!dayVal && window.__ledgerCurrentView?.day) dayVal = window.__ledgerCurrentView.day;
+
+  // Diagnostics collection (will aid root cause analysis) ------------------
+  const diag = {};
+  try {
+    diag.dayInputValue = dayEl?.value || '';
+    diag.dayEffective = dayVal;
+    diag.accountSelectedId = accSel.value;
+    diag.accountSelectedText = accountName;
+    diag.visibleTableRowCount = tableBody.querySelectorAll('tr').length;
+    diag.firstFiveVisibleRows = Array.from(tableBody.querySelectorAll('tr')).slice(0,5).map(r => r.textContent.trim());
+    const firstRow = tableBody.querySelector('tr');
+    if (firstRow) {
+      const firstDateCell = firstRow.querySelector('td,th');
+      diag.visibleFirstRowDateCell = firstDateCell ? firstDateCell.textContent.trim() : null;
+    }
+    diag.__ledgerCurrentViewExists = !!window.__ledgerCurrentView;
+    if (window.__ledgerCurrentView) {
+      const v = window.__ledgerCurrentView;
+      diag.viewDay = v.day;
+      diag.viewTxnCount = Array.isArray(v.transactions) ? v.transactions.length : -1;
+      diag.viewFirstFiveTxnDates = (v.transactions||[]).slice(0,5).map(t => ({date:t.date, raw:t.rawDate, type:t.type, amt:t.amount}));
+    }
+  } catch {}
+
+  // Decide strategy:
+  // 1. If a specific day chosen AND there are already rows in the on-screen table -> clone those directly.
+  // 2. Else build from structured view (window.__ledgerCurrentView) with grouping (month/all view).
+  let rowsHtml = '';
+  if (dayVal) {
+    const visibleRows = Array.from(tableBody.querySelectorAll('tr'));
+    // Heuristic: visible table for day view should include opening + (n tx) + totals => >= 2 rows
+    if (visibleRows.length >= 2) {
+      rowsHtml = visibleRows.map(tr => tr.outerHTML).join('');
+      diag.path = 'DOM-clone-day';
+    } else {
+      diag.path = 'structured-day';
+      try { renderLedgerTable?.(); } catch {}
+      const view = window.__ledgerCurrentView;
+      if (view && Array.isArray(view.transactions)) {
+        const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+        let dayTxns = view.transactions.filter(t => t.date === dayVal || t.rawDate === dayVal);
+        if (!dayTxns.length && view.day === dayVal) dayTxns = view.transactions.slice();
+        let running = view.opening;
+        let debitDay = 0, creditDay = 0;
+        const out = [];
+        out.push(`<tr class=\"opening-row\"><td colspan=\"2\">Opening Balance</td><td></td><td></td><td style=\"text-align:right;\">${fmt(view.opening)}</td></tr>`);
+        for (const tx of dayTxns) {
+          const isIn = String(tx.type).toLowerCase()==='in';
+          const amt = Number(tx.amount||0);
+          if (isIn) { debitDay += amt; running += amt; } else { creditDay += amt; running -= amt; }
+          const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
+          out.push(`<tr>
+            <td>${escapeHtml(tx.date || dayVal)}</td>
+            <td>${escapeHtml(desc||'')}</td>
+            <td style=\"text-align:right;\">${isIn?fmt(amt):''}</td>
+            <td style=\"text-align:right;\">${!isIn?fmt(amt):''}</td>
+            <td style=\"text-align:right;\">${fmt(running)}</td>
+          </tr>`);
+        }
+        out.push(`<tr class=\"grand-total-row\"><td colspan=\"2\">Day Totals</td><td style=\"text-align:right;\">${fmt(debitDay)}</td><td style=\"text-align:right;\">${fmt(creditDay)}</td><td style=\"text-align:right;\">${fmt(running)}</td></tr>`);
+        rowsHtml = out.join('');
+      }
+      if (!rowsHtml) rowsHtml = `<tr><td colspan=\"5\" style=\"text-align:center;padding:12px;\">No entries for ${escapeHtml(dayVal)}</td></tr>`;
+    }
+  } else {
+    const view = window.__ledgerCurrentView;
+    if (view && Array.isArray(view.transactions) && view.transactions.length) {
+      diag.path = 'structured-month';
+      const groups = view.transactions.reduce((m, t) => { (m[t.date] = m[t.date] || []).push(t); return m; }, {});
+      const orderedDates = Object.keys(groups).sort();
+      let running = view.opening;
+      const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+      const rows = [];
+      rows.push(`<tr class=\"opening-row\"><td colspan=\"2\">Opening Balance</td><td></td><td></td><td style=\"text-align:right;\">${fmt(view.opening)}</td></tr>`);
+      for (const d of orderedDates) {
+        const dayTxns = groups[d];
+        let debitDay=0, creditDay=0;
+        for (const tx of dayTxns) {
+          const isIn = String(tx.type).toLowerCase()==='in';
+          const amt = Number(tx.amount||0);
+          if (isIn) { debitDay += amt; running += amt; } else { creditDay += amt; running -= amt; }
+          const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
+          rows.push(`<tr>
+            <td>${escapeHtml(d)}</td>
+            <td>${escapeHtml(desc||'')}</td>
+            <td style=\"text-align:right;\">${isIn?fmt(amt):''}</td>
+            <td style=\"text-align:right;\">${!isIn?fmt(amt):''}</td>
+            <td style=\"text-align:right;\">${fmt(running)}</td>
+          </tr>`);
+        }
+        rows.push(`<tr class=\"day-total-row\"><td colspan=\"2\">Day Total ${escapeHtml(d)}</td><td style=\"text-align:right;\">${fmt(debitDay)}</td><td style=\"text-align:right;\">${fmt(creditDay)}</td><td style=\"text-align:right;\">${fmt(running)}</td></tr>`);
+      }
+      rows.push(`<tr class=\"grand-total-row\"><td colspan=\"2\">Grand Totals</td><td style=\"text-align:right;\">${fmt(view.debitSum)}</td><td style=\"text-align:right;\">${fmt(view.creditSum)}</td><td style=\"text-align:right;\">${fmt(view.closing)}</td></tr>`);
+      rowsHtml = rows.join('');
+    } else {
+      diag.path = 'dom-clone-month-fallback';
+      rowsHtml = [...tableBody.querySelectorAll('tr')].map(tr => tr.outerHTML).join('');
+    }
+  }
+
+  diag.rowsHtmlLength = rowsHtml.length;
+  try { console.groupCollapsed('[Ledger Print Diagnostic]'); console.log(diag); if (window.__ledgerCurrentView) console.log('Structured View Object', window.__ledgerCurrentView); console.groupEnd(); } catch {}
+
+  const now = new Date();
+  const fmtDate = (d) => d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  const rangeLabel = dayVal ? `Day: ${dayVal}` : (monthVal ? `Month: ${monthVal}` : 'All');
+  const summary = document.getElementById('ledgerSummary')?.textContent || '';
+  const host = document.getElementById('ledgerPrintArea');
+  if (!host) return;
+  host.innerHTML = `
+    <div class="lp-header">
+      <div>
+        <div class="lp-brand">CRM LEDGER</div>
+        <h2>Account Ledger</h2>
+      </div>
+      <div class="lp-meta">
+        <div><strong>Account:</strong> ${escapeHtml(accountName)}</div>
+        <div><strong>Range:</strong> ${escapeHtml(rangeLabel)}</div>
+        <div><strong>Generated:</strong> ${escapeHtml(fmtDate(now))}</div>
+      </div>
+    </div>
+    ${summary ? `<div class="lp-summary"><strong>Summary:</strong> ${escapeHtml(summary)}</div>` : ''}
+    <table>
+      <thead><tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+      <tbody>${rowsHtml || `<tr><td colspan='5' style='text-align:center;padding:12px;'>No entries</td></tr>`}</tbody>
+    </table>
+    <div class="lp-footer">
+      <div>Printed by CRM System</div>
+      <div>Generated ${escapeHtml(fmtDate(now))}</div>
+    </div>
+    <div class="lp-watermark">CONFIDENTIAL</div>
+  `;
+  // Make sure it's visible only for print
+  try { host.style.display = 'block'; } catch {}
+  // Force layout
+  try { void host.offsetHeight; } catch {}
+  setTimeout(() => { try { window.print(); } catch {} }, 30);
+  // Hide again shortly after print dialog (best-effort)
+  setTimeout(() => { try { host.style.display='none'; } catch {} }, 2000);
+}
+
+// (Removed duplicate escapeHtml; single definition earlier in file)
 
 // Robust wiring for Accounts sub-tab buttons (direct listeners)
 function wireAccountsTabButtons() {
@@ -3954,11 +4119,7 @@ function showToast(message, type = 'success') {
 
 // Theme toggle removed: no theme initialization or toggle handlers
 
-// Format date
-function formatDate(dateString) {
-  const options = { year: 'numeric', month: 'short', day: 'numeric' };
-  return new Date(dateString).toLocaleDateString(undefined, options);
-}
+// (Removed duplicate formatDate; using imported helper from utils.js)
 
 // Add pulse and fadeOut animations (and badge style) once
 (function injectStyles() {

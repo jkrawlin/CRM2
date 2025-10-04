@@ -181,6 +181,33 @@ export function renderLedgerTable() {
     const accName = account?.name || '';
     sumEl.textContent = `${accName}: Opening ${fmt(opening)} • Debits ${fmt(debitSum)} • Credits ${fmt(creditSum)} • Closing ${fmt(running)} (${net>=0?'+':''}${fmt(net).replace('$','$')})`;
   }
+
+  // Expose structured data for external consumers (e.g., printing daily summaries)
+  try {
+    window.__ledgerCurrentView = {
+      accountId: accId,
+      month: ym,
+      day: dayVal || '',
+      opening,
+      closing: running,
+      debitSum,
+      creditSum,
+      transactions: rows.map(t => {
+        const rawDate = t.date || '';
+        const normalized = rawDate.slice(0,10);
+        return {
+          id: t.id || null,
+          date: normalized, // primary normalized date
+          rawDate,          // original string
+          type: t.type,
+          amount: Number(t.amount||0),
+          category: t.category || '',
+            notes: t.notes || '',
+          accountId: t.accountId
+        };
+      })
+    };
+  } catch {}
 }
 
 function escapeHtml(s) {
