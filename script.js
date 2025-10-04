@@ -55,176 +55,143 @@ let temporaryEmployees = [];
 let deleteEmployeeId = null;
 let currentSearch = '';
 let currentDepartmentFilter = '';
-// Removed per UX decision: always show terminated with visual cue
-let unsubscribeEmployees = null;
-let unsubscribeTemporary = null;
-// Subscriptions for clients/assignments are managed by their modules
-let authed = false;
-let authInitialized = false;
-let payrollInited = false;
-// Track current View modal context to lazy-load documents and manage blob URLs
-let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
-// Track which payroll sub-tab is active: 'table' or 'report' (always default to table)
-let currentPayrollSubTab = 'table';
-// Track current payroll view data for payslip
-let currentPayrollView = null;
-// Track last month we ensured balances snapshot to avoid redundant writes
-let lastBalanceEnsureMonth = null;
-// Shadow accounts list for cashflow module filters
-let __accountsShadow = [];
-// Fund computation caches and unsubscribers (snapshot-based, independent of UI filters)
-let __fundAccountsCache = [];
-let __fundCashflowsCache = [];
-let __unsubFundAccounts = null;
-let __unsubFundCashflows = null;
-// Bank-style fund: opening is stored in stats/fund; keep a live cache and unsub
-let __fundOpening = 0;
-let __unsubFundStats = null;
+function buildAndPrintLedger() {
+  const accSel = document.getElementById('ledgerAccountFilter');
+  const monthEl = document.getElementById('ledgerMonth');
+  const dayEl = document.getElementById('ledgerDay');
+  const tableBody = document.getElementById('ledgerTableBody');
+  if (!accSel || !tableBody) return;
+  const accountName = accSel.options[accSel.selectedIndex]?.text || 'Ledger';
+  const monthVal = monthEl?.value || '';
+  let dayVal = dayEl?.value || '';
+  if (!dayVal && window.__ledgerCurrentView?.day) dayVal = window.__ledgerCurrentView.day;
 
-// =====================
-// Notifications (expiring documents)
-// =====================
-let __notifications = []; // { id, type:'expiry', message, employeeId, which }
-let __notifPanelOpen = false;
-let __notifPanelPortalled = false;
-let __notifRepositionHandlerAttached = false;
-let __notifUserInteractionEnabled = false; // becomes true after first trusted user action
+  // Ensure structured view is current (non-blocking)
+  try { renderLedgerTable?.(); } catch {}
 
-function __injectNotificationStylesOnce() {
-  if (document.getElementById('notificationsStyles')) return;
-  const style = document.createElement('style');
-  style.id = 'notificationsStyles';
-  style.textContent = `
-    .notifications-wrapper { position: relative; }
-    /* Base panel styles (will be portalled to body to avoid clipping) */
-  #notificationsPanel { position: fixed; width: 340px; max-height: 480px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 12px 42px rgba(15,23,42,0.22); padding:10px 10px 12px; z-index:120500; flex-direction:column; gap:8px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
-    /* Hidden state handled by Tailwind 'hidden' class; show state when not hidden */
-    #notificationsPanel.hidden { display:none !important; }
-    #notificationsPanel:not(.hidden) { display:flex; }
-    #notificationsPanel:focus { outline: 2px solid #6366F1; outline-offset:2px; }
-    .notif-header { display:flex; align-items:center; justify-content:space-between; padding:2px 4px 4px; }
-    .notif-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#334155; margin:0; }
-    .notif-clear { background:transparent; border:none; color:#64748B; cursor:pointer; padding:4px; border-radius:6px; }
-    .notif-clear:hover { background:#F1F5F9; color:#334155; }
-    .notif-list { max-height:360px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
-    .notif-item { display:flex; align-items:flex-start; gap:8px; background:#F8FAFC; border:1px solid #E2E8F0; padding:8px 10px; border-radius:10px; font-size:12.5px; line-height:1.3; position:relative; }
-    .notif-item.expiry { border-color:#FECACA; background:#FEF2F2; }
-    .notif-icon { width:26px; height:26px; border-radius:8px; background:#FEE2E2; color:#B91C1C; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
-    .notif-item.expiry .notif-icon { background:#FEE2E2; color:#B91C1C; }
-    .notif-msg { flex:1; color:#334155; }
-    .notif-meta { font-size:11px; color:#64748B; margin-top:2px; }
-    .notif-emp-link { color:#2563EB; font-weight:600; cursor:pointer; text-decoration:none; }
-    .notif-emp-link:hover { text-decoration:underline; }
-    .notif-empty { text-align:center; padding:12px 4px; font-size:12px; }
-    #notificationsBadge { transition: transform .25s ease, opacity .25s ease; }
-    .notif-dismiss { position:absolute; top:6px; right:6px; background:transparent; border:none; color:#64748B; cursor:pointer; padding:2px 4px; border-radius:6px; font-size:11px; }
-    .notif-dismiss:hover { background:#E2E8F0; color:#334155; }
-  `;
-  document.head.appendChild(style);
-}
+  const view = window.__ledgerCurrentView;
+  let rowsHtml = '';
+  const fmtCurrency = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
 
-function __setNotifications(list) {
-  __notifications = list;
-  __renderNotifications();
-}
-
-function __addOrUpdateExpiryNotification(emp, which, tooltip) {
-  if (!emp || !emp.id) return;
-  const id = `expiry-${which}-${emp.id}`;
-  const days = /expires in ([-\d]+) day/.exec(tooltip || '') || /expired (\d+) day/.exec(tooltip || '');
-  const existingIdx = __notifications.findIndex(n => n.id === id);
-  const message = tooltip || 'Document expiring soon';
-  if (existingIdx >= 0) {
-    __notifications[existingIdx].message = message;
+  if (dayVal) {
+    // Prefer visible rows if already rendered for the selected day
+    const visibleRows = Array.from(tableBody.querySelectorAll('tr'));
+    if (visibleRows.length >= 2) {
+      rowsHtml = visibleRows.map(tr=>tr.outerHTML).join('');
+    } else if (view && Array.isArray(view.transactions)) {
+      let dayTxns = view.transactions.filter(t => t.date === dayVal || t.rawDate === dayVal);
+      if (!dayTxns.length && view.day === dayVal) dayTxns = view.transactions.slice();
+      let running = view.opening;
+      let debitDay=0, creditDay=0;
+      const out=[];
+      out.push(`<tr class="opening-row"><td colspan="2">Opening Balance</td><td></td><td></td><td style="text-align:right;">${fmtCurrency(view.opening)}</td></tr>`);
+      for (const tx of dayTxns) {
+        const isIn = String(tx.type).toLowerCase()==='in';
+        const amt = Number(tx.amount||0);
+        if (isIn) { debitDay+=amt; running+=amt; } else { creditDay+=amt; running-=amt; }
+        const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
+        out.push(`<tr>
+          <td>${escapeHtml(tx.date || dayVal)}</td>
+          <td>${escapeHtml(desc||'')}</td>
+          <td style="text-align:right;">${isIn?fmtCurrency(amt):''}</td>
+          <td style="text-align:right;">${!isIn?fmtCurrency(amt):''}</td>
+          <td style="text-align:right;">${fmtCurrency(running)}</td>
+        </tr>`);
+      }
+      out.push(`<tr class="grand-total-row"><td colspan="2">Day Totals</td><td style="text-align:right;">${fmtCurrency(debitDay)}</td><td style="text-align:right;">${fmtCurrency(creditDay)}</td><td style="text-align:right;">${fmtCurrency(running)}</td></tr>`);
+      rowsHtml = out.join('');
+    }
   } else {
-    __notifications.push({ id, type:'expiry', message, employeeId: emp.id, which });
+    if (view && Array.isArray(view.transactions) && view.transactions.length) {
+      const groups = view.transactions.reduce((m,t)=>{(m[t.date]=m[t.date]||[]).push(t);return m;},{});
+      const ordered = Object.keys(groups).sort();
+      let running = view.opening;
+      const rows=[];
+      rows.push(`<tr class="opening-row"><td colspan="2">Opening Balance</td><td></td><td></td><td style="text-align:right;">${fmtCurrency(view.opening)}</td></tr>`);
+      for (const d of ordered) {
+        const dayTxns = groups[d];
+        let debit=0, credit=0;
+        for (const tx of dayTxns) {
+          const isIn = String(tx.type).toLowerCase()==='in';
+          const amt = Number(tx.amount||0);
+            if (isIn) { debit+=amt; running+=amt; } else { credit+=amt; running-=amt; }
+          const desc = (tx.category ? tx.category : '') + (tx.notes ? (tx.category? ' — ': '') + tx.notes : '');
+          rows.push(`<tr>
+            <td>${escapeHtml(d)}</td>
+            <td>${escapeHtml(desc||'')}</td>
+            <td style="text-align:right;">${isIn?fmtCurrency(amt):''}</td>
+            <td style="text-align:right;">${!isIn?fmtCurrency(amt):''}</td>
+            <td style="text-align:right;">${fmtCurrency(running)}</td>
+          </tr>`);
+        }
+        rows.push(`<tr class="day-total-row"><td colspan="2">Day Total ${escapeHtml(d)}</td><td style="text-align:right;">${fmtCurrency(debit)}</td><td style="text-align:right;">${fmtCurrency(credit)}</td><td style="text-align:right;">${fmtCurrency(running)}</td></tr>`);
+      }
+      rows.push(`<tr class="grand-total-row"><td colspan="2">Grand Totals</td><td style="text-align:right;">${fmtCurrency(view.debitSum)}</td><td style="text-align:right;">${fmtCurrency(view.creditSum)}</td><td style="text-align:right;">${fmtCurrency(view.closing)}</td></tr>`);
+      rowsHtml = rows.join('');
+    } else {
+      rowsHtml = Array.from(tableBody.querySelectorAll('tr')).map(tr=>tr.outerHTML).join('');
+    }
   }
-}
 
-function __pruneExpiryNotifications(validIds) {
-  __notifications = __notifications.filter(n => !(n.type === 'expiry' && !validIds.has(n.id)));
-}
+  if (!rowsHtml) rowsHtml = `<tr><td colspan="5" style="text-align:center;padding:12px;">No entries${dayVal? ' for '+escapeHtml(dayVal):''}</td></tr>`;
 
-function __renderNotifications() {
-  const badge = document.getElementById('notificationsBadge');
-  const panel = document.getElementById('notificationsPanel');
-  const listEl = document.getElementById('notificationsList');
-  if (!badge || !panel || !listEl) return;
-  const count = __notifications.length;
-  if (count > 0) {
-    badge.classList.remove('hidden');
-    badge.setAttribute('aria-label', `${count} notification${count===1?'':'s'}`);
-  } else {
-    badge.classList.add('hidden');
-  }
-  listEl.innerHTML = '';
-  if (count === 0) {
-    listEl.classList.add('empty');
-    listEl.innerHTML = '<div class="notif-empty">No alerts</div>';
+  const now = new Date();
+  const fmtDate = (d) => d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const rangeLabel = dayVal ? `Day: ${dayVal}` : (monthVal ? `Month: ${monthVal}` : 'All');
+  const summary = document.getElementById('ledgerSummary')?.textContent || '';
+
+  const popup = window.open('', '_blank', 'noopener,noreferrer,width=980,height=900');
+  if (!popup || popup.closed) {
+    console.warn('Popup blocked - cannot open print window.');
+    showToast && showToast('Allow pop-ups for printing','error');
     return;
   }
-  listEl.classList.remove('empty');
-  __notifications.forEach(n => {
-    const div = document.createElement('div');
-    div.className = `notif-item ${n.type}`;
-    const icon = n.type === 'expiry' ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-info-circle"></i>';
-    div.innerHTML = `
-      <div class="notif-icon" aria-hidden="true">${icon}</div>
-      <div class="notif-msg">
-        ${n.message.replace(/(Qatar ID|Passport)/g, '<strong>$1</strong>')}<div class="notif-meta"><a data-notif-view href="#" class="notif-emp-link" data-which="${n.which}" data-eid="${n.employeeId}">View</a></div>
+
+  const doc = popup.document;
+  doc.write(`<!DOCTYPE html><html><head><title>Ledger Report - ${escapeHtml(accountName)}</title>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: light; }
+      @page { size:A4 portrait; margin:15mm; }
+      body { font-family: Inter, Arial, sans-serif; color:#1f2937; margin:0; padding:0; }
+      .lp-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; }
+      .lp-brand { font-size:22px; font-weight:800; letter-spacing:.5px; color:#4F46E5; }
+      h2 { font-size:20px; font-weight:700; margin:4px 0 0; }
+      .lp-meta { font-size:12px; line-height:1.3; text-align:right; color:#475569; }
+      .lp-summary { font-size:12px; margin:10px 0 14px; padding:8px 12px; background:#F1F5F9; border:1px solid #E2E8F0; border-radius:6px; }
+      table { width:100%; border-collapse:collapse; font-size:11px; }
+      thead th { background:#EEF2FF; color:#1e293b; font-weight:600; font-size:11px; padding:6px 6px; border:1px solid #e2e8f0; text-align:left; }
+      tbody td { padding:5px 6px; border:1px solid #e2e8f0; vertical-align:top; }
+      tbody tr:nth-child(even) { background:#F8FAFC; }
+      tbody tr.day-total-row { background:#F1F5F9; font-weight:600; }
+      tbody tr.opening-row { background:#E0F2FE; font-weight:600; }
+      tbody tr.grand-total-row { background:#DCFCE7; font-weight:700; }
+      .lp-footer { margin-top:22px; font-size:11px; color:#64748B; text-align:center; }
+      .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:70px; font-weight:800; color:rgba(99,102,241,0.06); pointer-events:none; user-select:none; }
+      @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+    </style>
+  </head><body>
+    <div class="lp-header">
+      <div>
+        <div class="lp-brand">CRM LEDGER</div>
+        <h2>Account Ledger</h2>
       </div>
-      <button class="notif-dismiss" data-notif-dismiss="${n.id}" title="Dismiss" aria-label="Dismiss">✕</button>`;
-    listEl.appendChild(div);
-  });
-}
-
-function __positionNotificationsPanel() {
-  const btn = document.getElementById('notificationsBtn');
-  const panel = document.getElementById('notificationsPanel');
-  if (!btn || !panel || panel.classList.contains('hidden')) return;
-  const rect = btn.getBoundingClientRect();
-  const panelWidth = panel.offsetWidth || 340;
-  const margin = 8;
-  let top = rect.bottom + margin;
-  let left = rect.right - panelWidth;
-  if (left < 8) left = 8;
-  const panelHeight = panel.offsetHeight || 0;
-  const maxTop = window.innerHeight - (panelHeight + 8);
-  if (top > maxTop) top = Math.max(8, rect.top - panelHeight - margin);
-  panel.style.top = `${Math.max(8, top)}px`;
-  panel.style.left = `${Math.round(left)}px`;
-}
-
-function __attachNotifRepositionHandlers() {
-  if (__notifRepositionHandlerAttached) return;
-  __notifRepositionHandlerAttached = true;
-  window.addEventListener('resize', __positionNotificationsPanel, { passive: true });
-  window.addEventListener('scroll', __positionNotificationsPanel, { passive: true });
-}
-
-function __toggleNotificationsPanel(force) {
-  const btn = document.getElementById('notificationsBtn');
-  let panel = document.getElementById('notificationsPanel');
-  if (!btn || !panel) return;
-  if (!__notifUserInteractionEnabled) return; // prevent auto-open before any user action
-  const wantOpen = force !== undefined ? force : !__notifPanelOpen;
-  __notifPanelOpen = wantOpen;
-  if (wantOpen) {
-    // Portal to body if not already
-    if (!__notifPanelPortalled) {
-      document.body.appendChild(panel); // move out of potentially clipped container
-      __notifPanelPortalled = true;
-    }
-    panel.classList.remove('hidden');
-    panel.classList.add('notif-anim');
-    btn.setAttribute('aria-expanded','true');
-    __attachNotifRepositionHandlers();
-    // Allow layout to settle then position
-    requestAnimationFrame(() => { __positionNotificationsPanel(); setTimeout(()=> panel.focus(), 0); });
-  } else {
-    panel.classList.add('hidden');
-    btn.setAttribute('aria-expanded','false');
-  }
+      <div class="lp-meta">
+        <div><strong>Account:</strong> ${escapeHtml(accountName)}</div>
+        <div><strong>Range:</strong> ${escapeHtml(rangeLabel)}</div>
+        <div><strong>Generated:</strong> ${escapeHtml(fmtDate(now))}</div>
+      </div>
+    </div>
+    ${summary ? `<div class="lp-summary"><strong>Summary:</strong> ${escapeHtml(summary)}</div>` : ''}
+    <table>
+      <thead><tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <div class="lp-footer">Printed by CRM System — Generated ${escapeHtml(fmtDate(now))}</div>
+    <div class="watermark">CONFIDENTIAL</div>
+    <script>window.addEventListener('load',()=>{setTimeout(()=>{ try { window.print(); } catch(e) { console.error(e); } setTimeout(()=>window.close(), 400); }, 200);});</script>
+  </body></html>`);
+  doc.close();
 }
 
 document.addEventListener('click', (e) => {
