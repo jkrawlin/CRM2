@@ -1592,7 +1592,13 @@ try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
 // =====================
 document.addEventListener('click', (e) => {
   if (e.target && (e.target.id === 'ledgerPrintBtn' || e.target.closest?.('#ledgerPrintBtn'))) {
-    try { const r = buildAndPrintLedger(); if (r && typeof r.catch === 'function') r.catch(err=>console.error('Ledger print failed (async)', err)); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
+    try {
+      const r = printLedgerPopup();
+      if (r && typeof r.catch === 'function') r.catch(err => console.error('Ledger print failed (async)', err));
+    } catch (err) {
+      console.error('Ledger print failed', err);
+      showToast && showToast('Failed to prepare ledger for print','error');
+    }
   }
 });
 
@@ -1608,7 +1614,8 @@ function ensureLedgerPrintArea() {
   return host;
 }
 
-async function buildAndPrintLedger() {
+// Renamed from buildAndPrintLedger to printLedgerPopup to avoid duplicate identifier issues
+async function printLedgerPopup() {
   const accSel = document.getElementById('ledgerAccountFilter');
   const monthEl = document.getElementById('ledgerMonth');
   const dayEl = document.getElementById('ledgerDay');
@@ -1770,6 +1777,9 @@ async function buildAndPrintLedger() {
     requestAnimationFrame(doPrint);
   });
 }
+
+// Expose (optional) for debugging
+try { window.printLedgerPopup = printLedgerPopup; } catch {}
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
 
