@@ -78,3 +78,32 @@ export function getExpiryIndicator(employee) {
 
   return { color, title };
 }
+
+// New status helper: returns { status: 'valid' | 'expiring', tooltip }
+export function getEmployeeStatus(employee) {
+  const today = new Date();
+  const thirtyDaysFromNow = new Date(today);
+  thirtyDaysFromNow.setDate(today.getDate() + 30);
+
+  let status = 'valid';
+  let tooltip = 'Documents valid';
+
+  const check = (val, label) => {
+    if (!val) return null;
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return null;
+    const daysUntil = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
+    if (d <= thirtyDaysFromNow) {
+      status = 'expiring';
+      const msg = daysUntil < 0
+        ? `${label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? '' : 's'} ago`
+        : `${label} expires in ${daysUntil} day${daysUntil === 1 ? '' : 's'}`;
+      tooltip = tooltip === 'Documents valid' ? msg : `${tooltip}; ${msg}`;
+    }
+  };
+
+  check(employee?.qidExpiry || employee?.qid_expiry || employee?.QIDExpiry || employee?.qidExpire || employee?.qidExpireDate, 'Qatar ID');
+  check(employee?.passportExpiry || employee?.passport_expiry || employee?.PassportExpiry || employee?.passportExpire || employee?.passportExpireDate, 'Passport');
+
+  return { status, tooltip };
+}

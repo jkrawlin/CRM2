@@ -1,5 +1,5 @@
 // Temporary employees module
-import { formatDate, getExpiryIndicator } from './utils.js';
+import { formatDate, getExpiryIndicator, getEmployeeStatus } from './utils.js';
 
 let tempSortColumn = '';
 let tempSortOrder = 'asc';
@@ -88,6 +88,10 @@ export function renderTemporaryTable({ getTemporaryEmployees, getSearchQuery, ge
     const indicator = getExpiryIndicator(employee);
     const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
     const title = indicator.title;
+    const statusInfo = getEmployeeStatus(employee);
+    const statusDot = statusInfo.status === 'expiring'
+      ? `<span class="status-dot expiring" title="${statusInfo.tooltip}"></span>`
+      : `<span class="status-dot valid" title="${statusInfo.tooltip}"></span>`;
     return `
     <tr class="hover:bg-gray-50 ${employee.terminated ? 'terminated-row' : ''}">
       <td class="px-3 py-2 font-semibold text-indigo-600 hover:text-indigo-700 cursor-pointer" onclick="viewEmployee('${employee.id}', 'temporary')">
@@ -96,7 +100,8 @@ export function renderTemporaryTable({ getTemporaryEmployees, getSearchQuery, ge
       <td class="px-3 py-2">${employee.email}</td>
       <td class="px-3 py-2">${employee.phone || '-'}</td>
       <td class="px-3 py-2">${employee.qid || '-'}</td>
-      <td class="px-3 py-2">${employee.position}</td>
+  <td class="px-3 py-2 text-center">${statusDot}</td>
+  <td class="px-3 py-2">${employee.position}</td>
       <td class="px-3 py-2">
         <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
       </td>

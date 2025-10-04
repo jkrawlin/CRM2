@@ -1,5 +1,5 @@
 // Employees module: table rendering and sorting
-import { formatDate, getExpiryIndicator } from './utils.js';
+import { formatDate, getExpiryIndicator, getEmployeeStatus } from './utils.js';
 
 let sortColumn = '';
 let sortOrder = 'asc';
@@ -83,9 +83,13 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
   }
 
   tbody.innerHTML = sorted.map((employee) => {
-    const indicator = getExpiryIndicator(employee);
+    const indicator = getExpiryIndicator(employee); // legacy inline dot (kept near name)
     const dotClass = indicator.color === 'red' ? 'expiry-dot red' : 'expiry-dot green';
     const title = indicator.title;
+    const statusInfo = getEmployeeStatus(employee);
+    const statusDot = statusInfo.status === 'expiring'
+      ? `<span class="status-dot expiring" title="${statusInfo.tooltip}"></span>`
+      : `<span class="status-dot valid" title="${statusInfo.tooltip}"></span>`;
     const termRow = !!employee.terminated;
     return `
     <tr class="hover:bg-gray-50 ${termRow ? 'terminated-row' : ''}" ${termRow ? 'style=\"background-color:#fff1f2;\"' : ''}>
@@ -95,7 +99,8 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       <td class="px-3 py-2">${employee.email}</td>
       <td class="px-3 py-2">${employee.phone || '-'}</td>
       <td class="px-3 py-2">${employee.qid || '-'}</td>
-      <td class="px-3 py-2">${employee.position}</td>
+  <td class="px-3 py-2 text-center">${statusDot}</td>
+  <td class="px-3 py-2">${employee.position}</td>
       <td class="px-3 py-2">
         <span class="department-badge ${deptClass(employee.department)}">${employee.department}</span>
       </td>

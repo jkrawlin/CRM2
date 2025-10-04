@@ -974,5 +974,12 @@ body.modal-open #openSidebarBtn {
     }
 }
 
+/* Status indicator dots */
+.status-dot { display:inline-block; width:12px; height:12px; border-radius:50%; cursor:help; transition:all var(--transition-fast); }
+.status-dot.valid { background-color:#10B981; box-shadow:0 0 0 2px rgba(16,185,129,0.2); }
+.status-dot.expiring { background-color:#EF4444; box-shadow:0 0 0 2px rgba(239,68,68,0.2); animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100% { transform:scale(1); opacity:1;} 50% { transform:scale(1.1); opacity:0.8;} }
+tr.terminated-row .status-dot { background-color: inherit; }
+
 
 
