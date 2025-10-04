@@ -466,8 +466,9 @@ body {
 .data-table td:nth-child(5) { text-align: right; }
 .data-table th:nth-child(6),
 .data-table td:nth-child(6) { text-align: left; }
-.data-table th:nth-child(7),
-.data-table td:nth-child(7) { text-align: center; }
+/* Center alignment for Actions column (now last) will be handled by last-child rule; Status column is 5th */
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) { text-align: center !important; }
 
 /* Employee name styling */
 .employee-name {
@@ -948,8 +949,9 @@ body.modal-open #openSidebarBtn {
     gap: 0.25rem !important;
     width: 100%;
 }
-.data-table th:nth-child(7),
-.data-table td:nth-child(7) {
+/* Fine tune padding for Status column (5th) */
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) {
     text-align: center !important;
     padding-left: 0 !important;
     padding-right: 0 !important;
