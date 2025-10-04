@@ -15,6 +15,7 @@ export function sortEmployees(column, deps) {
 }
 
 export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmentFilter, getShowTerminated }) {
+  ensureEmployeeHeader();
   const tbody = document.getElementById('employeeTableBody');
   const emptyState = document.getElementById('emptyState');
   if (!tbody || !emptyState) return;
@@ -123,4 +124,36 @@ export function renderEmployeeTable({ getEmployees, getSearchQuery, getDepartmen
       </td>
     </tr>`;
   }).join('');
+}
+
+function ensureEmployeeHeader() {
+  // Find the employees table thead (present but empty in index.html)
+  const table = document.querySelector('#employeesSection table');
+  if (!table) return;
+  let thead = table.querySelector('thead');
+  if (!thead) {
+    thead = document.createElement('thead');
+    table.prepend(thead);
+  }
+  const cols = [
+    { key:'name', label:'Name', sortable:true, align:'text-left', pad:'px-4 py-3' },
+    { key:'email', label:'Email', sortable:true, align:'text-left', pad:'px-4 py-3' },
+    { key:'phone', label:'Phone', sortable:false, align:'text-center', pad:'px-3 py-3' },
+    { key:'qid', label:'Qatar ID', sortable:false, align:'text-center', pad:'px-3 py-3' },
+    { key:'status', label:'Status', sortable:true, align:'text-center', pad:'px-2 py-3' },
+    { key:'position', label:'Position', sortable:true, align:'text-left', pad:'px-4 py-3' },
+    { key:'department', label:'Company', sortable:true, align:'text-left', pad:'px-4 py-3' },
+    { key:'salary', label:'Salary', sortable:true, align:'text-center', pad:'px-3 py-3' },
+    { key:'joinDate', label:'Join Date', sortable:true, align:'text-right', pad:'px-4 py-3' },
+    { key:'actions', label:'Actions', sortable:false, align:'text-center', pad:'px-2 py-3' }
+  ];
+  const arrowFor = (key) => {
+    if (sortColumn !== key) return '<i class="fas fa-sort text-gray-400"></i>';
+    return sortOrder === 'asc' ? '<i class="fas fa-sort-up text-indigo-600"></i>' : '<i class="fas fa-sort-down text-indigo-600"></i>';
+  };
+  thead.className = 'bg-gray-50 text-gray-600 text-xs uppercase tracking-wide';
+  thead.innerHTML = `<tr>${cols.map(c => {
+    if (!c.sortable) return `<th scope="col" class="${c.pad} font-semibold ${c.align}">${c.label}</th>`;
+    return `<th scope="col" class="cursor-pointer select-none ${c.pad} font-semibold ${c.align}" onclick="import('./modules/employees.js').then(m=>m.sortEmployees('${c.key}', { getEmployees: window.__getEmployees, getSearchQuery: window.__getEmployeeSearch, getDepartmentFilter: window.__getEmployeeDeptFilter, getShowTerminated: window.__getEmployeeShowTerminated }))">${c.label} <span class="inline-block ml-1">${arrowFor(c.key)}</span></th>`;
+  }).join('')}</tr>`;
 }
