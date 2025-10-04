@@ -36,15 +36,15 @@ import {
   setPayrollSubTab as payrollSetPayrollSubTab,
   sortPayroll as payrollSort,
   exportPayrollCsv as payrollExportPayrollCsv,
-} from './modules/payroll.js?v=20251005-01';
+} from './modules/payroll.js?v=20251003-03';
 // Utilities used in this file (masking account numbers in Payroll modal)
-import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251005-01';
-import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251005-01';
+import { renderEmployeeTable as employeesRenderTable, sortEmployees } from './modules/employees.js?v=20251004-11';
+import { renderTemporaryTable as temporaryRenderTable, sortTemporary } from './modules/temporary.js?v=20251004-11';
 import { initClients, subscribeClients, renderClientsTable, getClients, forceRebuildClientsFilter } from './modules/clients.js?v=20251001-12';
 import { initAssignments, subscribeAssignments, renderAssignmentsTable, getAssignments } from './modules/assignments.js?v=20251002-03';
 import { initAccounts, subscribeAccounts, renderAccountsTable } from './modules/accounts.js?v=20250929-01';
 import { initCashflow, subscribeCashflow, renderCashflowTable } from './modules/cashflow.js?v=20250930-03';
-import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts, printLedger } from './modules/ledger.js?v=20251005-01';
+import { initLedger, subscribeLedger, renderLedgerTable, refreshLedgerAccounts } from './modules/ledger.js?v=20251004-03';
 // Shared utilities (needed for payroll modal account masking & date formatting)
 import { maskAccount, formatDate } from './modules/utils.js';
 
@@ -55,6 +55,177 @@ let temporaryEmployees = [];
 let deleteEmployeeId = null;
 let currentSearch = '';
 let currentDepartmentFilter = '';
+// Removed per UX decision: always show terminated with visual cue
+let unsubscribeEmployees = null;
+let unsubscribeTemporary = null;
+// Subscriptions for clients/assignments are managed by their modules
+let authed = false;
+let authInitialized = false;
+let payrollInited = false;
+// Track current View modal context to lazy-load documents and manage blob URLs
+let currentViewCtx = { id: null, which: 'employees', docsLoaded: false, revoke: [] };
+// Track which payroll sub-tab is active: 'table' or 'report' (always default to table)
+let currentPayrollSubTab = 'table';
+// Track current payroll view data for payslip
+let currentPayrollView = null;
+// Track last month we ensured balances snapshot to avoid redundant writes
+let lastBalanceEnsureMonth = null;
+// Shadow accounts list for cashflow module filters
+let __accountsShadow = [];
+// Fund computation caches and unsubscribers (snapshot-based, independent of UI filters)
+let __fundAccountsCache = [];
+let __fundCashflowsCache = [];
+let __unsubFundAccounts = null;
+let __unsubFundCashflows = null;
+// Bank-style fund: opening is stored in stats/fund; keep a live cache and unsub
+let __fundOpening = 0;
+let __unsubFundStats = null;
+
+// =====================
+// Notifications (expiring documents)
+// =====================
+let __notifications = []; // { id, type:'expiry', message, employeeId, which }
+let __notifPanelOpen = false;
+let __notifPanelPortalled = false;
+let __notifRepositionHandlerAttached = false;
+let __notifUserInteractionEnabled = false; // becomes true after first trusted user action
+
+function __injectNotificationStylesOnce() {
+  if (document.getElementById('notificationsStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'notificationsStyles';
+  style.textContent = `
+    .notifications-wrapper { position: relative; }
+    /* Base panel styles (will be portalled to body to avoid clipping) */
+  #notificationsPanel { position: fixed; width: 340px; max-height: 480px; background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 12px 42px rgba(15,23,42,0.22); padding:10px 10px 12px; z-index:120500; flex-direction:column; gap:8px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+    /* Hidden state handled by Tailwind 'hidden' class; show state when not hidden */
+    #notificationsPanel.hidden { display:none !important; }
+    #notificationsPanel:not(.hidden) { display:flex; }
+    #notificationsPanel:focus { outline: 2px solid #6366F1; outline-offset:2px; }
+    .notif-header { display:flex; align-items:center; justify-content:space-between; padding:2px 4px 4px; }
+    .notif-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#334155; margin:0; }
+    .notif-clear { background:transparent; border:none; color:#64748B; cursor:pointer; padding:4px; border-radius:6px; }
+    .notif-clear:hover { background:#F1F5F9; color:#334155; }
+    .notif-list { max-height:360px; overflow:auto; display:flex; flex-direction:column; gap:6px; }
+    .notif-item { display:flex; align-items:flex-start; gap:8px; background:#F8FAFC; border:1px solid #E2E8F0; padding:8px 10px; border-radius:10px; font-size:12.5px; line-height:1.3; position:relative; }
+    .notif-item.expiry { border-color:#FECACA; background:#FEF2F2; }
+    .notif-icon { width:26px; height:26px; border-radius:8px; background:#FEE2E2; color:#B91C1C; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+    .notif-item.expiry .notif-icon { background:#FEE2E2; color:#B91C1C; }
+    .notif-msg { flex:1; color:#334155; }
+    .notif-meta { font-size:11px; color:#64748B; margin-top:2px; }
+    .notif-emp-link { color:#2563EB; font-weight:600; cursor:pointer; text-decoration:none; }
+    .notif-emp-link:hover { text-decoration:underline; }
+    .notif-empty { text-align:center; padding:12px 4px; font-size:12px; }
+    #notificationsBadge { transition: transform .25s ease, opacity .25s ease; }
+    .notif-dismiss { position:absolute; top:6px; right:6px; background:transparent; border:none; color:#64748B; cursor:pointer; padding:2px 4px; border-radius:6px; font-size:11px; }
+    .notif-dismiss:hover { background:#E2E8F0; color:#334155; }
+  `;
+  document.head.appendChild(style);
+}
+
+function __setNotifications(list) {
+  __notifications = list;
+  __renderNotifications();
+}
+
+function __addOrUpdateExpiryNotification(emp, which, tooltip) {
+  if (!emp || !emp.id) return;
+  const id = `expiry-${which}-${emp.id}`;
+  const days = /expires in ([-\d]+) day/.exec(tooltip || '') || /expired (\d+) day/.exec(tooltip || '');
+  const existingIdx = __notifications.findIndex(n => n.id === id);
+  const message = tooltip || 'Document expiring soon';
+  if (existingIdx >= 0) {
+    __notifications[existingIdx].message = message;
+  } else {
+    __notifications.push({ id, type:'expiry', message, employeeId: emp.id, which });
+  }
+}
+
+function __pruneExpiryNotifications(validIds) {
+  __notifications = __notifications.filter(n => !(n.type === 'expiry' && !validIds.has(n.id)));
+}
+
+function __renderNotifications() {
+  const badge = document.getElementById('notificationsBadge');
+  const panel = document.getElementById('notificationsPanel');
+  const listEl = document.getElementById('notificationsList');
+  if (!badge || !panel || !listEl) return;
+  const count = __notifications.length;
+  if (count > 0) {
+    badge.classList.remove('hidden');
+    badge.setAttribute('aria-label', `${count} notification${count===1?'':'s'}`);
+  } else {
+    badge.classList.add('hidden');
+  }
+  listEl.innerHTML = '';
+  if (count === 0) {
+    listEl.classList.add('empty');
+    listEl.innerHTML = '<div class="notif-empty">No alerts</div>';
+    return;
+  }
+  listEl.classList.remove('empty');
+  __notifications.forEach(n => {
+    const div = document.createElement('div');
+    div.className = `notif-item ${n.type}`;
+    const icon = n.type === 'expiry' ? '<i class="fas fa-exclamation-triangle"></i>' : '<i class="fas fa-info-circle"></i>';
+    div.innerHTML = `
+      <div class="notif-icon" aria-hidden="true">${icon}</div>
+      <div class="notif-msg">
+        ${n.message.replace(/(Qatar ID|Passport)/g, '<strong>$1</strong>')}<div class="notif-meta"><a data-notif-view href="#" class="notif-emp-link" data-which="${n.which}" data-eid="${n.employeeId}">View</a></div>
+      </div>
+      <button class="notif-dismiss" data-notif-dismiss="${n.id}" title="Dismiss" aria-label="Dismiss">✕</button>`;
+    listEl.appendChild(div);
+  });
+}
+
+function __positionNotificationsPanel() {
+  const btn = document.getElementById('notificationsBtn');
+  const panel = document.getElementById('notificationsPanel');
+  if (!btn || !panel || panel.classList.contains('hidden')) return;
+  const rect = btn.getBoundingClientRect();
+  const panelWidth = panel.offsetWidth || 340;
+  const margin = 8;
+  let top = rect.bottom + margin;
+  let left = rect.right - panelWidth;
+  if (left < 8) left = 8;
+  const panelHeight = panel.offsetHeight || 0;
+  const maxTop = window.innerHeight - (panelHeight + 8);
+  if (top > maxTop) top = Math.max(8, rect.top - panelHeight - margin);
+  panel.style.top = `${Math.max(8, top)}px`;
+  panel.style.left = `${Math.round(left)}px`;
+}
+
+function __attachNotifRepositionHandlers() {
+  if (__notifRepositionHandlerAttached) return;
+  __notifRepositionHandlerAttached = true;
+  window.addEventListener('resize', __positionNotificationsPanel, { passive: true });
+  window.addEventListener('scroll', __positionNotificationsPanel, { passive: true });
+}
+
+function __toggleNotificationsPanel(force) {
+  const btn = document.getElementById('notificationsBtn');
+  let panel = document.getElementById('notificationsPanel');
+  if (!btn || !panel) return;
+  if (!__notifUserInteractionEnabled) return; // prevent auto-open before any user action
+  const wantOpen = force !== undefined ? force : !__notifPanelOpen;
+  __notifPanelOpen = wantOpen;
+  if (wantOpen) {
+    // Portal to body if not already
+    if (!__notifPanelPortalled) {
+      document.body.appendChild(panel); // move out of potentially clipped container
+      __notifPanelPortalled = true;
+    }
+    panel.classList.remove('hidden');
+    panel.classList.add('notif-anim');
+    btn.setAttribute('aria-expanded','true');
+    __attachNotifRepositionHandlers();
+    // Allow layout to settle then position
+    requestAnimationFrame(() => { __positionNotificationsPanel(); setTimeout(()=> panel.focus(), 0); });
+  } else {
+    panel.classList.add('hidden');
+    btn.setAttribute('aria-expanded','false');
+  }
+}
 
 document.addEventListener('click', (e) => {
   if (e.isTrusted) __notifUserInteractionEnabled = true; // enable after real user click
@@ -95,92 +266,218 @@ document.addEventListener('keydown', (e) => {
 });
 
 function __rebuildExpiryNotifications() {
-  // Rebuild list of expiry-related notifications (QID / Passport within next 30 days or already expired)
-  try {
-    const today = new Date();
-    const horizon = new Date();
-    horizon.setDate(today.getDate() + 30);
-
-    // Collect all employees (permanent + temporary) tagging their origin
-    const all = [
-      ...(Array.isArray(employees) ? employees.map(e => ({ ...e, __which: 'employees' })) : []),
-      ...(Array.isArray(temporaryEmployees) ? temporaryEmployees.map(e => ({ ...e, __which: 'temporary' })) : []),
-    ];
-
-    const newIds = new Set();
-
-    const ensureNotifHelpers = () => {
-      if (!Array.isArray(window.__notifications)) window.__notifications = [];
-      if (typeof window.__renderNotifications !== 'function') return; // rendering will be skipped if UI helper missing
-    };
-
-    ensureNotifHelpers();
-
-    all.forEach(emp => {
-      if (!emp || !emp.id) return;
-      const expiries = [
-        { label: 'Qatar ID', value: emp.qidExpiry || emp.qid_expiry || emp.QIDExpiry || emp.qidExpire || emp.qidExpireDate },
-        { label: 'Passport', value: emp.passportExpiry || emp.passport_expiry || emp.PassportExpiry || emp.passportExpire || emp.passportExpireDate },
-      ];
-      const tooltipParts = [];
-      let anyExpiring = false;
-      expiries.forEach(ex => {
-        if (!ex.value) return;
-        const d = new Date(ex.value);
-        if (isNaN(d.getTime())) return;
-        if (d <= horizon) {
-          const daysUntil = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-            const msg = daysUntil < 0
-              ? `${ex.label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? '' : 's'} ago`
-              : `${ex.label} expires in ${daysUntil} day${daysUntil === 1 ? '' : 's'}`;
-          tooltipParts.push(msg);
-          anyExpiring = true;
-        }
-      });
-      if (!anyExpiring) return;
-      const id = `expiry-${emp.__which}-${emp.id}`;
-      newIds.add(id);
-      // Upsert notification
-      let list = window.__notifications;
-      const existingIdx = list.findIndex(n => n.id === id);
-      const payload = {
-        id,
-        type: 'expiry',
-        message: tooltipParts.join('; '),
-        employeeId: emp.id,
-        which: emp.__which,
-        updated: Date.now(),
-      };
-      if (existingIdx >= 0) list[existingIdx] = { ...list[existingIdx], ...payload };
-      else list.push({ created: Date.now(), ...payload });
-    });
-
-    // Remove obsolete expiry notifications
-    if (Array.isArray(window.__notifications)) {
-      const before = window.__notifications.length;
-      window.__notifications = window.__notifications.filter(n => !(/^expiry-/.test(n.id)) || newIds.has(n.id));
-      if (before !== window.__notifications.length) {
-        // changed
-      }
+  const utils = window.__utils || {};
+  // Fallback: import function via dynamic if not already collected; but we rely on modules already imported
+  // We'll reconstruct statuses using the same logic in modules: getEmployeeStatus
+  // We can call getEmployeeStatus via a cached reference from modules by creating a lightweight mirror using a global injection if needed; simpler: duplicate minimal logic here
+  // Instead, leverage employeesRenderTable side-effect? Too indirect. We'll compute statuses directly below replicating minimal logic.
+  const today = new Date();
+  const thirtyDaysFromNow = new Date(today);
+  thirtyDaysFromNow.setDate(today.getDate() + 30);
+  const all = [...employees, ...temporaryEmployees.map(e => ({ ...e, __which:'temporary'}))];
+  const validIds = new Set();
+  all.forEach(emp => {
+    const which = emp.__which ? 'temporary' : 'employees';
+    let tooltipParts = [];
+    let status = 'valid';
+    const check = (val, label) => {
+      if (!val) return; const d = new Date(val); if (isNaN(d.getTime())) return; const daysUntil = Math.ceil((d - today)/(1000*60*60*24)); if (d <= thirtyDaysFromNow) { status='expiring'; const msg = daysUntil < 0 ? `${label} expired ${Math.abs(daysUntil)} day${Math.abs(daysUntil)===1?'':'s'} ago` : `${label} expires in ${daysUntil} day${daysUntil===1?'':'s'}`; tooltipParts.push(msg);} };
+    check(emp.qidExpiry || emp.qid_expiry || emp.QIDExpiry || emp.qidExpire || emp.qidExpireDate, 'Qatar ID');
+    check(emp.passportExpiry || emp.passport_expiry || emp.PassportExpiry || emp.passportExpire || emp.passportExpireDate, 'Passport');
+    if (status === 'expiring') {
+      const id = `expiry-${which}-${emp.id}`;
+      validIds.add(id);
+      __addOrUpdateExpiryNotification(emp, which, tooltipParts.join('; '));
     }
-    try { window.__renderNotifications && window.__renderNotifications(); } catch {}
-  } catch (e) {
-    console.warn('Failed to rebuild expiry notifications', e);
+  });
+  __pruneExpiryNotifications(validIds);
+  __renderNotifications();
+}
+
+__injectNotificationStylesOnce();
+
+// Force closed state on DOM ready and delay enabling toggle to block any premature scripted interaction
+document.addEventListener('DOMContentLoaded', () => {
+  const panel = document.getElementById('notificationsPanel');
+  const btn = document.getElementById('notificationsBtn');
+  if (panel) panel.classList.add('hidden');
+  if (btn) btn.setAttribute('aria-expanded','false');
+  setTimeout(()=> { __notifUserInteractionEnabled = true; }, 150);
+});
+
+// =====================
+// Generic Grid Engine (Excel-like) for Accounts tables
+// =====================
+let __gridCache = (window.__gridCache ||= {}); // { [tableId]: { [rowKey]: {field:value} } }
+let __gridCtx = null; // { tbody, tableId, opts }
+let __gridSel = null; // { sr, sc, er, ec }
+let __gridEditing = null; // { r,c,cell,field,original }
+let __gridActive = false;
+
+function __grid_injectStyles() {
+  if (document.getElementById('grid-styles-global')) return;
+  const s = document.createElement('style');
+  s.id = 'grid-styles-global';
+  s.textContent = `
+    /* Global grid styles (Accounts) */
+    td.grid-cell, th.grid-cell { border: 1px solid #e5e7eb; }
+    table:has(td.grid-cell) { border-collapse: separate; border-spacing: 0; }
+    td.grid-cell { position: relative; cursor: cell; }
+    td.grid-cell.readonly { background: #fafafa; color: #475569; }
+    td.grid-cell.grid-active { outline: 2px solid #4f46e5; outline-offset: -2px; background: #eef2ff; }
+    td.grid-cell.grid-selected { background: #eef2ff; }
+    td.grid-cell.editing { outline: 2px solid #22c55e; background: #ecfdf5; }
+    td.grid-cell[contenteditable="true"] { caret-color: #111827; }
+  `;
+  document.head.appendChild(s);
+}
+function __grid_fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`; }
+function __grid_parseNumber(s) { if (typeof s!=='string') return Number(s||0); const t=s.replace(/[^0-9.\-]/g,''); const v=Number(t); return isFinite(v)?v:0; }
+function __grid_isEditableCol(c) { const cols = __gridCtx?.opts?.editableCols || []; return cols.includes(c); }
+function __grid_isNumericCol(c) { const cols = __gridCtx?.opts?.numericCols || []; return cols.includes(c); }
+function __grid_getCell(r,c) { return __gridCtx?.tbody?.querySelector?.(`td.grid-cell[data-row="${r}"][data-col="${c}"]`)||null; }
+function __grid_clearSel() { if (!__gridCtx?.tbody) return; __gridCtx.tbody.querySelectorAll('td.grid-cell.grid-active, td.grid-cell.grid-selected').forEach(el=>el.classList.remove('grid-active','grid-selected')); }
+function __grid_applySel() {
+  if (!__gridCtx?.tbody || !__gridSel) return;
+  const { sr, sc, er, ec } = __gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec);
+  for (let r=r0;r<=r1;r++){ for(let c=c0;c<=c1;c++){ const cell=__grid_getCell(r,c); if (cell) cell.classList.add('grid-selected'); }}
+  const active=__grid_getCell(sr,sc); if (active) active.classList.add('grid-active');
+}
+function __grid_setActive(r,c,extend=false) {
+  if (!__gridCtx) return;
+  const maxR = (__gridCtx.tbody?.querySelectorAll('tr')?.length||1)-1;
+  const maxC = (__gridCtx.opts?.maxCols ?? 0);
+  r = Math.max(0, Math.min(maxR, r)); c = Math.max(0, Math.min(maxC, c));
+  if (!extend || !__gridSel) __gridSel = { sr:r, sc:c, er:r, ec:c }; else { __gridSel.er=r; __gridSel.ec=c; }
+  __grid_clearSel(); __grid_applySel();
+}
+function __grid_stopEdit(save) {
+  if (!__gridEditing) return;
+  const { r,c,cell,field,original } = __gridEditing;
+  const text = cell.textContent || '';
+  let display = text, toStore = text;
+  if (__grid_isNumericCol(c)) { const num = __grid_parseNumber(text); display = __grid_fmtCurrency(num); toStore = String(num); }
+  if (save) {
+    cell.setAttribute('data-raw', toStore);
+    const key = __gridCtx.opts.getRowKey(r);
+    const bucket = (__gridCache[__gridCtx.tableId] ||= {});
+    const row = (bucket[key] ||= {});
+    if (field) row[field] = __grid_isNumericCol(c) ? __grid_parseNumber(toStore) : text;
+    if (typeof __gridCtx.opts.recompute === 'function') { try { __gridCtx.opts.recompute(r, { rowKey:key, row }); } catch {} }
+  } else {
+    const d = __grid_isNumericCol(c) ? __grid_fmtCurrency(__grid_parseNumber(original)) : original; cell.textContent = d;
+  }
+  cell.removeAttribute('contenteditable'); cell.classList.remove('editing'); __gridEditing = null;
+}
+function __grid_startEdit(r,c) {
+  if (!__grid_isEditableCol(c)) return; const cell = __grid_getCell(r,c); if (!cell) return;
+  if (__gridEditing) __grid_stopEdit(false);
+  const field = cell.getAttribute('data-field'); const raw = cell.getAttribute('data-raw') || cell.textContent;
+  __gridEditing = { r,c,cell,field,original: raw };
+  cell.classList.add('editing'); cell.setAttribute('contenteditable','true');
+  if (__grid_isNumericCol(c)) { const v = __grid_parseNumber(raw); cell.textContent = String(v||0); }
+  const range=document.createRange(); range.selectNodeContents(cell); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+function makeTableGrid(tbody, opts) {
+  __grid_injectStyles(); if (!tbody) return;
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  if (!rows.length) return;
+  const maxCols = rows.reduce((m,tr)=>Math.max(m, tr.children.length-1), 0);
+  opts.maxCols = maxCols;
+  // Annotate cells
+  rows.forEach((tr, r) => {
+    Array.from(tr.children).forEach((td, c) => {
+      td.classList.add('grid-cell'); td.setAttribute('data-row', String(r)); td.setAttribute('data-col', String(c));
+      const field = opts.fields?.[c] || ''; if (field) td.setAttribute('data-field', field);
+      if ((opts.numericCols||[]).includes(c)) {
+        const raw = td.getAttribute('data-raw') || __grid_parseNumber(td.textContent||'');
+        td.setAttribute('data-raw', String(raw));
+      }
+      if (!(opts.editableCols||[]).includes(c)) td.classList.add('readonly');
+    });
+  });
+  // Context
+  __gridCtx = { tbody, tableId: opts.tableId, opts };
+  __gridActive = true; __grid_setActive(0,0);
+  // Wire events once per tbody
+  if (!tbody.__gridWired) {
+    tbody.addEventListener('mousedown', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; __gridActive = true; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_setActive(r,c, e.shiftKey); });
+    tbody.addEventListener('dblclick', (e) => { const td = e.target.closest('td.grid-cell'); if (!td) return; const r=Number(td.getAttribute('data-row')||0), c=Number(td.getAttribute('data-col')||0); __grid_startEdit(r,c); });
+    tbody.__gridWired = true;
+  }
+  if (!document.__gridKeyWired) {
+    document.addEventListener('keydown', (e) => {
+      if (!__gridActive) return; if (__gridEditing) { if (e.key==='Enter'){ e.preventDefault(); __grid_stopEdit(true); return;} if(e.key==='Escape'){ e.preventDefault(); __grid_stopEdit(false); return;} return; }
+      if (!__gridSel) return; const { sr, sc } = __gridSel;
+      if (e.key==='F2'){ e.preventDefault(); __grid_startEdit(sr,sc); return; }
+      if (e.key==='Enter'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
+      if (e.key==='Tab'){ e.preventDefault(); __grid_setActive(sr, sc + (e.shiftKey?-1:1)); return; }
+      if (e.key==='ArrowLeft'){ e.preventDefault(); __grid_setActive(sr, sc-1); return; }
+      if (e.key==='ArrowRight'){ e.preventDefault(); __grid_setActive(sr, sc+1); return; }
+      if (e.key==='ArrowUp'){ e.preventDefault(); __grid_setActive(sr-1, sc); return; }
+      if (e.key==='ArrowDown'){ e.preventDefault(); __grid_setActive(sr+1, sc); return; }
+      if (typeof e.key === 'string' && e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (__grid_isEditableCol(sc)) {
+          __grid_startEdit(sr,sc);
+          setTimeout(()=>{ try { if (__gridEditing?.cell) __gridEditing.cell.textContent = e.key; } catch {} }, 0);
+          e.preventDefault();
+        }
+      }
+    });
+    document.addEventListener('copy', (e) => { if (!__gridActive || !__gridSel) return; const {sr,sc,er,ec}=__gridSel; const r0=Math.min(sr,er), r1=Math.max(sr,er), c0=Math.min(sc,ec), c1=Math.max(sc,ec); const out=[]; for(let r=r0;r<=r1;r++){const row=[]; for(let c=c0;c<=c1;c++){const cell=__grid_getCell(r,c); row.push(cell ? (cell.getAttribute('data-raw')||cell.textContent||'') : '');} out.push(row.join('\t'));} try{ e.clipboardData.setData('text/plain', out.join('\n')); e.preventDefault(); }catch{} });
+    document.addEventListener('paste', (e) => { if (!__gridActive || !__gridSel) return; const text=e.clipboardData?.getData('text/plain'); if (!text) return; const {sr,sc}=__gridSel; const rows=text.split(/\r?\n/); for (let i=0;i<rows.length;i++){ if (rows[i]==='') continue; const cols=rows[i].split('\t'); for (let j=0;j<cols.length;j++){ const r=sr+i, c=sc+j; if (!__grid_isEditableCol(c)) continue; const cell=__grid_getCell(r,c); if (!cell) continue; const field=cell.getAttribute('data-field'); const key=__gridCtx.opts.getRowKey(r); const bucket=(__gridCache[__gridCtx.tableId] ||= {}); const row=(bucket[key] ||= {}); const val=cols[j]; if (__grid_isNumericCol(c)) { const num=__grid_parseNumber(val); row[field]=num; cell.setAttribute('data-raw', String(num)); cell.textContent=__grid_fmtCurrency(num); } else { row[field]=val; cell.setAttribute('data-raw', val); cell.textContent=val; } if (typeof __gridCtx.opts.recompute==='function') { try { __gridCtx.opts.recompute(r,{rowKey:key,row}); } catch {} } } } e.preventDefault(); });
+    document.addEventListener('mousedown', (e) => { const accSec=document.getElementById('accountsSection'); if (accSec && !accSec.contains(e.target)) { if (__gridEditing) __grid_stopEdit(true); __gridActive=false; } });
+    document.__gridKeyWired = true;
   }
 }
-// Expose setter for modules to update accounts shadow
-window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
 
-// Stronger modal fix: ensure #editFundModal is appended to body to avoid stacking/scope issues
-try {
+// Initialize the app
+document.addEventListener('DOMContentLoaded', () => {
+  // IMPORTANT: Hide app and show login immediately on load
+  const loginPage = document.getElementById('loginPage');
+  const appRoot = document.getElementById('appRoot');
+  if (loginPage) loginPage.style.display = '';
+  if (appRoot) appRoot.style.display = 'none';
+
+  // Theme toggle removed
+  setupEventListeners();
+  setDefaultJoinDate();
+  // Wire Accounts sub-tab buttons explicitly (in addition to delegated handler)
+  try { wireAccountsTabButtons(); } catch {}
+  // Always-available fallback to open cash txn modal even if module wiring hasn't attached yet
+  try {
+    window.__openCashTxnFallback = function(kind) {
+      const modal = document.getElementById('cashTxnModal');
+      if (!modal) return false;
+      const form = document.getElementById('cashTxnForm');
+      if (form) try { form.reset(); } catch {}
+      const d = document.getElementById('cfDate');
+      if (d) { try { d.valueAsDate = new Date(); } catch {} }
+      const typeSel = document.getElementById('cfType');
+      if (typeSel) {
+        const v = (kind === 'out') ? 'out' : 'in';
+        typeSel.value = v;
+        typeSel.disabled = true;
+      }
+      // Focus amount quickly
+      setTimeout(() => { try { document.getElementById('cfAmount')?.focus(); } catch {} }, 0);
+      modal.classList.add('show');
+      return true;
+    }
+  } catch {}
+  // Expose setter for modules to update accounts shadow
+  window.__setAccountsShadow = (arr) => { __accountsShadow = Array.isArray(arr) ? arr.slice() : []; };
+
+  // Stronger modal fix: ensure #editFundModal is appended to body to avoid stacking/scope issues
+  try {
     const efm = document.getElementById('editFundModal');
     if (efm && efm.parentElement !== document.body) {
       document.body.appendChild(efm);
       try { console.debug('[Fund] editFundModal moved to body'); } catch {}
     }
-} catch {}
-// When accounts update, refresh cashflow/ledger dropdowns if visible
-window.addEventListener('accounts:updated', () => {
+  } catch {}
+  // When accounts update, refresh cashflow/ledger dropdowns if visible
+  window.addEventListener('accounts:updated', () => {
     try { renderCashflowTable?.(); } catch {}
     try { refreshLedgerAccounts?.(); } catch {}
     try { updateAccountsFundCard(); } catch {}
@@ -192,9 +489,9 @@ window.addEventListener('accounts:updated', () => {
         renderAccountsOverview();
       }
     } catch {}
-});
-// Keep a cashflow shadow array to compute fund total
-window.addEventListener('cashflow:updated', (e) => {
+  });
+  // Keep a cashflow shadow array to compute fund total
+  window.addEventListener('cashflow:updated', (e) => {
     try { __cashflowShadow = Array.isArray(e.detail) ? e.detail.slice() : []; } catch { __cashflowShadow = []; }
     try { updateAccountsFundCard(); } catch {}
     // Update Overview metrics and Transactions filters/live table if those tabs are visible
@@ -202,10 +499,10 @@ window.addEventListener('cashflow:updated', (e) => {
       const ovTab = document.getElementById('accountsTabOverview');
       if (ovTab && ovTab.style.display !== 'none') renderAccountsOverview();
     } catch {}
-});
+  });
 
-// Auth state listener
-onAuthStateChanged(auth, (user) => {
+  // Auth state listener
+  onAuthStateChanged(auth, (user) => {
     authInitialized = true;
     authed = !!user;
     updateAuthUI(user);
@@ -337,13 +634,13 @@ onAuthStateChanged(auth, (user) => {
       try { if (__unsubFundAccounts) { __unsubFundAccounts(); __unsubFundAccounts = null; } } catch {}
       try { if (__unsubFundCashflows) { __unsubFundCashflows(); __unsubFundCashflows = null; } } catch {}
       try { if (__unsubFundStats) { __unsubFundStats(); __unsubFundStats = null; } } catch {}
-      employees = [];
-      temporaryEmployees = [];
+    employees = [];
+    temporaryEmployees = [];
       renderEmployeeTable();
       renderTemporaryTable();
-      try { renderClientsTable(); } catch {}
-      try { renderAssignmentsTable(); } catch {}
-      renderPayrollTable();
+    try { renderClientsTable(); } catch {}
+    try { renderAssignmentsTable(); } catch {}
+  renderPayrollTable();
       updateStats();
       updateDepartmentFilter();
       // Reset section visibility for next sign-in
@@ -351,10 +648,7 @@ onAuthStateChanged(auth, (user) => {
       try { ensureCurrentMonthBalances(); } catch {}
     }
   });
-
-
-// END auth state listener block
-
+});
 
 // Real-time listener for employees
 function loadEmployeesRealtime() {
@@ -1298,17 +1592,7 @@ try { window.setAccountsSubTab = setAccountsSubTab; } catch {}
 // =====================
 document.addEventListener('click', (e) => {
   if (e.target && (e.target.id === 'ledgerPrintBtn' || e.target.closest?.('#ledgerPrintBtn'))) {
-    try {
-      // Prefer module print function if available
-      if (typeof printLedger === 'function') {
-        printLedger();
-      } else {
-        buildAndPrintLedger && buildAndPrintLedger();
-      }
-    } catch (err) {
-      console.error('Ledger print failed', err);
-      showToast && showToast('Failed to prepare ledger for print','error');
-    }
+    try { const r = buildAndPrintLedger(); if (r && typeof r.catch === 'function') r.catch(err=>console.error('Ledger print failed (async)', err)); } catch (err) { console.error('Ledger print failed', err); showToast && showToast('Failed to prepare ledger for print','error'); }
   }
 });
 
