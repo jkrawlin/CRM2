@@ -3047,20 +3047,18 @@ document.addEventListener('input', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (e.target && e.target.id === 'payslipPrintBtn') {
+  if (e.target && e.target.id === 'payslipPdfBtn') {
     e.preventDefault();
-    const ok = confirm('Confirm generating this payslip and updating the current salary balance?');
+    const ok = confirm('Generate payslip, update balances, and open PDF dialog?');
     if (!ok) return;
-    savePayslipThenPrint().then(() => {
+    savePayslipRecord().then(() => {
       try { window.__payrollBalancesInvalidate?.(); } catch {}
+      try { exportPayslipPdf(); } catch (err) { console.error(err); showToast('Payslip PDF export failed', 'error'); }
     }).catch(err => {
       console.error(err);
-      showToast('Failed to save payslip; printing anyway', 'warning');
-      try { renderAndPrintPayslip(); } catch (err2) { console.error(err2); showToast('Failed to print payslip', 'error'); }
+      showToast('Failed to save payslip; attempting PDF anyway', 'warning');
+      try { exportPayslipPdf(); } catch (err2) { console.error(err2); showToast('Payslip PDF export failed', 'error'); }
     });
-  } else if (e.target && e.target.id === 'payslipPdfBtn') {
-    e.preventDefault();
-    try { exportPayslipPdf(); } catch (err) { console.error(err); showToast('Payslip PDF export failed', 'error'); }
   } else if (e.target && e.target.id === 'paymentPrintBtn') {
     e.preventDefault();
     savePaymentThenPrint().catch(err => {
@@ -3212,7 +3210,8 @@ async function savePaymentThenPrint() {
   await renderAndPrintPaymentSlip();
 }
 
-async function savePayslipThenPrint() {
+// Save payslip record only (extracted from previous savePayslipThenPrint)
+async function savePayslipRecord() {
   const emp = currentPayrollView;
   if (!emp) { showToast('No employee selected', 'warning'); return; }
   const period = document.getElementById('psPeriod')?.value || '';
@@ -3287,7 +3286,7 @@ async function savePayslipThenPrint() {
   } catch (cfErr) {
     console.warn('Failed to post cashflow for advance (non-fatal)', cfErr);
   }
-  renderAndPrintPayslip();
+  return true;
 }
 
 function renderAndPrintPayslip() {
