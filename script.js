@@ -3238,7 +3238,7 @@ async function savePayslipRecord() {
     createdByEmail: auth?.currentUser?.email || null,
   });
   try {
-    await addDoc(collection(db, 'payslips'), record);
+    const payslipRef = await addDoc(collection(db, 'payslips'), record);
     showToast('Payslip saved', 'success');
     // CRITICAL: Update balance for this period using carryover-aware function
     let updatedBalance = 0;
@@ -3272,44 +3272,14 @@ async function savePayslipRecord() {
       const dt = (yy && mm) ? new Date(Number(yy), Number(mm)-1, 1) : new Date();
       const accId = await ensureAssetAccount('cash', 'Cash');
       if (accId) {
-        await addDoc(collection(db, 'cashflows'), cleanData({
-          date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
-          type: 'out',
-            accountId: accId,
-          amount: Math.abs(Number(net) || 0),
-          category: isAdvance ? 'Advance' : 'Salary',
-          notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
-          createdAt: new Date().toISOString(),
-        }));
-        // Stronger immediate accounts refresh: attempt deterministic recompute, then fallback to local cache update
-        try {
-          if (window.__recomputeFund) {
-            await window.__recomputeFund();
-          }
-        } catch (e) { console.warn('Fund recompute (payslip) failed, will fallback', e); }
-        try { updateAccountsFundCard(); } catch {}
-        // Fallback: if snapshot has not yet arrived, inject synthetic flow into cache & refresh
-        try {
-          const synthetic = {
-            id: `temp_${Date.now()}`,
-            date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
-            type: 'out',
-            accountId: accId,
-            amount: Math.abs(Number(net) || 0),
-            category: isAdvance ? 'Advance' : 'Salary',
-            notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
-            createdAt: new Date().toISOString(),
-          };
-          if (Array.isArray(window.__cashflowAll)) {
-            window.__cashflowAll.push(synthetic);
-          } else {
-            window.__cashflowAll = [synthetic];
-          }
-          if (Array.isArray(__fundCashflowsCache)) {
-            __fundCashflowsCache.push(synthetic);
-          }
-          updateAccountsFundCard();
-        } catch (e) { console.warn('Payslip fund fallback cache update failed', e); }
+        await appendPayslipCashflow({
+          accId,
+          empName: emp.name || '',
+          isAdvance,
+          net,
+          dt,
+          payslipId: (typeof payslipRef?.id === 'string') ? payslipRef.id : null,
+        });
       }
     }
   } catch (cfErr) {
@@ -3323,6 +3293,38 @@ async function savePayslipRecord() {
     }
   } catch {}
   return { balance: (typeof updatedBalance === 'number') ? updatedBalance : undefined };
+}
+
+// Append a cashflow for a payslip and aggressively refresh accounts + ledger
+async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, payslipId }) {
+  const flowPayload = cleanData({
+    date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
+    type: 'out',
+    accountId: accId,
+    amount: Math.abs(Number(net) || 0),
+    category: isAdvance ? 'Advance' : 'Salary',
+    notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${empName}`,
+    payslipId: payslipId || undefined,
+    createdAt: new Date().toISOString(),
+  });
+  try {
+    const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
+    // Immediate local inject so UI updates even before snapshot
+    const enriched = { id: ref.id, ...flowPayload };
+    try { if (Array.isArray(window.__cashflowAll)) window.__cashflowAll.push(enriched); else window.__cashflowAll = [enriched]; } catch {}
+    try { if (Array.isArray(__fundCashflowsCache)) __fundCashflowsCache.push(enriched); } catch {}
+    try { updateAccountsFundCard(); } catch {}
+    // Force ledger refresh if current account selected matches
+    try {
+      const sel = document.getElementById('ledgerAccountFilter');
+      if (sel && sel.value === accId) { renderLedgerTable(); }
+    } catch {}
+    // Deterministic recompute (non-blocking) & account list refresh
+    try { window.__recomputeFund && window.__recomputeFund(); } catch {}
+    try { refreshLedgerAccounts && refreshLedgerAccounts(); } catch {}
+  } catch (e) {
+    console.warn('appendPayslipCashflow failed', e);
+  }
 }
 
 function renderAndPrintPayslip() {
