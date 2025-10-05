@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251005-03';
+import { db, auth, storage } from './firebase-config.js?v=20251005-04';
 import {
   collection,
   getDocs,
@@ -1600,6 +1600,14 @@ document.addEventListener('click', (e) => {
       showToast && showToast('Failed to prepare ledger for print','error');
     }
   }
+  if (e.target && (e.target.id === 'ledgerReportBtn' || e.target.closest?.('#ledgerReportBtn'))) {
+    try {
+      openLedgerReportPopup();
+    } catch (err) {
+      console.error('Ledger report failed', err);
+      showToast && showToast('Failed to build ledger report','error');
+    }
+  }
   if (e.target && (e.target.id === 'ledgerExportBtn' || e.target.closest?.('#ledgerExportBtn'))) {
     try {
       exportCurrentLedgerCsv();
@@ -1839,6 +1847,103 @@ function exportCurrentLedgerCsv() {
   showToast && showToast('Ledger exported','success');
 }
 try { window.exportCurrentLedgerCsv = exportCurrentLedgerCsv; } catch {}
+
+// =====================
+// Ledger Professional Report Popup
+// =====================
+function openLedgerReportPopup() {
+  const view = window.__ledgerCurrentView;
+  const accSel = document.getElementById('ledgerAccountFilter');
+  if (!view || !accSel || !Array.isArray(view.transactions) || !view.transactions.length) {
+    showToast && showToast('Select an account with data first','warning');
+    return;
+  }
+  const accountName = accSel.options[accSel.selectedIndex]?.text || 'Account';
+  const monthEl = document.getElementById('ledgerMonth');
+  const dayEl = document.getElementById('ledgerDay');
+  const rangeLabel = (dayEl?.value) ? `Day ${dayEl.value}` : (monthEl?.value ? `Month ${monthEl.value}` : 'All');
+  const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  // Build rows with running balance (recompute to ensure freshness)
+  let running = view.opening;
+  const bodyRows = view.transactions.map(t => {
+    const isIn = String(t.type).toLowerCase()==='in';
+    const amt = Number(t.amount||0);
+    if (isIn) running += amt; else running -= amt;
+    const desc = (t.category ? t.category : '') + (t.notes ? (t.category? ' — ': '') + t.notes : '');
+    return `<tr>
+      <td>${escapeHtml(t.date||'')}</td>
+      <td>${escapeHtml(desc||'')}</td>
+      <td class="num">${isIn?fmt(amt):''}</td>
+      <td class="num">${!isIn?fmt(amt):''}</td>
+      <td class="num">${fmt(running)}</td>
+    </tr>`;
+  }).join('');
+  const net = view.debitSum - view.creditSum;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8" />
+  <title>Ledger Report - ${escapeHtml(accountName)}</title>
+  <style>
+    :root { --ink:#1f2937; --muted:#64748B; --brand:#4F46E5; font-family:Inter,Arial,sans-serif; }
+    body { margin:24px; color:var(--ink); }
+    h1 { font-size:20px; margin:0 0 4px; font-weight:800; letter-spacing:.5px; }
+    .meta { font-size:12px; color:var(--muted); line-height:1.4; }
+    table { width:100%; border-collapse:separate; border-spacing:0; margin-top:16px; font-size:12px; }
+    thead th { text-align:left; background:#EEF2FF; padding:6px 8px; font-weight:600; font-size:11px; border:1px solid #E2E8F0; }
+    tbody td { padding:6px 8px; border:1px solid #E2E8F0; vertical-align:top; }
+    tbody tr:nth-child(even){ background:#F8FAFC; }
+    tfoot td { padding:6px 8px; border:1px solid #E2E8F0; font-weight:600; background:#F1F5F9; }
+    .num { text-align:right; white-space:nowrap; font-feature-settings:"tnum"; }
+    .summary { margin-top:14px; font-size:12px; background:#F1F5F9; border:1px solid #E2E8F0; border-radius:6px; padding:8px 10px; }
+    header { display:flex; justify-content:space-between; align-items:flex-start; }
+    .brand { font-size:22px; font-weight:800; color:var(--brand); letter-spacing:.5px; }
+    .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:80px; font-weight:800; color:rgba(99,102,241,0.06); pointer-events:none; user-select:none; }
+    .footer { margin-top:32px; font-size:11px; color:var(--muted); display:flex; justify-content:space-between; }
+    @media print { body { margin:8mm 10mm; } @page { size:A4 portrait; margin:10mm; } .no-print { display:none !important; } }
+    .toolbar { margin-top:12px; display:flex; gap:8px; }
+    .btn { background:#4F46E5; color:#fff; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:600; }
+    .btn.secondary { background:#64748B; }
+    .badge { display:inline-block; background:#E0E7FF; color:#3730A3; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; letter-spacing:.3px; }
+  </style></head><body>
+  <div class="watermark">CONFIDENTIAL</div>
+  <header>
+    <div>
+      <div class="brand">CRM LEDGER</div>
+      <h1>Account Ledger Report</h1>
+      <div class="meta">
+        <div><strong>Account:</strong> ${escapeHtml(accountName)}</div>
+        <div><strong>Range:</strong> ${escapeHtml(rangeLabel)}</div>
+        <div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</div>
+      </div>
+    </div>
+    <div class="meta" style="text-align:right;">
+      <div class="badge">Opening ${fmt(view.opening)}</div><br/>
+      <div><strong>Debits:</strong> ${fmt(view.debitSum)}</div>
+      <div><strong>Credits:</strong> ${fmt(view.creditSum)}</div>
+      <div><strong>Closing:</strong> ${fmt(view.closing)}</div>
+      <div><strong>Net:</strong> ${net>=0?'+':''}${fmt(net)}</div>
+    </div>
+  </header>
+  <div class="toolbar no-print">
+    <button class="btn" onclick="window.print()"><i>🖨</i> Print</button>
+    <button class="btn secondary" onclick="window.close()">Close</button>
+  </div>
+  <div class="summary"><strong>Summary:</strong> Opening ${fmt(view.opening)} • Debits ${fmt(view.debitSum)} • Credits ${fmt(view.creditSum)} • Closing ${fmt(view.closing)} • Net ${net>=0?'+':''}${fmt(net)}</div>
+  <table>
+    <thead><tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot>
+      <tr><td colspan="2">Totals</td><td class="num">${fmt(view.debitSum)}</td><td class="num">${fmt(view.creditSum)}</td><td class="num">${fmt(view.closing)}</td></tr>
+    </tfoot>
+  </table>
+  <div class="footer"><div>CRM System Ledger Report</div><div>${escapeHtml(new Date().toLocaleDateString())}</div></div>
+  </body></html>`;
+  const w = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=800');
+  if (!w) { showToast && showToast('Popup blocked','error'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // Attempt deferred print trigger (user clicks inside new window)
+}
+try { window.openLedgerReportPopup = openLedgerReportPopup; } catch {}
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
 
