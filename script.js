@@ -1799,6 +1799,7 @@ function exportCurrentLedgerCsv() {
     showToast && showToast('No ledger data to export','warning');
     return;
   }
+  const formatCurrency = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   const accountName = accSel.options[accSel.selectedIndex]?.text || 'Account';
   const monthEl = document.getElementById('ledgerMonth');
   const dayEl = document.getElementById('ledgerDay');
