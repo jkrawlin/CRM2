@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251005-04';
+import { db, auth, storage } from './firebase-config.js?v=20251005-05';
 import {
   collection,
   getDocs,
@@ -1600,12 +1600,12 @@ document.addEventListener('click', (e) => {
       showToast && showToast('Failed to prepare ledger for print','error');
     }
   }
-  if (e.target && (e.target.id === 'ledgerReportBtn' || e.target.closest?.('#ledgerReportBtn'))) {
+  if (e.target && (e.target.id === 'ledgerPdfBtn' || e.target.closest?.('#ledgerPdfBtn'))) {
     try {
-      openLedgerReportPopup();
+      exportLedgerPdf();
     } catch (err) {
-      console.error('Ledger report failed', err);
-      showToast && showToast('Failed to build ledger report','error');
+      console.error('Ledger PDF export failed', err);
+      showToast && showToast('Failed to export PDF','error');
     }
   }
   if (e.target && (e.target.id === 'ledgerExportBtn' || e.target.closest?.('#ledgerExportBtn'))) {
@@ -1953,6 +1953,67 @@ function openLedgerReportPopup() {
   // Attempt deferred print trigger (user clicks inside new window)
 }
 try { window.openLedgerReportPopup = openLedgerReportPopup; } catch {}
+
+// =====================
+// Ledger PDF Export (simple inline generator)
+// =====================
+function exportLedgerPdf() {
+  const view = window.__ledgerCurrentView;
+  const accSel = document.getElementById('ledgerAccountFilter');
+  if (!view || !accSel || !Array.isArray(view.transactions) || !view.transactions.length) {
+    showToast && showToast('Select an account with data first','warning');
+    return;
+  }
+  const accountName = accSel.options[accSel.selectedIndex]?.text || 'Account';
+  const monthEl = document.getElementById('ledgerMonth');
+  const dayEl = document.getElementById('ledgerDay');
+  const rangeLabel = (dayEl?.value) ? `Day ${dayEl.value}` : (monthEl?.value ? `Month ${monthEl.value}` : 'All');
+  const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}`;
+  let running = view.opening;
+  const rows = view.transactions.map(t => {
+    const isIn = String(t.type).toLowerCase()==='in';
+    const amt = Number(t.amount||0);
+    if (isIn) running += amt; else running -= amt;
+    const desc = (t.category ? t.category : '') + (t.notes ? (t.category? ' — ': '') + t.notes : '');
+    return `<tr><td>${escapeHtml(t.date||'')}</td><td>${escapeHtml(desc||'')}</td><td class="num">${isIn?fmt(amt):''}</td><td class="num">${!isIn?fmt(amt):''}</td><td class="num">${fmt(running)}</td></tr>`;
+  }).join('');
+  const net = view.debitSum - view.creditSum;
+  const style = `:root { --ink:#1f2937; --muted:#64748B; --brand:#4F46E5; font-family:Inter,Arial,sans-serif; } body { font-family:Inter,Arial,sans-serif; margin:16px; color:var(--ink); }
+  h1 { font-size:18px; margin:0 0 4px; font-weight:800; letter-spacing:.4px; }
+  .meta { font-size:10px; color:var(--muted); line-height:1.3; }
+  table { width:100%; border-collapse:separate; border-spacing:0; margin-top:12px; font-size:10px; }
+  thead th { text-align:left; background:#EEF2FF; padding:4px 6px; font-weight:600; font-size:10px; border:1px solid #E2E8F0; }
+  tbody td { padding:4px 6px; border:1px solid #E2E8F0; }
+  tbody tr:nth-child(even){ background:#F8FAFC; }
+  tfoot td { padding:4px 6px; border:1px solid #E2E8F0; font-weight:600; background:#F1F5F9; }
+  .num { text-align:right; white-space:nowrap; font-feature-settings:"tnum"; }
+  .summary { margin-top:10px; font-size:10px; background:#F1F5F9; border:1px solid #E2E8F0; border-radius:4px; padding:6px 8px; }
+  .brand { font-size:16px; font-weight:800; color:var(--brand); letter-spacing:.4px; }
+  .footer { margin-top:18px; font-size:9px; color:var(--muted); display:flex; justify-content:space-between; }
+  @page { size:A4 portrait; margin:10mm; }`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Ledger PDF</title><style>${style}</style></head><body>
+  <div class="brand">CRM LEDGER</div>
+  <h1>Account Ledger Report</h1>
+  <div class="meta"><div><strong>Account:</strong> ${escapeHtml(accountName)}</div><div><strong>Range:</strong> ${escapeHtml(rangeLabel)}</div><div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</div></div>
+  <div class="summary"><strong>Summary:</strong> Opening ${fmt(view.opening)} • Debits ${fmt(view.debitSum)} • Credits ${fmt(view.creditSum)} • Closing ${fmt(view.closing)} • Net ${net>=0?'+':''}${fmt(net)}</div>
+  <table><thead><tr><th>Date</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><td colspan="2">Totals</td><td class="num">${fmt(view.debitSum)}</td><td class="num">${fmt(view.creditSum)}</td><td class="num">${fmt(view.closing)}</td></tr></tfoot></table>
+  <div class="footer"><div>CRM System Ledger Report</div><div>${escapeHtml(new Date().toLocaleDateString())}</div></div>
+  </body></html>`;
+  // Render HTML to canvas via print-to-PDF approach in hidden iframe (more consistent cross-browser)
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.style.position='fixed'; iframe.style.right='0'; iframe.style.bottom='0'; iframe.style.width='0'; iframe.style.height='0'; iframe.style.border='0';
+  iframe.onload = () => {
+    try {
+      setTimeout(() => { try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch {} setTimeout(()=> { URL.revokeObjectURL(url); iframe.remove(); }, 2000); }, 150);
+    } catch {}
+  };
+  iframe.src = url;
+  document.body.appendChild(iframe);
+  showToast && showToast('Preparing PDF (use system Save as PDF)','info');
+}
+try { window.exportLedgerPdf = exportLedgerPdf; } catch {}
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
 
