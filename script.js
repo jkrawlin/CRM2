@@ -3281,6 +3281,7 @@ async function savePayslipRecord() {
           dt,
           // Use newly saved payslip id for traceability/dedupe
           payslipId: (payslipRef && typeof payslipRef.id === 'string') ? payslipRef.id : null,
+          period,
         });
       }
     }
@@ -3298,7 +3299,7 @@ async function savePayslipRecord() {
 }
 
 // Append a cashflow for a payslip and aggressively refresh accounts + ledger
-async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, payslipId }) {
+async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, payslipId, period }) {
   const flowPayload = cleanData({
     date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
     type: 'out',
@@ -3307,6 +3308,10 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
     category: isAdvance ? 'Advance' : 'Salary',
     notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${empName}`,
     payslipId: payslipId || undefined,
+    month: (period && /\d{4}-\d{2}/.test(period)) ? period : `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}`,
+    accountName: 'Cash',
+    createdBy: auth?.currentUser?.uid || undefined,
+    createdByEmail: auth?.currentUser?.email || undefined,
     createdAt: new Date().toISOString(),
   });
   try {
@@ -3318,7 +3323,7 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
         return existing.id ? existing : existing; // do not add duplicate
       }
     }
-    const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
+  const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
     // Immediate local inject so UI updates even before snapshot
     const enriched = { id: ref.id, ...flowPayload };
     try { if (Array.isArray(window.__cashflowAll)) window.__cashflowAll.push(enriched); else window.__cashflowAll = [enriched]; } catch {}
@@ -3333,7 +3338,10 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
         fundEl.textContent = `$${next.toLocaleString(undefined,{maximumFractionDigits:2})}`;
       }
     } catch {}
-    try { updateAccountsFundCard(); } catch {}
+  try { updateAccountsFundCard(); } catch {}
+  // Fire synthetic events for modules relying on event-driven refresh
+  try { window.dispatchEvent(new CustomEvent('cashflow:updated', { detail: window.__cashflowAll.slice?.() || [] })); } catch {}
+  try { window.dispatchEvent(new Event('accounts:updated')); } catch {}
     // Force ledger refresh if current account selected matches
     try {
       const sel = document.getElementById('ledgerAccountFilter');
