@@ -3237,34 +3237,35 @@ async function savePayslipRecord() {
     createdBy: auth?.currentUser?.uid || null,
     createdByEmail: auth?.currentUser?.email || null,
   });
+  let payslipRef = null;
+  let updatedBalance = undefined;
   try {
-    const payslipRef = await addDoc(collection(db, 'payslips'), record);
+    payslipRef = await addDoc(collection(db, 'payslips'), record);
     showToast('Payslip saved', 'success');
-    // CRITICAL: Update balance for this period using carryover-aware function
-    let updatedBalance = 0;
-    try {
-      updatedBalance = await updateEmployeeBalance(emp.id, period, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
-      try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
-    } catch (e) { console.warn('Balance update failed (payslip)', e); }
-    // If Payroll Details modal is open for this employee, refresh the payslips tab
-    try {
-      const modal = document.getElementById('payrollModal');
-      if (modal && modal.classList.contains('show') && currentPayrollView?.id === emp.id) {
-        await loadPayslipsForPayrollModal(emp.id);
-      }
-    } catch {}
-    // Persist the monthly balance snapshot for this employee and selected period
-    try {
-      const [y,m] = (record.period || '').split('-');
-      const when = (y && m) ? new Date(Number(y), Number(m)-1, 1) : new Date();
-      await upsertMonthlyBalanceFor(emp.id, when);
-      try { window.__payrollBalancesInvalidate?.(); } catch {}
-    } catch (e) { console.warn('Balance upsert failed (payslip)', e); }
   } catch (e) {
     console.error('Save payslip failed', e);
     showToast('Failed to save payslip', 'error');
     throw e;
   }
+  // Update balance after successful payslip save
+  try {
+    updatedBalance = await updateEmployeeBalance(emp.id, period, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
+    try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
+  } catch (e) { console.warn('Balance update failed (payslip)', e); }
+  // Refresh payslips tab in payroll modal if open for this employee
+  try {
+    const modal = document.getElementById('payrollModal');
+    if (modal && modal.classList.contains('show') && currentPayrollView?.id === emp.id) {
+      await loadPayslipsForPayrollModal(emp.id);
+    }
+  } catch {}
+  // Persist monthly balance snapshot
+  try {
+    const [y,m] = (record.period || '').split('-');
+    const when = (y && m) ? new Date(Number(y), Number(m)-1, 1) : new Date();
+    await upsertMonthlyBalanceFor(emp.id, when);
+    try { window.__payrollBalancesInvalidate?.(); } catch {}
+  } catch (e) { console.warn('Balance upsert failed (payslip)', e); }
   // Always post a cashflow OUT entry for the paid (net) amount to deduct from accounts
   try {
     if (Number(net) > 0) {
@@ -3278,7 +3279,8 @@ async function savePayslipRecord() {
           isAdvance,
           net,
           dt,
-          payslipId: (typeof payslipRef?.id === 'string') ? payslipRef.id : null,
+          // Use newly saved payslip id for traceability/dedupe
+          payslipId: (payslipRef && typeof payslipRef.id === 'string') ? payslipRef.id : null,
         });
       }
     }
@@ -3308,11 +3310,29 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
     createdAt: new Date().toISOString(),
   });
   try {
+    // Dedupe: if a cashflow with same payslipId already in cache, skip creating again
+    if (payslipId) {
+      const existing = (Array.isArray(window.__cashflowAll) ? window.__cashflowAll : []).find(cf => cf.payslipId === payslipId && cf.accountId === accId && String(cf.type).toLowerCase()==='out');
+      if (existing) {
+        try { console.debug('[Payslip] Cashflow already exists locally, skipping duplicate add', payslipId); } catch {}
+        return existing.id ? existing : existing; // do not add duplicate
+      }
+    }
     const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
     // Immediate local inject so UI updates even before snapshot
     const enriched = { id: ref.id, ...flowPayload };
     try { if (Array.isArray(window.__cashflowAll)) window.__cashflowAll.push(enriched); else window.__cashflowAll = [enriched]; } catch {}
     try { if (Array.isArray(__fundCashflowsCache)) __fundCashflowsCache.push(enriched); } catch {}
+    // Optimistic fund decrement: directly adjust displayed fund before recompute
+    try {
+      const fundEl = document.getElementById('accountsFundValue');
+      if (fundEl && fundEl.textContent) {
+        const raw = fundEl.textContent.replace(/[^0-9.\-]/g,'');
+        const cur = Number(raw)||0;
+        const next = cur - (Math.abs(Number(net)||0));
+        fundEl.textContent = `$${next.toLocaleString(undefined,{maximumFractionDigits:2})}`;
+      }
+    } catch {}
     try { updateAccountsFundCard(); } catch {}
     // Force ledger refresh if current account selected matches
     try {
