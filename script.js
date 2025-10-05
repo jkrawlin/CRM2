@@ -3281,9 +3281,35 @@ async function savePayslipRecord() {
           notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
           createdAt: new Date().toISOString(),
         }));
-        // Recompute fund and also refresh account shadows if needed
-        try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
+        // Stronger immediate accounts refresh: attempt deterministic recompute, then fallback to local cache update
+        try {
+          if (window.__recomputeFund) {
+            await window.__recomputeFund();
+          }
+        } catch (e) { console.warn('Fund recompute (payslip) failed, will fallback', e); }
         try { updateAccountsFundCard(); } catch {}
+        // Fallback: if snapshot has not yet arrived, inject synthetic flow into cache & refresh
+        try {
+          const synthetic = {
+            id: `temp_${Date.now()}`,
+            date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
+            type: 'out',
+            accountId: accId,
+            amount: Math.abs(Number(net) || 0),
+            category: isAdvance ? 'Advance' : 'Salary',
+            notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
+            createdAt: new Date().toISOString(),
+          };
+          if (Array.isArray(window.__cashflowAll)) {
+            window.__cashflowAll.push(synthetic);
+          } else {
+            window.__cashflowAll = [synthetic];
+          }
+          if (Array.isArray(__fundCashflowsCache)) {
+            __fundCashflowsCache.push(synthetic);
+          }
+          updateAccountsFundCard();
+        } catch (e) { console.warn('Payslip fund fallback cache update failed', e); }
       }
     }
   } catch (cfErr) {
