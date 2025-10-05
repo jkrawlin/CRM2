@@ -3369,7 +3369,7 @@ function renderPayslipHtml({ emp, period, notes, basic, advance, net, currentBal
         </thead>
         <tbody>
           <tr><td>Basic Salary (Monthly)</td><td class="text-right">${fmt(basic)}</td></tr>
-          <tr><td>Total Paid</td><td class="text-right">${fmt(net)}</td></tr>
+          <tr><td>Total Paid (Advance)</td><td class="text-right">${fmt(net)}</td></tr>
         </tbody>
       </table>
       ${notes ? `<div class="payslip-notes"><div class="label">Notes</div><div class="value">${notes}</div></div>` : ''}
