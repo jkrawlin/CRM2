@@ -3027,8 +3027,9 @@ window.closePaymentModal = function() {
 function getPayslipNumbers() {
   const basic = Number(document.getElementById('psBasic')?.value || 0);
   const advance = Number(document.getElementById('psAdvanceAmount')?.value || 0);
-  // For advance slip, the paid amount equals the advance value; net here is simply the advance amount shown
-  const net = advance;
+  // Net logic: if an advance entered (>0) use that; otherwise treat full basic as payable for deduction purposes
+  // This aligns deduction with user expectation that a payslip with zero advance still represents a liability.
+  const net = advance > 0 ? advance : basic;
   return { basic, advance, net };
 }
 
@@ -3266,7 +3267,7 @@ async function savePayslipRecord() {
     await upsertMonthlyBalanceFor(emp.id, when);
     try { window.__payrollBalancesInvalidate?.(); } catch {}
   } catch (e) { console.warn('Balance upsert failed (payslip)', e); }
-  // Always post a cashflow OUT entry for the paid (net) amount to deduct from accounts
+  // Always post a cashflow OUT entry for the net amount (advance or full basic if no advance)
   try {
     if (Number(net) > 0) {
       const [yy, mm] = (period || '').split('-');
@@ -3283,10 +3284,13 @@ async function savePayslipRecord() {
           payslipId: (payslipRef && typeof payslipRef.id === 'string') ? payslipRef.id : null,
           period,
         });
+      } else {
+        showToast('No cash account available; fund not updated', 'warning');
       }
     }
   } catch (cfErr) {
     console.warn('Failed to post cashflow for payslip (non-fatal)', cfErr);
+    showToast('Payslip saved but fund not updated (cashflow error)', 'warning');
   }
   // Proactively refresh payroll table if visible so current salary balance reflects deduction
   try {
@@ -3300,6 +3304,7 @@ async function savePayslipRecord() {
 
 // Append a cashflow for a payslip and aggressively refresh accounts + ledger
 async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, payslipId, period }) {
+  if (window.__debugPayslip) console.debug('[Payslip] appendPayslipCashflow start', { accId, empName, isAdvance, net, dt, payslipId, period });
   const flowPayload = cleanData({
     date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
     type: 'out',
@@ -3323,7 +3328,8 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
         return existing.id ? existing : existing; // do not add duplicate
       }
     }
-  const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
+    const ref = await addDoc(collection(db, 'cashflows'), flowPayload);
+    if (window.__debugPayslip) console.debug('[Payslip] cashflow addDoc success', ref.id);
     // Immediate local inject so UI updates even before snapshot
     const enriched = { id: ref.id, ...flowPayload };
     try { if (Array.isArray(window.__cashflowAll)) window.__cashflowAll.push(enriched); else window.__cashflowAll = [enriched]; } catch {}
@@ -3350,10 +3356,25 @@ async function appendPayslipCashflow({ accId, empName, isAdvance, net, dt, paysl
     // Deterministic recompute (non-blocking) & account list refresh
     try { window.__recomputeFund && window.__recomputeFund(); } catch {}
     try { refreshLedgerAccounts && refreshLedgerAccounts(); } catch {}
+    showToast && showToast('Cashflow recorded for payslip', 'success');
+    return enriched;
   } catch (e) {
     console.warn('appendPayslipCashflow failed', e);
+    showToast && showToast('Failed to record cashflow for payslip', 'error');
+    if (window.__debugPayslip) console.debug('[Payslip] appendPayslipCashflow error', e);
   }
 }
+
+// Debug helper: verify linkage between a payslip and its cashflow
+try {
+  window.__verifyPayslipLink = async function(payslipId) {
+    if (!payslipId) { console.warn('No payslipId provided'); return; }
+    const qSnap = await getDocs(collection(db, 'cashflows'));
+    const match = qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(d=> d.payslipId === payslipId);
+    console.log('[Payslip Verify] cashflows for', payslipId, match);
+    return match;
+  };
+} catch {}
 
 function renderAndPrintPayslip() {
   const emp = currentPayrollView;
