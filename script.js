@@ -3051,9 +3051,9 @@ document.addEventListener('click', (e) => {
     e.preventDefault();
     const ok = confirm('Generate payslip, update balances, and open PDF dialog?');
     if (!ok) return;
-    savePayslipRecord().then(() => {
+    savePayslipRecord().then((res) => {
       try { window.__payrollBalancesInvalidate?.(); } catch {}
-      try { exportPayslipPdf(); } catch (err) { console.error(err); showToast('Payslip PDF export failed', 'error'); }
+      try { exportPayslipPdf(res?.balance); } catch (err) { console.error(err); showToast('Payslip PDF export failed', 'error'); }
     }).catch(err => {
       console.error(err);
       showToast('Failed to save payslip; attempting PDF anyway', 'warning');
@@ -3241,8 +3241,9 @@ async function savePayslipRecord() {
     await addDoc(collection(db, 'payslips'), record);
     showToast('Payslip saved', 'success');
     // CRITICAL: Update balance for this period using carryover-aware function
+    let updatedBalance = 0;
     try {
-      await updateEmployeeBalance(emp.id, period, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
+      updatedBalance = await updateEmployeeBalance(emp.id, period, { ...emp, _type: emp._which === 'temporary' ? 'Temporary' : 'Permanent' });
       try { document.dispatchEvent(new Event('payroll:recompute-balances')); } catch {}
     } catch (e) { console.warn('Balance update failed (payslip)', e); }
     // If Payroll Details modal is open for this employee, refresh the payslips tab
@@ -3293,7 +3294,7 @@ async function savePayslipRecord() {
       renderPayrollTable();
     }
   } catch {}
-  return true;
+  return { balance: (typeof updatedBalance === 'number') ? updatedBalance : undefined };
 }
 
 function renderAndPrintPayslip() {
@@ -3322,11 +3323,13 @@ function renderAndPrintPayslip() {
 }
 
 // Build payslip HTML so it can be reused by print and preview
-function renderPayslipHtml({ emp, period, notes, basic, advance, net }) {
+function renderPayslipHtml({ emp, period, notes, basic, advance, net, currentBalance }) {
   const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const monthTitle = period ? new Date(Number(period.split('-')[0]), Number(period.split('-')[1]) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Period';
   const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
-  const balanceAfterAdvance = Math.max(0, Number(basic || 0) - Number(advance || 0));
+  const balanceAfterAdvance = (typeof currentBalance === 'number' && !isNaN(currentBalance))
+    ? Number(currentBalance)
+    : Math.max(0, Number(basic || 0) - Number(advance || 0));
   return `
     <section class="payslip">
       <header class="payslip-header">
@@ -3380,13 +3383,13 @@ function renderPayslipHtml({ emp, period, notes, basic, advance, net }) {
 }
 
 // Export Payslip as PDF (uses hidden iframe + browser print to allow Save as PDF)
-function exportPayslipPdf() {
+function exportPayslipPdf(balanceOverride) {
   const emp = currentPayrollView;
   if (!emp) { showToast('No employee selected', 'warning'); return; }
   const period = document.getElementById('psPeriod')?.value || '';
   const notes = document.getElementById('psNotes')?.value || '';
   const { basic, advance, net } = getPayslipNumbers();
-  const htmlInner = renderPayslipHtml({ emp, period, notes, basic, advance, net });
+  const htmlInner = renderPayslipHtml({ emp, period, notes, basic, advance, net, currentBalance: balanceOverride });
   const periodLabel = period || new Date().toISOString().slice(0,7);
   const safeName = (emp.name || 'Employee').replace(/[^a-z0-9-_]+/gi,'_');
   const docTitle = `Payslip_${safeName}_${periodLabel}`;
