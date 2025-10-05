@@ -3058,6 +3058,9 @@ document.addEventListener('click', (e) => {
       showToast('Failed to save payslip; printing anyway', 'warning');
       try { renderAndPrintPayslip(); } catch (err2) { console.error(err2); showToast('Failed to print payslip', 'error'); }
     });
+  } else if (e.target && e.target.id === 'payslipPdfBtn') {
+    e.preventDefault();
+    try { exportPayslipPdf(); } catch (err) { console.error(err); showToast('Payslip PDF export failed', 'error'); }
   } else if (e.target && e.target.id === 'paymentPrintBtn') {
     e.preventDefault();
     savePaymentThenPrint().catch(err => {
@@ -3369,6 +3372,75 @@ function renderPayslipHtml({ emp, period, notes, basic, advance, net }) {
     </section>
   `;
 }
+
+// Export Payslip as PDF (uses hidden iframe + browser print to allow Save as PDF)
+function exportPayslipPdf() {
+  const emp = currentPayrollView;
+  if (!emp) { showToast('No employee selected', 'warning'); return; }
+  const period = document.getElementById('psPeriod')?.value || '';
+  const notes = document.getElementById('psNotes')?.value || '';
+  const { basic, advance, net } = getPayslipNumbers();
+  const htmlInner = renderPayslipHtml({ emp, period, notes, basic, advance, net });
+  const periodLabel = period || new Date().toISOString().slice(0,7);
+  const safeName = (emp.name || 'Employee').replace(/[^a-z0-9-_]+/gi,'_');
+  const docTitle = `Payslip_${safeName}_${periodLabel}`;
+  const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8" />
+    <title>${docTitle}</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; padding:16mm; color:#111827; }
+      .payslip-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+      .payslip-header .title { font-size:24px; font-weight:800; letter-spacing:.5px; }
+      .payslip-header .subtitle { font-size:12px; color:#6B7280; }
+      .payslip-header .brand { font-size:22px; font-weight:800; color:#4F46E5; }
+      .payslip-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px 16px; font-size:12px; margin:8px 0 10px; }
+      .payslip-grid .label { color:#64748B; font-weight:500; }
+      .payslip-grid .value { font-weight:600; color:#111827; }
+      table { width:100%; border-collapse:collapse; font-size:12px; margin-top:4px; }
+      th, td { border:1px solid #E5E7EB; padding:6px 8px; }
+      thead th { background:#F3F4F6; color:#374151; text-align:left; }
+      .total td { font-weight:700; background:#F8FAFC; }
+      .payslip-notes { margin-top:12px; font-size:12px; border:1px solid #E5E7EB; background:#F9FAFB; padding:8px 10px; border-radius:6px; }
+      .payslip-notes .label { font-weight:600; color:#475569; margin-bottom:4px; }
+      .payslip-footer { margin-top:18px; font-size:10px; color:#64748B; text-align:right; }
+      .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:72px; font-weight:800; color:rgba(99,102,241,0.06); pointer-events:none; user-select:none; }
+      @page { size:A4 portrait; margin:12mm; }
+      @media print { body { padding:0; } }
+    </style>
+    </head><body>
+      <div class="watermark">CRM</div>
+      ${htmlInner}
+    </body></html>`;
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  const handle = setTimeout(() => {
+    try { iframe.contentWindow?.print(); } catch {}
+  }, 350);
+  try {
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(fullHtml);
+    doc.close();
+    doc.title = docTitle;
+    doc.fonts?.ready?.then(() => {
+      setTimeout(() => { try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); } catch {} }, 150);
+    });
+  } catch (err) {
+    console.error('Payslip PDF export failed', err);
+    showToast('Payslip PDF export failed', 'error');
+    clearTimeout(handle);
+  }
+  // Cleanup after print
+  const cleanup = () => { try { document.body.removeChild(iframe); } catch {}; window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+}
+
+try { window.exportPayslipPdf = exportPayslipPdf; } catch {}
 
 async function renderAndPrintPaymentSlip() {
   const emp = currentPayrollView;
