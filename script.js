@@ -3264,9 +3264,9 @@ async function savePayslipRecord() {
     showToast('Failed to save payslip', 'error');
     throw e;
   }
-  // If this was an advance, post a cashflow OUT entry
+  // Always post a cashflow OUT entry for the paid (net) amount to deduct from accounts
   try {
-    if (isAdvance && Number(advance) > 0) {
+    if (Number(net) > 0) {
       const [yy, mm] = (period || '').split('-');
       const dt = (yy && mm) ? new Date(Number(yy), Number(mm)-1, 1) : new Date();
       const accId = await ensureAssetAccount('cash', 'Cash');
@@ -3274,18 +3274,25 @@ async function savePayslipRecord() {
         await addDoc(collection(db, 'cashflows'), cleanData({
           date: `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`,
           type: 'out',
-          accountId: accId,
-          amount: Math.abs(Number(advance) || 0),
-          category: 'Advance',
-          notes: `Salary advance for ${emp.name || ''}`,
+            accountId: accId,
+          amount: Math.abs(Number(net) || 0),
+          category: isAdvance ? 'Advance' : 'Salary',
+          notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
           createdAt: new Date().toISOString(),
         }));
         try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
       }
     }
   } catch (cfErr) {
-    console.warn('Failed to post cashflow for advance (non-fatal)', cfErr);
+    console.warn('Failed to post cashflow for payslip (non-fatal)', cfErr);
   }
+  // Proactively refresh payroll table if visible so current salary balance reflects deduction
+  try {
+    const payrollSection = document.getElementById('payrollSection');
+    if (payrollSection && payrollSection.style.display !== 'none') {
+      renderPayrollTable();
+    }
+  } catch {}
   return true;
 }
 
