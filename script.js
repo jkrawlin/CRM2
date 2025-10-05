@@ -1,4 +1,4 @@
-import { db, auth, storage } from './firebase-config.js?v=20251005-02';
+import { db, auth, storage } from './firebase-config.js?v=20251005-03';
 import {
   collection,
   getDocs,
@@ -1600,6 +1600,14 @@ document.addEventListener('click', (e) => {
       showToast && showToast('Failed to prepare ledger for print','error');
     }
   }
+  if (e.target && (e.target.id === 'ledgerExportBtn' || e.target.closest?.('#ledgerExportBtn'))) {
+    try {
+      exportCurrentLedgerCsv();
+    } catch (err) {
+      console.error('Ledger export failed', err);
+      showToast && showToast('Failed to export ledger','error');
+    }
+  }
 });
 
 function ensureLedgerPrintArea() {
@@ -1780,6 +1788,56 @@ async function printLedgerPopup() {
 
 // Expose (optional) for debugging
 try { window.printLedgerPopup = printLedgerPopup; } catch {}
+
+// =====================
+// Ledger CSV Export
+// =====================
+function exportCurrentLedgerCsv() {
+  const view = window.__ledgerCurrentView;
+  const accSel = document.getElementById('ledgerAccountFilter');
+  if (!view || !Array.isArray(view.transactions) || !accSel) {
+    showToast && showToast('No ledger data to export','warning');
+    return;
+  }
+  const accountName = accSel.options[accSel.selectedIndex]?.text || 'Account';
+  const monthEl = document.getElementById('ledgerMonth');
+  const dayEl = document.getElementById('ledgerDay');
+  const rangeLabel = (dayEl?.value) ? `Day ${dayEl.value}` : (monthEl?.value ? `Month ${monthEl.value}` : 'All');
+  const headers = ['Date','Description','Debit','Credit','Balance'];
+  const rows = [];
+  // Opening row
+  rows.push(['','Opening Balance','','', formatCurrency(view.opening)]);
+  let running = view.opening;
+  view.transactions.forEach(t => {
+    const isIn = String(t.type).toLowerCase() === 'in';
+    const amt = Number(t.amount||0);
+    if (isIn) running += amt; else running -= amt;
+    const desc = (t.category ? t.category : '') + (t.notes ? (t.category? ' — ': '') + t.notes : '');
+    rows.push([
+      t.date || '',
+      desc,
+      isIn ? formatCurrency(amt) : '',
+      !isIn ? formatCurrency(amt) : '',
+      formatCurrency(running)
+    ]);
+  });
+  rows.push(['','Totals', formatCurrency(view.debitSum), formatCurrency(view.creditSum), formatCurrency(view.closing)]);
+  const safe = (s) => '"' + String(s??'').replace(/"/g,'""') + '"';
+  const csvLines = [ `"Ledger Export","${accountName.replace(/"/g,'""')}","${rangeLabel.replace(/"/g,'""')}"`, headers.map(safe).join(','), ...rows.map(r=>r.map(safe).join(',')) ];
+  const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date();
+  const stamp = ts.toISOString().slice(0,19).replace(/[:T]/g,'-');
+  a.href = url;
+  a.download = `ledger-${accountName.replace(/[^a-z0-9_-]+/gi,'_')}-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(url), 2000);
+  showToast && showToast('Ledger exported','success');
+}
+try { window.exportCurrentLedgerCsv = exportCurrentLedgerCsv; } catch {}
 
 // (Removed duplicate escapeHtml; single definition earlier in file)
 
