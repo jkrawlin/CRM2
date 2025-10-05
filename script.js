@@ -3281,7 +3281,9 @@ async function savePayslipRecord() {
           notes: `${isAdvance ? 'Salary advance' : 'Salary payment'} for ${emp.name || ''}`,
           createdAt: new Date().toISOString(),
         }));
+        // Recompute fund and also refresh account shadows if needed
         try { if (window.__recomputeFund) window.__recomputeFund(); } catch {}
+        try { updateAccountsFundCard(); } catch {}
       }
     }
   } catch (cfErr) {
