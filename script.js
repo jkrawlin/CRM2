@@ -1938,9 +1938,18 @@ function openLedgerReportPopup() {
   </body></html>`;
   const w = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=800');
   if (!w) { showToast && showToast('Popup blocked','error'); return; }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  try {
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  } catch (err) {
+    // Some browsers under strict popup settings may delay document readiness; fallback
+    try {
+      setTimeout(() => {
+        try { w.document.body ? (w.document.body.innerHTML = html) : w.document.write(html); } catch {}
+      }, 50);
+    } catch {}
+  }
   // Attempt deferred print trigger (user clicks inside new window)
 }
 try { window.openLedgerReportPopup = openLedgerReportPopup; } catch {}
