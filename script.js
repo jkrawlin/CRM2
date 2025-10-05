@@ -3327,9 +3327,7 @@ function renderPayslipHtml({ emp, period, notes, basic, advance, net, currentBal
   const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const monthTitle = period ? new Date(Number(period.split('-')[0]), Number(period.split('-')[1]) - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'Current Period';
   const typeLabel = emp._which === 'temporary' ? 'Temporary' : 'Permanent';
-  const balanceAfterAdvance = (typeof currentBalance === 'number' && !isNaN(currentBalance))
-    ? Number(currentBalance)
-    : Math.max(0, Number(basic || 0) - Number(advance || 0));
+  // Removed advance & balance rows per requirement
   return `
     <section class="payslip">
       <header class="payslip-header">
@@ -3371,8 +3369,6 @@ function renderPayslipHtml({ emp, period, notes, basic, advance, net, currentBal
         </thead>
         <tbody>
           <tr><td>Basic Salary (Monthly)</td><td class="text-right">${fmt(basic)}</td></tr>
-          <tr><td>Advance Amount</td><td class="text-right">${fmt(advance)}</td></tr>
-          <tr class="total"><td>Balance Salary (after advance)</td><td class="text-right">${fmt(balanceAfterAdvance)}</td></tr>
           <tr><td>Total Paid</td><td class="text-right">${fmt(net)}</td></tr>
         </tbody>
       </table>
