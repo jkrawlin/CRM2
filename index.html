@@ -3,9 +3,144 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Employee Management System</title>
-    <link rel="stylesheet" href="assets/tailwind.css?v=20251005-01" />
-    <link rel="stylesheet" href="styles.css?v=20251005-14" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>NIPON Employee Management System</title>
+    <link rel="stylesheet" href="assets/tailwind.css?v=20251019-05" />
+    <link rel="stylesheet" href="styles.css?v=20251024-110" />
+        <style id="employee-table-inline-overrides">
+            /* Force table card and header styles to apply immediately */
+            #employeesSection > .card, #temporarySection > .card, #payrollTabTable > .card {
+                border-radius: 16px !important;
+                border: 1px solid #E5E7EB !important;
+                box-shadow: 0 8px 24px rgba(15,23,42,0.06) !important;
+                background: #FFFFFF !important;
+                overflow: hidden;
+            }
+            #employeesSection > .card::before, #temporarySection > .card::before, #payrollTabTable > .card::before {
+                content: '';
+                display: block;
+                height: 3px;
+                background: linear-gradient(90deg, #6366F1, #818CF8);
+            }
+            /* CRITICAL: Force table layout to respect colgroup widths */
+            .employee-table {
+                table-layout: fixed !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                font-size: 11px !important;
+            }
+            /* CRITICAL: Prevent horizontal scroll - constrain container */
+            #employeesSection .overflow-x-auto,
+            #temporarySection .overflow-x-auto {
+                overflow-x: hidden !important;
+                max-width: 100% !important;
+            }
+            /* CRITICAL: Make action buttons tiny with centered icons */
+            .employee-table .action-btn {
+                padding: 0 !important;
+                font-size: 8px !important;
+                min-width: 20px !important;
+                max-width: 20px !important;
+                width: 20px !important;
+                height: 20px !important;
+                border-radius: 3px !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                box-sizing: border-box !important;
+            }
+            .employee-table .action-btn i {
+                font-size: 9px !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .employee-table .action-buttons {
+                gap: 3px !important;
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            /* Ensure Actions column doesn't clip buttons */
+            .employee-table td.col-actions {
+                overflow: visible !important;
+                padding: 2px !important;
+            }
+            /* Ultra-compact header and cell spacing */
+            #employeesSection table.employee-table thead th,
+            #temporarySection table.employee-table thead th {
+                background: #F8FAFC !important;
+                font-weight: 700 !important;
+                font-size: 10px !important;
+                line-height: 1.2 !important;
+                color: #334155 !important;
+                padding: 4px 4px !important;
+                vertical-align: middle !important;
+            }
+            /* Apply identical compact header style to Payroll + Clients table headers */
+            #payrollTabTable table.employee-table thead th,
+            #payrollTabTable table thead th,
+            #clientsSection table.employee-table thead th,
+            #clientsBillingSection table.employee-table thead th {
+                background: #F8FAFC !important;
+                font-weight: 700 !important;
+                font-size: 10px !important; /* match Employees */
+                line-height: 1.2 !important;
+                color: #334155 !important;
+                padding: 4px 4px !important;
+                vertical-align: middle !important;
+                white-space: nowrap !important;
+            }
+            /* Exception: allow long header copy to wrap inside Clients table */
+            #clientsSection table.employee-table thead th.header-wrap { white-space: normal !important; }
+            #payrollTabTable table thead th i { font-size: 10px !important; color: #94A3B8 !important; }
+            /* Compact tbody cells */
+            .employee-table tbody td {
+                padding: 4px 4px !important;
+                font-size: 11px !important;
+                line-height: 1.3 !important;
+            }
+            /* CRITICAL: Force Company column to truncate by constraining the td */
+            .employee-table td.col-company {
+                max-width: 0 !important;
+                overflow: hidden !important;
+                white-space: nowrap !important;
+                text-overflow: ellipsis !important;
+            }
+            /* Allow badge to fill parent but still truncate */
+            .employee-table td.col-company .department-badge {
+                max-width: 100% !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+                display: inline-block !important;
+            }
+            /* CRITICAL: Remove global nowrap from all OTHER td cells to match Temporary */
+            .employee-table td {
+                white-space: normal !important;
+            }
+            /* Keep specific columns nowrap */
+            .employee-table td.col-email,
+            .employee-table td.col-phone,
+            .employee-table td.col-qid,
+            .employee-table td.col-nationality,
+            .employee-table td.col-salary,
+            .employee-table td.col-join {
+                white-space: nowrap !important;
+            }
+            #employeesSection table.employee-table tbody tr.employee-row,
+            #temporarySection table.employee-table tbody tr.employee-row {
+                background: #FFFFFF !important;
+            }
+            #employeesSection table.employee-table tbody tr.employee-row:hover,
+            #temporarySection table.employee-table tbody tr.employee-row:hover {
+                background: #F1F5F9 !important;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important;
+            }
+        </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
         <style id="sidebar-toggle-css">
@@ -73,6 +208,10 @@
                 .payslip-table .total td { font-weight: 800; }
                 .payslip-notes { margin-top: 10px; font-size: 12px; }
                 .payslip-footer { margin-top: 14px; color:#6B7280; font-size: 11px; text-align:right; }
+                .payslip-signature { margin-top:16px; display:flex; gap:28px; }
+                .payslip-signature .sig-block { width:260px; }
+                .payslip-signature .sig-line { height:36px; border-bottom:1px solid #94A3B8; }
+                .payslip-signature .sig-label { margin-top:6px; font-size:11px; color:#64748B; }
             }
             /* Screen-only: keep the payslip hidden */
             #payslipPrintArea { display: none; }
@@ -95,6 +234,10 @@
             .payslip-notes { margin-top: 10px; font-size: 12px; background:#F9FAFB; border:1px solid #E5E7EB; border-radius: 8px; padding: 8px 10px; }
             .payslip-notes .label { color:#6B7280; margin-bottom: 4px; }
             .payslip-footer { margin-top: 14px; color:#6B7280; font-size: 11px; text-align:right; }
+            .payslip-signature { margin-top:16px; display:flex; gap:28px; }
+            .payslip-signature .sig-block { width:260px; }
+            .payslip-signature .sig-line { height:36px; border-bottom:1px solid #94A3B8; }
+            .payslip-signature .sig-label { margin-top:6px; font-size:11px; color:#64748B; }
         </style>
         <style id="modal-overlay-fix">
             /* Harden modal overlay so nothing bleeds through or captures events */
@@ -293,8 +436,7 @@
                 <!-- Sidebar -->
                 <aside id="sidebar" class="w-64 bg-white border-r border-gray-200 p-6 hidden md:flex md:flex-col">
                     <div class="flex items-center justify-between mb-6">
-                        <div class="text-xl font-extrabold bg-gradient-to-r from-indigo-500 to-indigo-700 bg-clip-text text-transparent">CRM</div>
-                        <button id="collapseSidebarBtn" class="btn btn-ghost" title="Hide Sidebar" aria-label="Hide Sidebar"><i class="fas fa-chevron-left"></i></button>
+                        <button id="collapseSidebarBtn" class="btn btn-ghost ml-auto" title="Hide Sidebar" aria-label="Hide Sidebar"><i class="fas fa-chevron-left"></i></button>
                     </div>
                     <nav class="space-y-1">
                         <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="dashboard">
@@ -320,6 +462,10 @@
                         <button class="w-full text-left flex items-center gap-3 px-10 py-2 rounded-lg hover:bg-gray-100 text-gray-700" data-nav="clients-billing" title="Client Transactions">
                             <i class="fas fa-file-invoice-dollar text-indigo-400"></i>
                             <span>Client Transactions</span>
+                        </button>
+                        <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="contractors">
+                            <i class="fas fa-car text-indigo-500"></i>
+                            <span>Vehicles</span>
                         </button>
                         <button class="w-full text-left flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 font-semibold" data-nav="accounts">
                             <i class="fas fa-wallet text-indigo-500"></i>
@@ -380,18 +526,44 @@
                     <i class="fas fa-user-clock"></i>
                     <span>Add Temporary</span>
                 </button>
+                <button id="openContractorModalBtn" class="btn btn-primary btn-lg" style="display:none;">
+                    <i class="fas fa-user-tie"></i>
+                    <span>Add Contractor</span>
+                </button>
+                <button id="openVehicleModalBtn" class="btn btn-primary btn-lg" style="display:none;">
+                    <i class="fas fa-car"></i>
+                    <span>Add Vehicle</span>
+                </button>
             </div>
         </div>
 
         <!-- Dashboard Section -->
         <section id="dashboardSection" data-section="dashboard" class="space-y-8">
-            <!-- Modern Stats Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-1 gap-6">
+            <!-- Modern Stats & Contact Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Total Employees Card -->
                 <div class="card p-6 relative overflow-hidden">
                     <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-users"></i></div>
                     <div id="totalEmployees" class="text-3xl font-extrabold text-gray-900">0</div>
                     <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Total Employees</div>
                     <span class="absolute top-4 right-4 text-xs font-semibold text-white bg-emerald-500 px-2 py-1 rounded">+12%</span>
+                    <div class="absolute bottom-3 right-4 text-xs text-gray-500">deployed on 10/14/2025</div>
+                </div>
+                <!-- Contact Info Card -->
+                <div class="card p-6 relative overflow-hidden">
+                    <div class="w-12 h-12 bg-gradient-to-br from-indigo-400 to-indigo-600 rounded-md flex items-center justify-center text-white text-xl mb-4"><i class="fas fa-id-badge"></i></div>
+                    <h3 class="text-lg font-bold text-gray-900 mb-2">Contact</h3>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-envelope text-indigo-500 mt-0.5"></i>
+                            <a href="mailto:zmnajaath@gmail.com" class="text-gray-800 hover:text-indigo-600 break-all font-medium" title="Email">zmnajaath@gmail.com</a>
+                        </div>
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-phone text-indigo-500 mt-0.5"></i>
+                            <a href="tel:+97471531092" class="text-gray-800 hover:text-indigo-600 font-medium" title="Phone">+974 7153 1092</a>
+                        </div>
+                    </div>
+                    <div class="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-indigo-500 to-indigo-400"></div>
                 </div>
             </div>
         </section>
@@ -402,7 +574,8 @@
         <!-- Clients Section -->
         <section id="clientsSection" data-section="clients" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                <div style="height:3px;background:linear-gradient(90deg, #6366F1, #818CF8)"></div>
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between section-header">
                     <h3 class="text-lg font-bold text-gray-900">Clients</h3>
                     <div class="flex items-center gap-3">
                         <!-- Simple select filter populated at runtime -->
@@ -414,7 +587,7 @@
                     </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full table-fixed text-sm">
+                    <table class="min-w-full table-fixed text-sm employee-table">
                         <colgroup>
                             <col class="w-[18%]" />  <!-- Company -->
                             <col class="w-[18%]" />  <!-- Company Email -->
@@ -425,14 +598,14 @@
                             <col class="w-[16%]" />  <!-- Address -->
                             <col class="w-[8%]" />   <!-- Actions -->
                         </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
                             <tr>
                                 <th class="text-left font-semibold px-4 py-3">Company</th>
                                 <th class="text-left font-semibold px-4 py-3">Company Email</th>
                                 <th class="text-left font-semibold px-4 py-3">Company Phone</th>
                                 <th class="text-left font-semibold px-4 py-3">Contact Person</th>
                                 <th class="text-right font-semibold px-4 py-3">Monthly</th>
-                                <th class="text-center font-semibold px-4 py-3">No. of Employees Assigned</th>
+                                <th class="text-center font-semibold px-4 py-3 header-wrap">No. of Employees Assigned</th>
                                 <th class="text-left font-semibold px-4 py-3">Address</th>
                                 <th class="text-center font-semibold px-4 py-3">Actions</th>
                                 
@@ -452,7 +625,8 @@
     <!-- Clients Transactions Section -->
         <section id="clientsBillingSection" data-section="clients-billing" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                <div style="height:3px;background:linear-gradient(90deg, #6366F1, #818CF8)"></div>
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between section-header">
                     <h3 class="text-lg font-bold text-gray-900">Client Transactions (Monthly)
                         <span id="clientBillingSelectedName" class="ml-2 text-indigo-600 font-semibold"></span>
                     </h3>
@@ -462,10 +636,11 @@
                         <label class="text-sm text-gray-600">Client</label>
                         <select id="clientBillingClient" class="input min-w-[240px]"></select>
                         <button id="openClientPaymentBtn" class="btn btn-primary" disabled title="Record a payment for the selected month and client"><i class="fas fa-hand-holding-dollar"></i> Record Payment</button>
+                        <button id="clientBillingNewRowBtn" class="btn btn-secondary" disabled title="Create a new transaction row for this client/month"><i class="fas fa-plus"></i> New Row</button>
                     </div>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full table-fixed text-sm">
+                    <table class="min-w-full table-fixed text-sm employee-table">
                         <colgroup>
                             <col class="w-[14%]" />  <!-- Date -->
                             <col class="w-[12%]" />  <!-- Assigned Employees -->
@@ -475,7 +650,7 @@
                             <col class="w-[14%]" />  <!-- Outstanding -->
                             <col class="w-[18%]" />  <!-- Notes -->
                         </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
                             <tr>
                                 <th class="text-left font-semibold px-4 py-3">Date</th>
                                 <th class="text-left font-semibold px-4 py-3">Assigned</th>
@@ -542,48 +717,36 @@
         <!-- Accounts Section (Redesigned) -->
         <section id="accountsSection" data-section="accounts" class="space-y-8" style="display:none;">
             <div class="card overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                <div style="height:3px;background:linear-gradient(90deg, #6366F1, #818CF8)"></div>
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between section-header">
                     <h3 class="text-lg font-bold text-gray-900">Accounts</h3>
                     <div class="flex items-center gap-2">
                         <button id="openIncomeTxnBtn" class="btn btn-primary" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'in' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('in'))"><i class="fas fa-arrow-down"></i> Income</button>
                         <button id="openExpenseTxnBtn" class="btn btn-danger" onclick="(window.openCashTxnModal && window.openCashTxnModal({ type: 'out' })) || (window.__openCashTxnFallback && window.__openCashTxnFallback('out'))"><i class="fas fa-arrow-up"></i> Expense</button>
                         <button id="openTransferBtn" class="btn btn-secondary" onclick="window.openTransferModal && window.openTransferModal()"><i class="fas fa-right-left"></i> Transfer</button>
-                        <button id="setCurrentFundBtn" class="btn btn-secondary"><i class="fas fa-pen"></i> Set Current Fund</button>
+                        <!-- Removed Set Current Fund button -->
                     </div>
                 </div>
 
-                <!-- Current Fund -->
-                <div class="px-6 py-4 bg-white">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="rounded-lg border border-gray-100 p-4 flex items-center justify-between md:col-span-3">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 bg-gradient-to-br from-indigo-400 to-indigo-500 rounded-md flex items-center justify-center text-white">
-                                    <i class="fas fa-sack-dollar"></i>
-                                </div>
-                                <div>
-                                    <div class="text-xs uppercase text-gray-500 font-semibold">Current Fund Available</div>
-                                    <div id="accountsFundValue" class="text-2xl font-extrabold text-gray-900">$0</div>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <div id="accountsFundAsOf" class="text-xs text-gray-500"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <!-- Current Fund section removed -->
 
                 <!-- Sub-Tabs: Overview, Transactions, Ledger, Settings -->
                 <div class="border-b">
                     <div class="flex items-center gap-2 px-4">
                         <button id="accountsSubTabOverviewBtn" class="px-3 py-2 rounded-t-md font-semibold text-indigo-600 border-b-2 border-indigo-600" onclick="window.setAccountsSubTab && window.setAccountsSubTab('overview')">Overview</button>
                         <button id="accountsSubTabLedgerBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('ledger')">Ledger</button>
+                        <button id="accountsSubTabSummaryBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('summary')">Summary</button>
                         <button id="accountsSubTabSettingsBtn" class="px-3 py-2 rounded-t-md text-gray-600 hover:text-gray-800" onclick="window.setAccountsSubTab && window.setAccountsSubTab('settings')">Settings</button>
                     </div>
                 </div>
 
                 <!-- Tab: Overview -->
                 <div id="accountsTabOverview" class="px-4 py-4 space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div class="card p-4">
+                            <div class="text-xs uppercase text-gray-500">Cash in Hand</div>
+                            <div id="overviewCashInHand" class="text-xl font-bold">$0</div>
+                        </div>
                         <div class="card p-4">
                             <div class="text-xs uppercase text-gray-500">Today In</div>
                             <div id="overviewTodayIn" class="text-xl font-bold">$0</div>
@@ -617,6 +780,7 @@
                                     <col class="w-[12%]" />
                                     <col class="w-[18%]" />
                                     <col class="w-[14%]" />
+                                    <col class="w-[14%]" />
                                     <col class="w-[18%]" />
                                 </colgroup>
                                 <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
@@ -627,11 +791,66 @@
                                         <th class="text-left font-semibold px-4 py-3">Category</th>
                                         <th class="text-right font-semibold px-4 py-3">Amount</th>
                                         <th class="text-left font-semibold px-4 py-3">Notes</th>
+                                        <th class="text-right font-semibold px-4 py-3">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody id="accountsRecentTbody" class="divide-y divide-gray-100"></tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Tab: Summary -->
+                <div id="accountsTabSummary" class="px-4 py-4 space-y-4" style="display:none;">
+                    <div class="flex items-center gap-3">
+                        <label class="text-sm text-gray-600">Month</label>
+                        <input id="summaryMonth" type="month" class="input" />
+                        <button id="summaryRefreshBtn" class="btn btn-secondary btn-sm">Refresh</button>
+                        <button id="driverPetrolExportBtn" class="btn btn-secondary btn-sm" title="Export driver petrol summary as CSV"><i class="fas fa-file-csv"></i> Export Drivers</button>
+                        <button id="accountsSummaryPdfBtn" class="btn btn-secondary btn-sm" title="Download Summary PDF"><i class="fas fa-file-pdf"></i> PDF</button>
+                    </div>
+                    <div class="card p-4 overflow-x-auto">
+                        <table class="min-w-full table-fixed text-sm employee-table" id="accountsSummaryTable">
+                            <colgroup>
+                                <col class="w-[28%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                                <col class="w-[18%]" />
+                            </colgroup>
+                            <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
+                                <tr>
+                                    <th class="text-left font-semibold px-4 py-3">Account</th>
+                                    <th class="text-right font-semibold px-4 py-3">Opening</th>
+                                    <th class="text-right font-semibold px-4 py-3">In</th>
+                                    <th class="text-right font-semibold px-4 py-3">Out</th>
+                                    <th class="text-right font-semibold px-4 py-3">Closing</th>
+                                </tr>
+                            </thead>
+                            <tbody id="accountsSummaryTbody" class="divide-y divide-gray-100"></tbody>
+                        </table>
+                        <div id="accountsSummaryEmpty" class="text-sm text-gray-500">No data for this month</div>
+                    </div>
+                    <div class="card p-4 overflow-x-auto">
+                        <div class="text-sm font-semibold text-gray-700 mb-2">Driver Petrol Summary</div>
+                        <table class="min-w-full table-fixed text-sm employee-table" id="driverPetrolSummaryTable">
+                            <colgroup>
+                                <col class="w-[40%]" />
+                                <col class="w-[20%]" />
+                                <col class="w-[20%]" />
+                                <col class="w-[20%]" />
+                            </colgroup>
+                            <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
+                                <tr>
+                                    <th class="text-left font-semibold px-4 py-3">Driver</th>
+                                    <th class="text-right font-semibold px-4 py-3">Total Petrol</th>
+                                    <th class="text-right font-semibold px-4 py-3">Transactions</th>
+                                    <th class="text-right font-semibold px-4 py-3">Avg/Txn</th>
+                                </tr>
+                            </thead>
+                            <tbody id="driverPetrolSummaryTbody" class="divide-y divide-gray-100"></tbody>
+                        </table>
+                        <div id="driverPetrolSummaryEmpty" class="text-sm text-gray-500">No petrol expenses for this month</div>
                     </div>
                 </div>
 
@@ -651,25 +870,25 @@
                         <div class="flex items-center gap-3 flex-wrap justify-end">
                             <button id="ledgerExportBtn" class="btn btn-secondary" title="Export current ledger to CSV"><i class="fas fa-file-csv"></i> <span class="hidden sm:inline">Export</span></button>
                             <button id="ledgerPdfBtn" class="btn btn-secondary" title="Download professional PDF report"><i class="fas fa-file-pdf"></i> <span class="hidden sm:inline">PDF</span></button>
-                            <button id="ledgerPrintBtn" class="btn btn-primary" title="Print current ledger"><i class="fas fa-print"></i> <span class="hidden sm:inline">Print</span></button>
-                            <div id="ledgerSummary" class="text-sm text-gray-600"></div>
+                            <!-- Print button removed -->
+                            <!-- ledgerSummary removed -->
                         </div>
                     </div>
                     <table class="min-w-full table-fixed text-sm">
                         <colgroup>
-                            <col class="w-[14%]" />
-                            <col class="w-[36%]" />
+                            <col class="w-[16%]" />
+                            <col class="w-[40%]" />
                             <col class="w-[16%]" />
                             <col class="w-[16%]" />
-                            <col class="w-[18%]" />
+                            <col class="w-[12%]" />
                         </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
                             <tr>
                                 <th class="text-left font-semibold px-4 py-3">Date</th>
                                 <th class="text-left font-semibold px-4 py-3">Description</th>
                                 <th class="text-right font-semibold px-4 py-3">Debit</th>
                                 <th class="text-right font-semibold px-4 py-3">Credit</th>
-                                <th class="text-right font-semibold px-4 py-3">Balance</th>
+                                <th class="text-right font-semibold px-4 py-3">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="ledgerTableBody" class="divide-y divide-gray-100"></tbody>
@@ -684,13 +903,13 @@
                 <!-- Tab: Settings (simple list for now) -->
                 <div id="accountsTabSettings" class="overflow-x-auto" style="display:none;">
                     <div class="px-4 py-3 text-sm text-gray-600">Accounts are managed automatically. You can review existing accounts below.</div>
-                    <table class="min-w-full table-fixed text-sm">
+                    <table class="min-w-full table-fixed text-sm employee-table">
                         <colgroup>
                             <col class="w-[40%]" />
                             <col class="w-[30%]" />
                             <col class="w-[30%]" />
                         </colgroup>
-                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide" style="background-color: #F8FAFC !important;">
                             <tr>
                                 <th class="text-left font-semibold px-4 py-3">Account Name</th>
                                 <th class="text-left font-semibold px-4 py-3">Type</th>
@@ -816,8 +1035,17 @@
                                 <input id="cfAmount" type="number" step="any" class="input" required />
                             </div>
                             <div>
-                                <label class="label"><i class="fas fa-tags label-icon"></i> Category (optional)</label>
+                                <label class="label"><i class="fas fa-tags label-icon"></i> Category</label>
                                 <input id="cfCategory" type="text" class="input" placeholder="e.g., Materials, Rent, Sales" />
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="label"><i class="fas fa-id-card label-icon"></i> Assigned Driver</label>
+                                <div class="flex gap-2">
+                                    <select id="cfDriver" class="input flex-1"></select>
+                                </div>
+                                <div id="cfDriverHint" class="text-xs text-gray-500 mt-1" style="display:none;">Driver is required when Category is Petrol/Fuel.</div>
                             </div>
                         </div>
                         <div>
@@ -832,6 +1060,8 @@
                 </div>
             </div>
         </div>
+
+        
 
         <!-- Assignments Section (simple list) -->
         <section id="assignmentsSection" data-section="assignments" class="space-y-8" style="display:none;">
@@ -894,43 +1124,27 @@
                             <div class="card overflow-hidden">
                                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Payroll</h3></div>
                                 <div class="overflow-x-auto">
-                                                            <style>
-                      /* Scoped compact styles for Payroll table only */
-                      #payrollTabTable table { font-size: 13px; }
-                      #payrollTabTable thead th { padding-top: 10px; padding-bottom: 10px; padding-left: 12px; padding-right: 12px; }
-                      #payrollTabTable tbody td { padding-top: 8px; padding-bottom: 8px; padding-left: 12px; padding-right: 12px; }
-                      #payrollTabTable .btn-compact { padding: 6px 12px; font-size: 13px; line-height: 1.2; }
-                      #payrollTabTable .btn-compact i { font-size: 14px; }
-                                                                /* Ensure Start Date column has visible width (moderate) */
-                                                                #payrollTabTable thead th:nth-child(6),
-                                                                #payrollTabTable tbody td:nth-child(6) { width: 130px; min-width: 130px; }
-                                                                /* Tighten spacing specifically between Start Date (6) and Qatar ID (7) */
-                                                                #payrollTabTable thead th:nth-child(6) { padding-right: 10px !important; }
-                                                                #payrollTabTable thead th:nth-child(7) { padding-left: 10px !important; }
-                                                                #payrollTabTable tbody td:nth-child(6) { padding-right: 10px !important; }
-                                                                #payrollTabTable tbody td:nth-child(7) { padding-left: 10px !important; }
-                    </style>
-                                        <table class="min-w-full table-fixed text-[13px]">
+                    <table class="min-w-full table-fixed text-xs data-table employee-table">
                         <colgroup>
-                                                        <col class="w-[16%]" />  <!-- Name -->
-                                                        <col class="w-[7%]" />   <!-- Type -->
-                                                        <col class="w-[12%]" />  <!-- Company -->
-                                                        <col class="w-[11%]" />  <!-- Monthly Salary -->
-                                                        <col class="w-[11%]" />  <!-- Current Salary Balance -->
-                                                <col class="w-[12%]" />  <!-- Start Date (slightly narrower) -->
-                                                <col class="w-[8%]" />   <!-- Qatar ID (slightly wider for digits) -->
-                                                <col class="w-[24%]" />  <!-- Actions (balanced) -->
+                            <col class="w-[14%]" />  <!-- Name -->
+                            <col class="w-[8%]" />   <!-- Type -->
+                            <col class="w-[16%]" />  <!-- Company -->
+                            <col class="w-[10%]" />  <!-- Monthly Salary -->
+                            <col class="w-[10%]" />  <!-- Current Balance -->
+                            <col class="w-[10%]" />  <!-- Start Date -->
+                            <col class="w-[10%]" />  <!-- Qatar ID -->
+                            <col class="w-[22%]" />  <!-- Actions -->
                         </colgroup>
                         <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                             <tr>
-                                <th class="text-left font-semibold px-2 py-1 cursor-pointer" onclick="sortPayroll('name')">Name <i class="fas fa-sort ml-1"></i></th>
-                                <th class="text-left font-semibold px-2 py-1 cursor-pointer" onclick="sortPayroll('type')">Type <i class="fas fa-sort ml-1"></i></th>
-                                <th class="text-left font-semibold px-2 py-1 cursor-pointer whitespace-nowrap" onclick="sortPayroll('department')">Company <i class="fas fa-sort ml-1"></i></th>
-                                <th class="text-right font-semibold px-2 py-1 cursor-pointer whitespace-nowrap" onclick="sortPayroll('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
-                                                    <th class="text-right font-semibold px-2 py-1 whitespace-nowrap">Current Salary Balance</th>
-                                                    <th class="text-left font-semibold px-2 py-1 cursor-pointer whitespace-nowrap w-[130px] min-w-[130px]" onclick="sortPayroll('joinDate')">Start Date <i class="fas fa-sort ml-1"></i></th>
-                                <th class="text-left font-semibold px-2 py-1 cursor-pointer" onclick="sortPayroll('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
-                                <th class="text-center font-semibold px-2 py-1">Actions</th>
+                                <th class="text-left font-semibold px-2 py-2 cursor-pointer" onclick="sortPayroll('name')">Name <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-2 py-2 cursor-pointer" onclick="sortPayroll('type')">Type <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-left font-semibold px-2 py-2 cursor-pointer whitespace-nowrap" onclick="sortPayroll('department')">Company <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-right font-semibold px-2 py-2 cursor-pointer whitespace-nowrap" onclick="sortPayroll('salary')">Salary <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-right font-semibold px-2 py-2 whitespace-nowrap">Balance</th>
+                                <th class="text-right font-semibold px-1 py-2 cursor-pointer whitespace-nowrap" onclick="sortPayroll('joinDate')">Start <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-center font-semibold px-1 py-2 cursor-pointer" onclick="sortPayroll('qid')">QID <i class="fas fa-sort ml-1"></i></th>
+                                <th class="text-center font-semibold px-2 py-2 whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="payrollTableBody" class="divide-y divide-gray-100"></tbody>
@@ -971,7 +1185,7 @@
     <div class="card overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Employee Directory</h3></div>
             <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed text-sm data-table">
+                <table class="min-w-full table-fixed text-xs data-table employee-table">
                                         <style>
                                             /* Visual indicator for terminated employees */
                                             tr.terminated-row { background-color: #fff1f2; }
@@ -984,31 +1198,35 @@
                                             /* Force all descendants to inherit background to avoid white patches (but preserve status dots) */
                                             tr.terminated-row *:not(.expiry-dot):not(.status-dot) { background-color: #fff1f2 !important; }
                                             tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
+                                            /* Keep header titles on a single line */
+                                            #employeesSection table thead th { white-space: nowrap; }
                                         </style>
                     <colgroup>
                         <col class="w-[13%]" />  <!-- Name -->
-                        <col class="w-[10%]" />  <!-- Email -->
-                        <col class="w-[9%]" />   <!-- Phone -->
+                        <col class="w-[13%]" />  <!-- Email -->
+                        <col class="w-[7%]" />   <!-- Phone -->
                         <col class="w-[9%]" />   <!-- Qatar ID -->
-                        <col class="w-[6%]" />   <!-- Status -->
-                        <col class="w-[18%]" />  <!-- Position -->
+                        <col class="w-[8%]" />   <!-- Nationality -->
+                        <col class="w-[5%]" />   <!-- Status -->
+                        <col class="w-[11%]" />  <!-- Position -->
                         <col class="w-[11%]" />  <!-- Company -->
-                        <col class="w-[11%]" />  <!-- Monthly Salary -->
-                        <col class="w-[9%]" />   <!-- Join Date -->
-                        <col class="w-[4%]" />   <!-- Actions -->
+                        <col class="w-[8%]" />   <!-- Monthly Salary -->
+                        <col class="w-[7%]" />   <!-- Join Date -->
+                        <col class="w-[8%]" />   <!-- Actions -->
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
-                            <th class="col-name text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('name')">Name <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-email text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('email')">Email <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-phone text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('phone')">Phone <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-qid text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('qid')">Qatar ID <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-status text-center font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('status')">STATUS <i class="fas fa-sort text-gray-400 ml-1"></i></th>
-                            <th class="col-position text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('position')">Position <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-company text-left font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('department')">Company <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-salary text-right font-semibold px-4 py-3 cursor-pointer whitespace-nowrap" onclick="sortTable('salary')">Monthly Salary <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-join text-left font-semibold px-4 py-3 cursor-pointer" onclick="sortTable('joinDate')">Join Date <i class="fas fa-sort ml-1"></i></th>
-                            <th class="col-actions text-center font-semibold px-0 py-3 cursor-pointer" onclick="sortTable('actions')">Actions <i class="fas fa-sort ml-1"></i></th>
+                            <th class="col-name text-left font-semibold px-2 py-2">Name</th>
+                            <th class="col-email text-left font-semibold px-2 py-2">Email</th>
+                            <th class="col-phone text-center font-semibold px-1 py-2">Phone</th>
+                            <th class="col-qid text-center font-semibold px-1 py-2">QID</th>
+                            <th class="col-nationality text-left font-semibold px-1 py-2">Nation</th>
+                            <th class="col-status text-center font-semibold px-1 py-2">Status</th>
+                            <th class="col-position text-left font-semibold px-2 py-2">Position</th>
+                            <th class="col-company text-left font-semibold px-2 py-2 whitespace-nowrap">Company</th>
+                            <th class="col-salary text-right font-semibold px-2 py-2 whitespace-nowrap">Salary</th>
+                            <th class="col-join text-right font-semibold px-1 py-2">Join</th>
+                            <th class="col-actions text-center font-semibold px-0 py-2"></th>
                         </tr>
                     </thead>
                     <tbody id="employeeTableBody" class="divide-y divide-gray-100"></tbody>
@@ -1027,7 +1245,7 @@
         <div class="card overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-100 bg-gray-50"><h3 class="text-lg font-bold text-gray-900">Temporary Employees</h3></div>
             <div class="overflow-x-auto">
-                <table class="min-w-full text-sm table-fixed data-table employee-table" aria-label="Temporary Employees">
+                <table class="min-w-full text-xs table-fixed data-table employee-table" aria-label="Temporary Employees">
                                         <style>
                                             /* Visual indicator for terminated temporary employees */
                                             tr.terminated-row { background-color: #fff1f2; }
@@ -1038,31 +1256,35 @@
                                             tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
                                             tr.terminated-row *:not(.expiry-dot):not(.status-dot) { background-color: #fff1f2 !important; }
                                             tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
+                                            /* Keep header titles on a single line */
+                                            #temporarySection table thead th { white-space: nowrap; }
                                         </style>
                     <colgroup>
                         <col class="w-[13%]" />  <!-- Name -->
-                        <col class="w-[10%]" />  <!-- Email -->
-                        <col class="w-[9%]" />   <!-- Phone -->
+                        <col class="w-[13%]" />  <!-- Email -->
+                        <col class="w-[7%]" />   <!-- Phone -->
                         <col class="w-[9%]" />   <!-- Qatar ID -->
-                        <col class="w-[6%]" />   <!-- Status -->
-                        <col class="w-[18%]" />  <!-- Position -->
+                        <col class="w-[8%]" />   <!-- Nationality -->
+                        <col class="w-[5%]" />   <!-- Status -->
+                        <col class="w-[11%]" />  <!-- Position -->
                         <col class="w-[11%]" />  <!-- Company -->
-                        <col class="w-[11%]" />  <!-- Monthly Salary -->
-                        <col class="w-[9%]" />   <!-- Join Date -->
-                        <col class="w-[4%]" />   <!-- Actions -->
+                        <col class="w-[8%]" />   <!-- Monthly Salary -->
+                        <col class="w-[7%]" />   <!-- Join Date -->
+                        <col class="w-[8%]" />   <!-- Actions -->
                     </colgroup>
                     <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
                         <tr>
-                            <th scope="col" class="col-name text-center font-semibold px-5 py-4 text-base tracking-wide" onclick="sortTable('name','temporary')">Name <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-email text-left font-semibold px-5 py-4 text-base tracking-wide" onclick="sortTable('email','temporary')">Email <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-phone text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('phone','temporary')">Phone <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-qid text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('qid','temporary')">Qatar ID <i class="fas a-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-status text-center font-semibold px-3 py-4 text-base tracking-wide" onclick="sortTable('status','temporary')">Status <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-position text-left font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('position','temporary')">Position <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-company text-left font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('department','temporary')">Company <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-salary text-center font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('salary','temporary')">Salary <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-join text-right font-semibold px-4 py-4 text-base tracking-wide" onclick="sortTable('joinDate','temporary')">Join Date <i class="fas fa-sort ml-1 text-sm"></i></th>
-                            <th scope="col" class="col-actions text-center font-semibold px-2 py-4 text-base tracking-wide" onclick="sortTable('actions','temporary')">Actions <i class="fas fa-sort ml-1 text-sm"></i></th>
+                            <th scope="col" class="col-name text-left font-semibold px-2 py-2">Name</th>
+                            <th scope="col" class="col-email text-left font-semibold px-2 py-2">Email</th>
+                            <th scope="col" class="col-phone text-center font-semibold px-1 py-2">Phone</th>
+                            <th scope="col" class="col-qid text-center font-semibold px-1 py-2">QID</th>
+                            <th scope="col" class="col-nationality text-left font-semibold px-1 py-2">Nation</th>
+                            <th scope="col" class="col-status text-center font-semibold px-1 py-2">Status</th>
+                            <th scope="col" class="col-position text-left font-semibold px-2 py-2">Position</th>
+                            <th scope="col" class="col-company text-left font-semibold px-2 py-2">Company</th>
+                            <th scope="col" class="col-salary text-right font-semibold px-2 py-2">Salary</th>
+                            <th scope="col" class="col-join text-right font-semibold px-1 py-2">Join</th>
+                            <th scope="col" class="col-actions text-center font-semibold px-0 py-2"></th>
                         </tr>
                     </thead>
                     <tbody id="tempEmployeeTableBody" class="divide-y divide-gray-100"></tbody>
@@ -1074,6 +1296,65 @@
                 <p class="text-gray-500">Start by adding your first temporary team member</p>
             </div>
         </div>
+    </section>
+
+    <!-- Contractors Section -->
+    <section id="contractorsSection" data-section="contractors" class="space-y-8" style="display:none;">
+    <div class="card overflow-hidden">
+        <div style="height:3px;background:linear-gradient(90deg, #6366F1, #818CF8)"></div>
+            <div class="px-6 py-4 border-b border-gray-100 bg-gray-50 section-header">
+                <h3 class="text-lg font-bold text-gray-900">Vehicle Directory</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed text-xs data-table employee-table">
+                                        <style>
+                                            /* Visual indicator for terminated contractors */
+                                            tr.terminated-row { background-color: #fff1f2; }
+                                            tr.terminated-row:hover { background-color: #ffe4e6; }
+                                            /* Ensure cells reflect the row background and override Tailwind hover/bg */
+                                            tr.terminated-row > th,
+                                            tr.terminated-row > td { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover > th,
+                                            tr.terminated-row:hover > td { background-color: #ffe4e6 !important; }
+                                            /* Force all descendants to inherit background to avoid white patches (but preserve status dots) */
+                                            tr.terminated-row *:not(.expiry-dot):not(.status-dot) { background-color: #fff1f2 !important; }
+                                            tr.terminated-row:hover *:not(.expiry-dot):not(.status-dot) { background-color: #ffe4e6 !important; }
+                                            /* Keep header titles on a single line */
+                                            #contractorsSection table thead th { white-space: nowrap; }
+                                        </style>
+                    <colgroup>
+                        <col style="width: 13% !important;" />  <!-- Model -->
+                        <col style="width: 13% !important;" />  <!-- Brand -->
+                        <col style="width: 8% !important;" />   <!-- Year -->
+                        <col style="width: 13% !important;" />  <!-- Owner -->
+                        <col style="width: 8% !important;" />   <!-- Status -->
+                        <col style="width: 11% !important;" />  <!-- Expiry Date -->
+                        <col style="width: 11% !important;" />  <!-- Renew Date -->
+                        <col style="width: 11% !important;" />  <!-- Registration Date -->
+                        <col style="width: 12% !important;" />  <!-- Actions -->
+                    </colgroup>
+                    <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wide">
+                        <tr>
+                            <th class="col-name text-left font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: left !important;">Model</th>
+                            <th class="col-email text-left font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: left !important;">Brand</th>
+                            <th class="col-phone text-center font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: center !important;">Year</th>
+                            <th class="col-qid text-center font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: center !important;">Owner</th>
+                            <th class="col-status text-center font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: center !important;">Status</th>
+                            <th class="col-position text-left font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: left !important;">Expiry</th>
+                            <th class="col-company text-left font-semibold px-2 py-2 whitespace-nowrap" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: left !important;">Renew</th>
+                            <th class="col-salary text-left font-semibold px-2 py-2 whitespace-nowrap" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: left !important;">Reg Date</th>
+                            <th class="col-actions text-center font-semibold px-2 py-2" style="font-weight: 700 !important; font-size: 11px !important; color: #334155 !important; text-align: center !important;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contractorTableBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+            <div class="empty-state hidden" id="contractorEmptyState">
+                <div class="empty-state-icon"><i class="fas fa-car"></i></div>
+                <h3 class="text-lg font-semibold text-gray-700">No Vehicles Found</h3>
+                <p class="text-gray-500">Start by adding your first vehicle</p>
+            </div>
+                </div>
     </section>
                 </main>
             </div>
@@ -1146,6 +1427,14 @@
                                    class="input" />
                             <span class="error-message">Please enter a valid email</span>
                         </div>
+                        <div class="form-group">
+                            <label for="nationality" class="label">
+                                <i class="fas fa-flag label-icon"></i>
+                                Nationality
+                            </label>
+                            <input type="text" id="nationality" placeholder="e.g., Indian" class="input" />
+                            <span class="error-message">Please enter a nationality</span>
+                        </div>
                     </div>
                     
                     <div class="form-row">
@@ -1167,27 +1456,11 @@
                                 Company
                             </label>
                             <input type="text"
-                    id="department"
+                                   id="department"
                                    required
-                    placeholder="e.g., Acme Contracting"
+                                   placeholder="e.g., Acme Contracting"
                                    class="input" />
-                <span class="error-message">Please enter a company</span>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="salary" class="label">
-                                <i class="fas fa-dollar-sign label-icon"></i>
-                                Monthly Salary
-                            </label>
-                <input type="number" 
-                    id="salary" 
-                    required 
-                    step="any"
-                    placeholder="5000" 
-                    class="input" />
-                            <span class="error-message">Please enter a valid salary</span>
+                            <span class="error-message">Please enter a company</span>
                         </div>
                         <div class="form-group">
                             <label for="joinDate" class="label">
@@ -1201,8 +1474,32 @@
                             <span class="error-message">Please select a join date</span>
                         </div>
                     </div>
-
+                    
                     <div class="form-row">
+                        <div class="form-group">
+                            <label for="salary" class="label">
+                                <i class="fas fa-dollar-sign label-icon"></i>
+                                Monthly Salary
+                            </label>
+                            <input type="number" 
+                                   id="salary" 
+                                   required 
+                                   step="any"
+                                   placeholder="5000" 
+                                   class="input" />
+                            <span class="error-message">Please enter a valid salary</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="phone" class="label">
+                                <i class="fas fa-phone label-icon"></i>
+                                Phone Number
+                            </label>
+                            <input type="tel"
+                                   id="phone"
+                                   placeholder="e.g., +974 5555 1234"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid phone number</span>
+                        </div>
                         <div class="form-group">
                             <label for="qid" class="label">
                                 <i class="fas fa-id-card label-icon"></i>
@@ -1216,18 +1513,9 @@
                                    class="input" />
                             <span class="error-message">Qatar ID should be digits only</span>
                         </div>
-                        <div class="form-group">
-                            <label for="phone" class="label">
-                                <i class="fas fa-phone label-icon"></i>
-                                Phone Number
-                            </label>
-                            <input type="tel"
-                                   id="phone"
-                                   placeholder="e.g., +974 5555 1234"
-                                   class="input" />
-                            <span class="error-message">Please enter a valid phone number</span>
-                        </div>
                     </div>
+
+                    <!-- moved into previous row -->
 
                     <div class="form-row">
                         <div class="form-group">
@@ -1271,9 +1559,7 @@
                                    class="input" />
                             <span class="error-message">Please enter a valid account number</span>
                         </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group md:col-span-2">
+                        <div class="form-group">
                             <label for="bankIban" class="label">
                                 <i class="fas fa-globe label-icon"></i>
                                 IBAN
@@ -1286,18 +1572,7 @@
                         </div>
                     </div>
 
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="label">
-                                <i class="fas fa-image label-icon"></i>
-                                Profile Image
-                            </label>
-                            <input type="file" id="profileImage" accept="image/png,image/jpeg,image/webp" class="input" />
-                            <div class="mt-2 flex gap-2">
-                                <span id="profileImageStatus" class="text-xs text-gray-500"></span>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Profile Image grouped with PDFs below -->
 
                     <div class="form-row">
                         <div class="form-group">
@@ -1318,6 +1593,16 @@
                             <input type="file" id="passportPdf" accept="application/pdf" class="input" />
                             <div class="mt-2 flex gap-2">
                                 <span id="passportPdfStatus" class="text-xs text-gray-500"></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="label">
+                                <i class="fas fa-image label-icon"></i>
+                                Profile Image
+                            </label>
+                            <input type="file" id="profileImage" accept="image/png,image/jpeg,image/webp" class="input" />
+                            <div class="mt-2 flex gap-2">
+                                <span id="profileImageStatus" class="text-xs text-gray-500"></span>
                             </div>
                         </div>
                     </div>
@@ -1375,6 +1660,7 @@
                                 <div class="flex items-center gap-2 mt-3 flex-wrap">
                                     <span id="viewDepartmentChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-700">&nbsp;</span>
                                     <span id="viewTypeChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">&nbsp;</span>
+                                    <span id="viewNationalityChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800" style="display:none;"></span>
                                 </div>
                                 <!-- Stats: Join date, Salary, Attendance, Rating -->
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
@@ -1434,6 +1720,10 @@
                             <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
                                 <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-phone text-indigo-500"></i> Phone</dt>
                                 <dd id="viewPhone" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-flag text-indigo-500"></i> Nationality</dt>
+                                <dd id="viewNationality" class="text-gray-900">-</dd>
                             </div>
                             <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
                                 <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-id-card text-indigo-500"></i> Qatar ID</dt>
@@ -1756,7 +2046,7 @@
             </div>
             <div class="modal-footer flex items-center justify-end gap-2">
                 <button type="button" class="btn btn-secondary" onclick="closePaymentModal()"><i class="fas fa-times"></i> Cancel</button>
-                <button type="button" class="btn btn-primary" id="paymentPrintBtn"><i class="fas fa-print"></i> Print Salary Slip</button>
+                <button type="button" class="btn btn-primary" id="paymentProPdfBtn"><i class="fas fa-file-pdf"></i> Print</button>
             </div>
         </div>
     </div>
@@ -1953,6 +2243,276 @@
         </div>
     </div>
 
-    <script type="module" src="script.js?v=20251005-24"></script>
+    <!-- Vehicle View Modal -->
+    <div class="modal" id="viewVehicleModal" role="dialog" aria-modal="true" aria-labelledby="viewVehicleModalTitle">
+        <div class="modal-content md:max-w-4xl w-full max-w-[98vw]" tabindex="-1" style="max-height: 85vh !important; display: flex !important; flex-direction: column !important; overflow: hidden !important;">
+            <div class="modal-header flex items-center justify-between" style="flex-shrink: 0 !important;">
+                <div class="modal-header-content">
+                    <div>
+                        <h3 class="modal-title" id="viewVehicleModalTitle">Vehicle Details</h3>
+                        <p class="modal-subtitle" id="viewVehicleSubtitle">&nbsp;</p>
+                    </div>
+                </div>
+                <button class="btn btn-ghost" aria-label="Close" onclick="closeViewVehicleModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body space-y-4" style="overflow-y: auto !important; overflow-x: hidden !important; flex: 1 1 auto !important; min-height: 0 !important; padding: 1.5rem !important;">
+                <!-- Vehicle Overview -->
+                <section class="card overflow-hidden">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-vehicle-overview">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-car text-indigo-500"></i>
+                            <h4 class="text-sm font-bold text-gray-800">Vehicle Information</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-vehicle-overview" class="px-6 pt-6 pb-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <div id="viewVehicleNameDisplay" class="text-xl font-extrabold text-gray-900">&nbsp;</div>
+                                <div id="viewVehicleYearDisplay" class="text-sm text-gray-600">&nbsp;</div>
+                                <div class="flex items-center gap-2 mt-3">
+                                    <span id="viewVehicleStatusChip" class="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">&nbsp;</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <div class="text-xs text-gray-500">Owner</div>
+                                    <div id="viewVehicleOwner" class="text-gray-900 font-semibold">&nbsp;</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs text-gray-500">Vehicle Number</div>
+                                    <div id="viewVehicleNumber" class="text-gray-900 font-semibold">&nbsp;</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Registration & Dates -->
+                <section class="card overflow-hidden">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-vehicle-dates">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-calendar text-indigo-500"></i>
+                            <h4 class="text-sm font-bold text-gray-800">Registration & Dates</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-vehicle-dates" class="px-6 pt-6 pb-6 hidden">
+                        <dl class="space-y-2">
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-calendar-check text-indigo-500"></i> Registration Date</dt>
+                                <dd id="viewVehicleRegistrationDate" class="text-gray-900 font-semibold">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-calendar-times text-indigo-500"></i> Expiry Date</dt>
+                                <dd id="viewVehicleExpiryDate" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                            <div class="grid grid-cols-[200px_1fr] md:grid-cols-[260px_1fr] items-start gap-2">
+                                <dt class="text-xs font-semibold uppercase tracking-wider text-gray-500 flex items-center gap-2"><i class="fas fa-sync text-indigo-500"></i> Renew Date</dt>
+                                <dd id="viewVehicleRenewDate" class="text-gray-900">&nbsp;</dd>
+                            </div>
+                        </dl>
+                    </div>
+                </section>
+
+                <!-- Istimara PDF -->
+                <section class="card overflow-hidden" id="viewVehicleIstimaraSection" style="display: none;">
+                    <button class="w-full flex items-center justify-between px-6 py-2 text-left hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-200" data-acc-toggle data-acc-target="#acc-vehicle-istimara">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-file-pdf text-indigo-500"></i>
+                            <h4 class="text-sm font-bold text-gray-800">Istimara Photocopy</h4>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400" aria-hidden="true"></i>
+                    </button>
+                    <div id="acc-vehicle-istimara" class="px-6 pt-6 pb-6 hidden">
+                        <div class="flex items-center gap-3 mb-4">
+                            <a id="viewVehicleIstimaraLink" href="#" target="_blank" class="btn btn-primary btn-sm">
+                                <i class="fas fa-external-link-alt"></i> Open PDF in New Tab
+                            </a>
+                            <a id="viewVehicleIstimaraDownload" href="#" download class="btn btn-secondary btn-sm">
+                                <i class="fas fa-download"></i> Download PDF
+                            </a>
+                        </div>
+                        <div class="border rounded-lg overflow-hidden bg-gray-50">
+                            <iframe id="viewVehicleIstimaraPDF" 
+                                    style="width: 100%; height: 600px; border: none;" 
+                                    title="Istimara PDF"></iframe>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="modal-footer" style="flex-shrink: 0 !important;">
+                <button type="button" class="btn btn-secondary" onclick="closeViewVehicleModal()">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button type="button" class="btn btn-primary" onclick="editVehicleFromView()">
+                    <i class="fas fa-edit"></i> Edit Vehicle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vehicle Modal -->
+    <div class="modal" id="vehicleModal">
+        <div class="modal-content" style="max-width: 1024px !important; width: 100% !important; max-height: 80vh !important; overflow-y: auto !important; border-radius: 0 !important;">
+            <div class="modal-header" style="border-radius: 0 !important;">
+                <div class="modal-header-content">
+                    <div>
+                        <h3 id="vehicleFormTitle" class="modal-title">Add New Vehicle</h3>
+                        <p class="modal-subtitle">Fill in the vehicle details</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-body" style="padding: 1rem 1.5rem !important;">
+                <form id="vehicleForm" class="form-section">
+                    <input type="hidden" id="vehicleId" />
+                    
+                    <div class="form-row" style="display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 1rem !important;">
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleModel" class="label">
+                                <i class="fas fa-car label-icon"></i>
+                                Model
+                            </label>
+                            <input type="text" 
+                                   id="vehicleModel" 
+                                   required 
+                                   placeholder="e.g., Camry" 
+                                   class="input" />
+                            <span class="error-message">Please enter a vehicle model</span>
+                        </div>
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleBrand" class="label">
+                                <i class="fas fa-tag label-icon"></i>
+                                Brand
+                            </label>
+                            <input type="text" 
+                                   id="vehicleBrand" 
+                                   required 
+                                   placeholder="e.g., Toyota" 
+                                   class="input" />
+                            <span class="error-message">Please enter a brand</span>
+                        </div>
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleYear" class="label">
+                                <i class="fas fa-calendar label-icon"></i>
+                                Year
+                            </label>
+                            <input type="number" 
+                                   id="vehicleYear" 
+                                   required 
+                                   placeholder="e.g., 2023" 
+                                   min="1900"
+                                   max="2100"
+                                   class="input" />
+                            <span class="error-message">Please enter a valid year</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row" style="display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 1rem !important;">
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleOwner" class="label">
+                                <i class="fas fa-user label-icon"></i>
+                                Owner Name
+                            </label>
+                            <input type="text" 
+                                   id="vehicleOwner" 
+                                   required 
+                                   placeholder="e.g., John Smith" 
+                                   class="input" />
+                            <span class="error-message">Please enter owner name</span>
+                        </div>
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleNumber" class="label">
+                                <i class="fas fa-hashtag label-icon"></i>
+                                Vehicle Number
+                            </label>
+                            <input type="text"
+                                   id="vehicleNumber"
+                                   required
+                                   placeholder="e.g., ABC-1234"
+                                   class="input" />
+                            <span class="error-message">Please enter vehicle number</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row" style="display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 1rem !important;">
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleRegistrationDate" class="label">
+                                <i class="fas fa-calendar-check label-icon"></i>
+                                Registration Date
+                            </label>
+                            <input type="date" 
+                                   id="vehicleRegistrationDate" 
+                                   required 
+                                   class="input" />
+                            <span class="error-message">Please select a registration date</span>
+                        </div>
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleExpiryDate" class="label">
+                                <i class="fas fa-calendar-times label-icon"></i>
+                                Expiry Date
+                            </label>
+                            <input type="date" 
+                                   id="vehicleExpiryDate" 
+                                   required 
+                                   class="input" />
+                            <span class="error-message">Please select an expiry date</span>
+                        </div>
+                        <div class="form-group" style="padding: 0.5rem !important;">
+                            <label for="vehicleRenewDate" class="label">
+                                <i class="fas fa-sync label-icon"></i>
+                                Renew Date
+                            </label>
+                            <input type="date" 
+                                   id="vehicleRenewDate" 
+                                   class="input" />
+                        </div>
+                    </div>
+                    
+                    <div class="form-row" style="display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 1rem !important;">
+                        <div class="form-group" style="padding: 0.5rem !important; grid-column: span 3;">
+                            <label for="vehicleIstimaraPDF" class="label">
+                                <i class="fas fa-file-pdf label-icon"></i>
+                                Istimara Photocopy (PDF)
+                            </label>
+                            <input type="file" 
+                                   id="vehicleIstimaraPDF" 
+                                   accept=".pdf"
+                                   class="input" 
+                                   style="padding: 0.5rem !important;" />
+                            <span class="error-message">Please upload a PDF file</span>
+                            <div id="istimaraUploadProgress" style="display: none; margin-top: 0.5rem;">
+                                <div style="background: #e5e7eb; border-radius: 0.25rem; overflow: hidden;">
+                                    <div id="istimaraProgressBar" style="background: #4f46e5; height: 4px; width: 0%; transition: width 0.3s;"></div>
+                                </div>
+                                <span id="istimaraProgressText" style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; display: block;"></span>
+                            </div>
+                            <div id="istimaraFileInfo" style="display: none; margin-top: 0.5rem; font-size: 0.875rem; color: #10b981;">
+                                <i class="fas fa-check-circle"></i> <span id="istimaraFileName"></span>
+                                <button type="button" onclick="removeIstimaraPDF()" style="margin-left: 0.5rem; color: #ef4444; background: none; border: none; cursor: pointer;">
+                                    <i class="fas fa-times-circle"></i> Remove
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="modal-footer" style="border-radius: 0 !important;">
+                <button type="button" class="btn btn-secondary" onclick="closeVehicleModal()">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="submit" 
+                        form="vehicleForm" 
+                        class="btn btn-primary btn-lg">
+                    <i class="fas fa-save"></i> Save Vehicle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js?v=20251024-100"></script>
 </body>
 </html>

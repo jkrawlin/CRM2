@@ -46,7 +46,8 @@ service cloud.firestore {
       return d.keys().hasOnly([
         'name','email','position','department','salary','joinDate',
         'qid','phone','qidPdfUrl','passportPdfUrl','qidExpiry','passportExpiry',
-        'bankName','bankAccountNumber','bankIban','profileImageUrl'
+          'bankName','bankAccountNumber','bankIban','profileImageUrl',
+          'nationality'
         ,'terminated','terminatedAt'
       ]);
     }
@@ -70,6 +71,7 @@ service cloud.firestore {
         && (!('bankAccountNumber' in d) || (d.bankAccountNumber is string && d.bankAccountNumber.size() <= 40))
         && (!('bankIban' in d) || (d.bankIban is string && d.bankIban.size() <= 40))
   && (!('profileImageUrl' in d) || (d.profileImageUrl is string && d.profileImageUrl.size() <= 2048))
+        && (!('nationality' in d) || (d.nationality is string && d.nationality.size() <= 100))
         && (!('terminated' in d) || (d.terminated is bool))
         && (!('terminatedAt' in d) || isTimestamp(d.terminatedAt));
     }
@@ -86,6 +88,36 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && validateEmployee(request.resource.data);
       allow update: if isSignedIn() && validateEmployee(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+
+    // Vehicles collection
+    function vehiclesAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'model','brand','year','owner','vehicleNumber','status',
+        'expiryDate','renewDate','registrationDate','createdAt','istimaraURL'
+      ]);
+    }
+
+    function validateVehicle(d) {
+      return vehiclesAllowedKeys(d)
+        && isNonEmptyString(d.model)
+        && isNonEmptyString(d.brand)
+        && (d.year is int && d.year >= 1900 && d.year <= 2100)
+        && isNonEmptyString(d.owner)
+        && isNonEmptyString(d.vehicleNumber)
+        && (d.status in ['active','inactive','maintenance'])
+        && isValidISODate(d.expiryDate)
+        && (!('renewDate' in d) || isValidISODate(d.renewDate))
+        && isValidISODate(d.registrationDate)
+        && isValidISODateTime(d.createdAt)
+        && (!('istimaraURL' in d) || (d.istimaraURL is string && d.istimaraURL.size() <= 2048));
+    }
+
+    match /vehicles/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateVehicle(request.resource.data);
+      allow update: if isSignedIn() && validateVehicle(request.resource.data);
       allow delete: if isSignedIn();
     }
 
@@ -160,8 +192,10 @@ service cloud.firestore {
     match /payments/{docId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && validatePayment(request.resource.data);
-      // No updates/deletes for payments at this time
-      allow update, delete: if false;
+      // Allow deletes so salary rollbacks from Ledger can revert payment entries
+      allow delete: if isSignedIn();
+      // Still disallow updates to preserve audit integrity
+      allow update: if false;
     }
 
     // Balances collection: denormalized per-employee monthly balances
@@ -224,8 +258,8 @@ service cloud.firestore {
       // Allow creating/updating documents that pass validation
       allow create: if validateCustomer(request.resource.data);
       allow update: if validateCustomer(request.resource.data);
-      // Disallow deletes for safety in this demo setup
-      allow delete: if false;
+      // Allow deletes for signed-in users only
+      allow delete: if isSignedIn();
     }
 
     // Assignments/Placements: link employees to clients for manpower supply
@@ -289,7 +323,7 @@ service cloud.firestore {
 
     // Cashflows: simple cash in/out transactions
     function cashflowAllowedKeys(d) {
-      return d.keys().hasOnly(['date','type','accountId','accountName','amount','category','notes','createdAt','createdBy','createdByEmail','clientId','month']);
+      return d.keys().hasOnly(['date','type','accountId','accountName','amount','category','notes','createdAt','updatedAt','createdBy','createdByEmail','clientId','month','payslipId','driverId']);
     }
     function validateCashflow(d) {
       return cashflowAllowedKeys(d)
@@ -300,29 +334,79 @@ service cloud.firestore {
         && ((d.amount is int || d.amount is float) && d.amount > 0)
         && (!('category' in d) || (d.category is string && d.category.size() <= 200))
         && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
-    && isValidISODateTime(d.createdAt)
-    && (!('createdBy' in d) || d.createdBy is string)
-    && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail))
+        && isValidISODateTime(d.createdAt)
+        && (!('updatedAt' in d) || isValidISODateTime(d.updatedAt))
+        && (!('createdBy' in d) || d.createdBy is string)
+        && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail))
         && (!('clientId' in d) || isNonEmptyString(d.clientId))
-        && (!('month' in d) || isValidYearMonth(d.month));
+        && (!('month' in d) || isValidYearMonth(d.month))
+          && (!('payslipId' in d) || (d.payslipId is string && d.payslipId.size() > 0 && d.payslipId.size() <= 200))
+          && (!('driverId' in d) || (d.driverId is string && d.driverId.size() > 0 && d.driverId.size() <= 200));
     }
     match /cashflows/{docId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && validateCashflow(request.resource.data);
-      allow update: if false;
-      allow delete: if false;
+      allow update: if isSignedIn() && validateCashflow(request.resource.data);
+      // Allow deletes for signed-in users (UI prompts for confirmation)
+      allow delete: if isSignedIn();
+    }
+
+    // Client Transactions: append-only history of grid edits & payments (non-cash meta log)
+    function clientTransactionAllowedKeys(d) {
+      return d.keys().hasOnly([
+        'clientId','month','date','field','value','prevValue',
+        'monthly','debited','credited','outstanding','notes','snapshot',
+        'createdAt','createdBy','createdByEmail'
+      ]);
+    }
+    function validateClientTransaction(d) {
+      return clientTransactionAllowedKeys(d)
+        && isNonEmptyString(d.clientId)
+        && isValidYearMonth(d.month)
+        && isValidISODate(d.date)
+        && isValidISODateTime(d.createdAt)
+  && (!('field' in d) || (d.field in ['monthly','debited','credited','notes','payment','newRow']))
+        && (!('value' in d) || ((d.value is int || d.value is float || d.value is string)))
+        && (!('prevValue' in d) || ((d.prevValue is int || d.prevValue is float || d.prevValue is string)))
+        && (!('monthly' in d) || (d.monthly is int || d.monthly is float))
+        && (!('debited' in d) || (d.debited is int || d.debited is float))
+        && (!('credited' in d) || (d.credited is int || d.credited is float))
+        && (!('outstanding' in d) || (d.outstanding is int || d.outstanding is float))
+        && (!('notes' in d) || (d.notes is string && d.notes.size() <= 1000))
+        && (!('snapshot' in d) || (
+              d.snapshot is map
+              && d.snapshot.keys().hasOnly(['monthly','debited','credited','outstanding','notes'])
+              && (!('monthly' in d.snapshot) || (d.snapshot.monthly is int || d.snapshot.monthly is float))
+              && (!('debited' in d.snapshot) || (d.snapshot.debited is int || d.snapshot.debited is float))
+              && (!('credited' in d.snapshot) || (d.snapshot.credited is int || d.snapshot.credited is float))
+              && (!('outstanding' in d.snapshot) || (d.snapshot.outstanding is int || d.snapshot.outstanding is float))
+              && (!('notes' in d.snapshot) || (d.snapshot.notes is string && d.snapshot.notes.size() <= 1000))
+           ))
+        && (!('createdBy' in d) || d.createdBy is string)
+        && (!('createdByEmail' in d) || isValidEmail(d.createdByEmail));
+    }
+    match /clientTransactions/{docId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && validateClientTransaction(request.resource.data);
+      allow update, delete: if false;
     }
 
     // Stats: holds deterministic fund opening/value summary
     function fundAllowedKeys(d) {
-      return d.keys().hasOnly(['opening','value','inSum','outSum','asOf','setBy','setByEmail','setReason']);
+      // Allow legacy fields and new balance-based model fields
+      return d.keys().hasOnly(['opening','value','balance','inSum','outSum','asOf','setBy','setByEmail','setReason','migratedFromOpening','migratedFromValue']);
     }
     function validateFund(d) {
       return fundAllowedKeys(d)
-        && ((d.opening is int || d.opening is float))
-        && ((d.value is int || d.value is float))
-        && ((d.inSum is int || d.inSum is float))
-        && ((d.outSum is int || d.outSum is float))
+        // At least one of opening, value, or balance must exist and be numeric
+        && ( ('balance' in d && (d.balance is int || d.balance is float))
+             || ('opening' in d && (d.opening is int || d.opening is float))
+             || ('value' in d && (d.value is int || d.value is float)) )
+        && (!('opening' in d) || (d.opening is int || d.opening is float))
+        && (!('value' in d) || (d.value is int || d.value is float))
+        && (!('balance' in d) || (d.balance is int || d.balance is float))
+        && (!('inSum' in d) || (d.inSum is int || d.inSum is float))
+        && (!('outSum' in d) || (d.outSum is int || d.outSum is float))
         && isValidISODateTime(d.asOf)
         && (!('setBy' in d) || d.setBy is string)
         && (!('setByEmail' in d) || isValidEmail(d.setByEmail))

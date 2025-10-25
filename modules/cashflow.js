@@ -6,7 +6,7 @@ let _unsub = null;
 let _accounts = [];
 
 export function initCashflow(deps) {
-  // deps: { db, collection, query, onSnapshot, addDoc, orderBy, where, showToast, cleanData, getAccounts }
+  // deps: { db, collection, query, onSnapshot, addDoc, orderBy, where, showToast, cleanData, getAccounts, getEmployees?, getTemporaryEmployees?, serverTimestamp? }
   _deps = deps;
   const monthEl = document.getElementById('cashflowMonth');
   if (monthEl && !monthEl.value) {
@@ -25,6 +25,7 @@ export function initCashflow(deps) {
   if (exp2) exp2.addEventListener('click', () => openCashTxnModal({ type: 'out' }));
   const form = document.getElementById('cashTxnForm');
   if (form) form.addEventListener('submit', handleCashTxnSubmit);
+  // Quick add driver UI removed
   const monthFilter = document.getElementById('cashflowMonth');
   if (monthFilter) monthFilter.addEventListener('change', () => subscribeCashflow());
   const accFilter = document.getElementById('cashflowAccountFilter');
@@ -90,7 +91,7 @@ export function renderCashflowTable() {
     return;
   }
   empty.classList.add('hidden');
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   const accName = (id) => (_accounts.find(a => a.id === id)?.name) || '';
   let inSum = 0, outSum = 0;
   tbody.innerHTML = rows.map(t => {
@@ -114,6 +115,7 @@ export function renderCashflowTable() {
 
 function openCashTxnModal(preset) {
   populateAccountFilters();
+  populateDriverOptions(); // shows only Job Position/Role matching 'Driver'
   const modal = document.getElementById('cashTxnModal');
   const form = document.getElementById('cashTxnForm');
   if (form) form.reset();
@@ -131,6 +133,17 @@ function openCashTxnModal(preset) {
       try { modal?.removeAttribute('data-kind'); } catch {}
     }
   }
+  // If Expense type, bias category when driver is chosen later
+  try {
+    const catEl = document.getElementById('cfCategory');
+    const drvEl = document.getElementById('cfDriver');
+    if (drvEl && catEl) {
+      drvEl.addEventListener('change', () => {
+        const v = (drvEl.value||'');
+        if (v && (!catEl.value || /^(petrol|fuel)$/i.test(catEl.value.trim())===false)) catEl.value = 'Petrol';
+      }, { once: true });
+    }
+  } catch {}
   // focus amount for speed
   setTimeout(() => { try { document.getElementById('cfAmount')?.focus(); } catch {} }, 0);
   if (modal) modal.classList.add('show');
@@ -157,6 +170,14 @@ async function handleCashTxnSubmit(e) {
   const amount = Math.abs(Number(document.getElementById('cfAmount')?.value || 0)) || 0;
   const category = document.getElementById('cfCategory')?.value?.trim() || undefined;
   const notes = document.getElementById('cfNotes')?.value?.trim() || undefined;
+  const driverId = document.getElementById('cfDriver')?.value || '';
+  const isPetrol = /^(petrol|fuel)$/i.test(String(category||''));
+  // Validation: if petrol/fuel, require driver
+  if (type==='out' && isPetrol && !driverId) {
+    try { const hint = document.getElementById('cfDriverHint'); if (hint) hint.style.display=''; } catch {}
+    showToast && showToast('Please select an Assigned Driver for Petrol/Fuel expense', 'warning');
+    return;
+  }
   if (!date || !accountId || !type || !(amount > 0)) {
     showToast && showToast('Please fill date, account, type and positive amount', 'warning');
     return;
@@ -180,6 +201,7 @@ async function handleCashTxnSubmit(e) {
     amount,
     category,
     notes,
+    driverId: driverId || undefined,
     createdAt: new Date().toISOString(),
     createdBy: typeof window !== 'undefined' && window.__userUid ? window.__userUid : undefined,
   });
@@ -220,3 +242,28 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+function populateDriverOptions() {
+  const sel = document.getElementById('cfDriver');
+  if (!sel) return;
+  let emps = [];
+  try {
+    const ge = _deps.getEmployees ? _deps.getEmployees() : [];
+    const gt = _deps.getTemporaryEmployees ? _deps.getTemporaryEmployees() : [];
+    emps = [...(ge||[]), ...(gt||[])];
+  } catch {}
+  // Only include people whose Job Position/Role contains 'Driver' (case-insensitive)
+  const drivers = emps.filter(e => /driver/i.test(String(e.position||e.role||'')));
+  // Sort by name for consistency
+  drivers.sort((a,b)=> String(a.name||'').localeCompare(String(b.name||'')));
+  const format = e => `<option value="${e.id}">${escapeHtml(e.name||'')}</option>`;
+  const options = ['<option value="">-- Select Driver --</option>']
+    .concat(drivers.map(format));
+  if (drivers.length === 0) {
+    options.push('<option value="" disabled>(No drivers found)</option>');
+  }
+  sel.innerHTML = options.join('');
+  sel.onchange = null;
+}
+
+// Quick-add driver flow removed along with modal

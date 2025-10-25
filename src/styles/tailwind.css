@@ -61,6 +61,15 @@
   #employeeModal .form-group { @apply p-2; }
   #employeeModal .form-row { @apply grid grid-cols-1 md:grid-cols-3 gap-4; }
 
+  /* Vehicle modal: match Add Employee modal styling exactly */
+  #vehicleModal .modal-content { @apply rounded-none max-w-5xl w-full max-h-[80vh] overflow-y-auto; }
+  #vehicleModal .modal-header { @apply rounded-none; }
+  #vehicleModal .modal-body { @apply px-6 py-4; }
+  #vehicleModal .modal-footer { @apply rounded-none; }
+  #vehicleModal .form-section { @apply space-y-4; }
+  #vehicleModal .form-group { @apply p-2; }
+  #vehicleModal .form-row { @apply grid grid-cols-1 md:grid-cols-3 gap-4; }
+
   /* Employee View modal: rectangular and very wide */
   #viewModal .modal-content { @apply rounded-none w-[98vw] max-w-[1400px] max-h-[80vh] overflow-y-auto; }
   #viewModal .modal-header { @apply rounded-none; }

@@ -94,7 +94,7 @@ export function renderAssignmentsTable() {
         <td class="px-4 py-2">${a.clientName || ''}</td>
         <td class="px-4 py-2">${fmt(a.startDate)}</td>
         <td class="px-4 py-2">${fmt(a.endDate)}</td>
-        <td class="px-4 py-2">${a.rate ? `$${Number(a.rate).toLocaleString(undefined,{maximumFractionDigits:2})}/${a.rateType||'monthly'}` : '-'}</td>
+  <td class="px-4 py-2">${a.rate ? `QAR ${Number(a.rate).toLocaleString(undefined,{maximumFractionDigits:2})}/${a.rateType||'monthly'}` : '-'}</td>
         <td class="px-4 py-2 text-center">
           ${a.endDate ? '<span class="text-xs text-gray-500">Ended</span>' : `<button class="btn btn-secondary btn-sm" data-end-assignment="${a.id}"><i class="fas fa-stop"></i> End</button>`}
         </td>

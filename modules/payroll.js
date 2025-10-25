@@ -1,5 +1,7 @@
 // Payroll module: table rendering, report frame, sorting, sub-tab handling, CSV export
 import { maskAccount, formatDate } from './utils.js';
+// Version bump after UI compaction tweaks
+console.log('[PayrollModule] Loaded modules/payroll.js v20251008-17');
 
 let payrollSortColumn = '';
 let payrollSortOrder = 'asc';
@@ -98,7 +100,7 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
   }
 
   const total = filtered.reduce((sum, e) => sum + Number(e.salary || 0), 0);
-  if (totalEl) totalEl.textContent = `$${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  if (totalEl) totalEl.textContent = `QAR ${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
   if (sorted.length === 0) {
     tbody.innerHTML = '';
@@ -116,23 +118,23 @@ export function renderPayrollTable({ getEmployees, getTemporaryEmployees, getSea
 
   const rows = sorted.map(emp => `
       <tr class="hover:bg-gray-50">
-        <td class="px-2 py-1 font-semibold text-gray-900 truncate">${emp.name}</td>
-        <td class="px-2 py-1">${typeBadge(emp._type)}</td>
-        <td class="px-2 py-1 truncate">${emp.department || '-'}</td>
-        <td class="px-2 py-1 text-right tabular-nums">$${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-        <td class="px-2 py-1 text-right tabular-nums" data-balance-for="${emp.id}">—</td>
-  <td class="px-2 py-1 whitespace-nowrap w-[130px] min-w-[130px]">${formatDate(emp.joinDate)}</td>
-        <td class="px-2 py-1">${emp.qid || '-'}</td>
-        <td class="px-2 py-1 text-center">
-          <div class="flex flex-wrap items-center justify-center gap-1">
-            <button class="btn btn-primary btn-compact" onclick="openPayslipForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
-              <i class="fas fa-file-invoice"></i> Generate Payslip
+        <td class="px-2 py-2 font-semibold text-gray-900 truncate">${emp.name}</td>
+        <td class="px-2 py-2">${typeBadge(emp._type)}</td>
+        <td class="px-2 py-2 truncate">${emp.department || '-'}</td>
+        <td class="px-2 py-2 text-right tabular-nums">QAR ${Number(emp.salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+        <td class="px-2 py-2 text-right tabular-nums" data-balance-for="${emp.id}">—</td>
+        <td class="px-1 py-2 whitespace-nowrap text-right">${formatDate(emp.joinDate)}</td>
+        <td class="px-1 py-2 tabular-nums text-center" title="${emp.qid || '-'}">${emp.qid || '-'}</td>
+        <td class="px-2 py-2 text-center">
+          <div class="action-buttons">
+            <button class="action-btn btn-primary" onclick="openPayslipForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')" title="Pay Advance">
+              <i class="fas fa-sack-dollar"></i>
             </button>
-            <button class="btn btn-secondary btn-compact" onclick="openPaymentForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
-              <i class="fas fa-money-bill-wave"></i> Pay Salary
+            <button class="action-btn btn-secondary" onclick="openPaymentForm('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')" title="Pay">
+              <i class="fas fa-money-bill-wave"></i>
             </button>
-            <button class="btn btn-secondary btn-compact" onclick="viewPayroll('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')">
-              <i class="fas fa-eye"></i> View
+            <button class="action-btn btn-secondary" onclick="viewPayroll('${emp.id}', '${emp._type === 'Temporary' ? 'temporary' : 'employees'}')" title="View">
+              <i class="fas fa-eye"></i>
             </button>
           </div>
         </td>
@@ -270,7 +272,8 @@ async function buildMonthReportData({ ym, getEmployees, getTemporaryEmployees })
   };
 }
 
-function fmtCurrency(n) { return `$${Number(n||0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
+// Use non-breaking space after currency to avoid wrapping between prefix and number
+function fmtCurrency(n) { return `QAR\u00A0${Number(n||0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`; }
 function escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 function renderMonthReportInto(frame, data) {
@@ -278,37 +281,37 @@ function renderMonthReportInto(frame, data) {
   const { monthTitle, employees, perm, temps, summary } = data;
   const badge = (t) => t === 'Temporary' ? '<span class="compact-badge bg-amber-100 text-amber-800">TEMP</span>' : '<span class="compact-badge bg-emerald-100 text-emerald-800">PERM</span>';
   const row = (e, i) => `
-    <tr class="border-b border-gray-100">
-      <td class="px-1 py-1 text-gray-500">${i+1}</td>
-      <td class="px-1 py-1 font-semibold text-gray-900 truncate" title="${escHtml(e.name||'')}">${escHtml(e.name||'')}</td>
-      <td class="px-1 py-1">${badge(e._type)}</td>
-      <td class="px-1 py-1 truncate" title="${escHtml(e.department||'-')}">${escHtml(e.department||'-')}</td>
-      <td class="px-1 py-1 mono-text">${escHtml(e.qid||'-')}</td>
-      <td class="px-1 py-1 truncate" title="${escHtml(e.bankName||'-')}">${escHtml(e.bankName||'-')}</td>
-      <td class="px-1 py-1 mono-text" style="word-break:break-all">${escHtml(e.bankAccountNumber||'-')}</td>
-      <td class="px-1 py-1 mono-text" style="word-break:break-all">${escHtml(e.bankIban||'-')}</td>
-      <td class="px-1 py-1 text-right font-mono font-semibold">${fmtCurrency(e._basic)}</td>
-      <td class="px-1 py-1 text-right font-mono font-semibold">${fmtCurrency(e._balance)}</td>
+    <tr class="border-b border-gray-100 align-top">
+      <td class="px-2 py-1 text-gray-500 text-[11px]">${i+1}</td>
+      <td class="px-2 py-1 font-semibold text-gray-900 truncate text-[12px]" title="${escHtml(e.name||'')}">${escHtml(e.name||'')}</td>
+      <td class="px-2 py-1 text-[11px]">${badge(e._type)}</td>
+      <td class="px-2 py-1 truncate text-[11px]" title="${escHtml(e.department||'-')}">${escHtml(e.department||'-')}</td>
+      <td class="px-2 py-1 mono-text nowrap text-[11px]">${escHtml(e.qid||'-')}</td>
+      <td class="px-2 py-1 truncate text-[11px]" title="${escHtml(e.bankName||'-')}">${escHtml(e.bankName||'-')}</td>
+      <td class="px-2 py-1 mono-text nowrap text-[11px]" style="max-width:240px;" title="${escHtml(e.bankAccountNumber||'-')}">${escHtml(e.bankAccountNumber||'-')}</td>
+      <td class="px-2 py-1 mono-text nowrap text-[11px]" style="max-width:320px;" title="${escHtml(e.bankIban||'-')}">${escHtml(e.bankIban||'-')}</td>
+      <td class="px-2 py-1 text-right font-mono font-semibold nowrap text-[11px]" style="min-width:130px;">${fmtCurrency(e._basic)}</td>
+      <td class="px-2 py-1 text-right font-mono font-semibold nowrap text-[11px]" style="min-width:130px;">${fmtCurrency(e._balance)}</td>
     </tr>`;
   const section = (title, list) => {
     if (!list.length) return '';
     return `
-      <div class="mb-4">
-        <h3 class="text-xs font-bold text-gray-700 mb-1 uppercase">${escHtml(title)} <span class="text-gray-500 font-normal">(${list.length})</span></h3>
-        <div class="overflow-x-auto">
-          <table class="w-full" style="font-size:9px;">
+      <div class="mb-8">
+        <h3 class="text-sm font-bold text-gray-800 mb-2 uppercase tracking-wide">${escHtml(title)} <span class="text-gray-500 font-normal">(${list.length})</span></h3>
+        <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm bg-white">
+          <table class="w-full text-[12px]">
             <thead>
-              <tr class="bg-gray-50 text-gray-600 uppercase font-semibold" style="font-size:8px;">
-                <th class="text-left px-1 py-1" style="width:20px;">#</th>
-                <th class="text-left px-1 py-1" style="width:140px;">Name</th>
-                <th class="text-left px-1 py-1" style="width:50px;">Type</th>
-                <th class="text-left px-1 py-1" style="width:110px;">Company</th>
-                <th class="text-left px-1 py-1" style="width:110px;">QID</th>
-                <th class="text-left px-1 py-1" style="width:110px;">Bank</th>
-                <th class="text-left px-1 py-1" style="width:140px;">Account</th>
-                <th class="text-left px-1 py-1" style="width:170px;">IBAN</th>
-                <th class="text-right px-1 py-1" style="width:80px;">Monthly</th>
-                <th class="text-right px-1 py-1" style="width:80px;">Balance</th>
+              <tr class="bg-gray-50 text-gray-700 uppercase font-semibold text-[10px]">
+                <th class="text-left px-2 py-1" style="width:36px;">#</th>
+                <th class="text-left px-2 py-1" style="width:170px;">Name</th>
+                <th class="text-left px-2 py-1" style="width:60px;">Type</th>
+                <th class="text-left px-2 py-1" style="width:120px;">Company</th>
+                <th class="text-left px-2 py-1" style="width:130px;">QID</th>
+                <th class="text-left px-2 py-1" style="width:120px;">Bank</th>
+                <th class="text-left px-2 py-1" style="width:240px;">Account</th>
+                <th class="text-left px-2 py-1" style="width:320px;">IBAN</th>
+                <th class="text-right px-2 py-1" style="width:130px;">Monthly</th>
+                <th class="text-right px-2 py-1" style="width:130px;">Balance</th>
               </tr>
             </thead>
             <tbody>
@@ -320,26 +323,57 @@ function renderMonthReportInto(frame, data) {
   };
 
   frame.innerHTML = `
-    <div class="flex items-start justify-between mb-3">
+  <div class="payroll-report-expanded" data-version="v20251008-14">
+    <div class="flex items-start justify-between mb-6">
       <div>
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Payroll Report</div>
-        <div class="text-lg font-extrabold text-gray-900">${escHtml(monthTitle)}</div>
+        <div class="text-sm font-semibold uppercase tracking-wider text-gray-500">Payroll Report</div>
+        <div class="text-2xl font-extrabold text-gray-900 leading-tight">${escHtml(monthTitle)}</div>
       </div>
       <div class="text-right">
-        <div class="text-xs font-semibold uppercase tracking-wider text-gray-500">Totals</div>
-        <div class="text-sm font-extrabold text-gray-900">Payroll ${fmtCurrency(summary.salary)}</div>
-        <div class="text-sm font-extrabold text-gray-900">Outstanding ${fmtCurrency(summary.outstanding)}</div>
+        <div class="text-sm font-semibold uppercase tracking-wider text-gray-500 mb-1">Totals</div>
+        <div class="text-lg font-extrabold text-gray-900">Payroll ${fmtCurrency(summary.salary)}</div>
+        <div class="text-lg font-extrabold text-indigo-700">Outstanding ${fmtCurrency(summary.outstanding)}</div>
       </div>
     </div>
-    <div class="grid grid-cols-4 gap-2 mb-2 text-[11px]">
-      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Employees</div><div class="font-extrabold">${summary.count}</div></div>
-      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Permanent</div><div class="font-extrabold">${summary.perm}</div></div>
-      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Temporary</div><div class="font-extrabold">${summary.temps}</div></div>
-      <div class="border border-gray-200 rounded p-2"><div class="text-gray-500 text-[10px] uppercase">Generated</div><div class="font-extrabold">${new Date().toLocaleString()}</div></div>
+    <div class="grid grid-cols-4 gap-4 mb-8 text-sm">
+      <div class="border border-gray-200 rounded-xl p-4 bg-white shadow-sm"><div class="text-gray-500 text-xs uppercase mb-1 tracking-wide">Employees</div><div class="font-extrabold text-xl">${summary.count}</div></div>
+      <div class="border border-gray-200 rounded-xl p-4 bg-white shadow-sm"><div class="text-gray-500 text-xs uppercase mb-1 tracking-wide">Permanent</div><div class="font-extrabold text-xl">${summary.perm}</div></div>
+      <div class="border border-gray-200 rounded-xl p-4 bg-white shadow-sm"><div class="text-gray-500 text-xs uppercase mb-1 tracking-wide">Temporary</div><div class="font-extrabold text-xl">${summary.temps}</div></div>
+      <div class="border border-gray-200 rounded-xl p-4 bg-white shadow-sm"><div class="text-gray-500 text-xs uppercase mb-1 tracking-wide">Generated</div><div class="font-extrabold text-base">${new Date().toLocaleString()}</div></div>
     </div>
     ${section('Permanent Employees', perm)}
     ${section('Temporary Employees', temps)}
+  </div>
+  <style>
+  /* Compact Payroll Monthly Report sizing (v20251008-14) */
+    #payrollFrame .payroll-report-expanded { font-size:12.5px !important; line-height:1.35 !important; }
+    #payrollFrame .payroll-report-expanded h3 { font-size:15px !important; }
+    #payrollFrame .payroll-report-expanded table { font-size:12px !important; }
+    #payrollFrame .payroll-report-expanded thead th { font-size:10px !important; padding:6px 6px !important; letter-spacing:.35px; }
+    #payrollFrame .payroll-report-expanded tbody td { padding:4px 6px !important; font-size:11px !important; }
+    #payrollFrame .payroll-report-expanded .mono-text { font-size:11px !important; }
+  #payrollFrame .payroll-report-expanded .nowrap { white-space:nowrap !important; }
+  #payrollFrame .payroll-report-expanded td { vertical-align:top !important; }
+    #payrollFrame .payroll-report-expanded .text-2xl { font-size:22px !important; }
+    #payrollFrame .payroll-report-expanded .text-lg { font-size:16px !important; }
+    #payrollFrame .payroll-report-expanded .grid > div .font-extrabold { font-size:18px !important; }
+    #payrollFrame .payroll-report-expanded .grid.grid-cols-4 > div { padding:14px 12px !important; }
+    #payrollFrame .payroll-report-expanded .overflow-x-auto { overscroll-behavior:contain; }
+    #payrollFrame .payroll-report-expanded .compact-badge { font-size:10px !important; padding:2px 5px !important; font-weight:600 !important; border-radius:6px !important; }
+    #payrollFrame .payroll-report-expanded .mb-8 { margin-bottom:2rem !important; }
+    @media (max-width:1400px){
+      #payrollFrame .payroll-report-expanded { font-size:12px !important; }
+      #payrollFrame .payroll-report-expanded table { font-size:11.5px !important; }
+      #payrollFrame .payroll-report-expanded thead th { font-size:10px !important; }
+    }
+    @media (max-width:1100px){
+      #payrollFrame .payroll-report-expanded { font-size:11.5px !important; }
+      #payrollFrame .payroll-report-expanded table { font-size:11px !important; }
+      #payrollFrame .payroll-report-expanded thead th { font-size:9.5px !important; }
+    }
+  </style>
   `;
+  console.log('[PayrollModule] renderMonthReportInto executed (enlarged v20251008-04, badge removed)');
 }
 
 // Build a professional, standalone HTML document for printing the payroll (A4 landscape) from precomputed data
@@ -463,7 +497,7 @@ function buildPayrollPrintHtmlFromData({ ym, monthTitle, employees, perm, temps,
 
 // Build a professional, standalone HTML document for printing the payroll (A4 landscape)
 function buildPayrollPrintHtml({ ym, monthTitle, combined, byType, balancesMap, totals }) {
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const esc = (s) => String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -734,7 +768,7 @@ function buildPayrollPrintInnerHtml({ ym, monthTitle, byType, balancesMap, total
   const esc = (s) => String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   const section = (title, list) => {
     if (!list || !list.length) return '';
     return `
@@ -798,7 +832,7 @@ async function computeAndFillCurrentBalances(list) {
     // Lazy-load Firestore API from global (script.js imports the SDK in the main bundle)
   const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const { db } = await import('../firebase-config.js');
-    const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     for (const emp of list) {
       try {
         // Payslips for the employee (used to determine basic for the period and advances)
@@ -875,7 +909,7 @@ async function computeAndFillReportBalancesForMonth(list, ym) {
     const prevYm = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
     const { collection, getDocs, query, where, doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const { db } = await import('../firebase-config.js');
-    const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
     for (const emp of list) {
       try {
         // Previous month carryover

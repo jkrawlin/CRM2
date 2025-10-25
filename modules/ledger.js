@@ -46,6 +46,32 @@ export function initLedger(deps) {
   }
   const accFilter = document.getElementById('ledgerAccountFilter');
   if (accFilter) accFilter.addEventListener('change', () => renderLedgerTable());
+
+  // Wire delegated delete handler once
+  if (!document.__ledgerDeleteWired) {
+    document.addEventListener('click', async (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('[data-delete-ledger-cf]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-delete-ledger-cf');
+      if (!id || !_deps || !_deps.deleteDoc || !_deps.doc || !_deps.db) return;
+      const ok = window.confirm('Delete this transaction from the ledger?');
+      if (!ok) return;
+      try {
+        if (typeof window.deleteCashflowWithLinks === 'function') {
+          await window.deleteCashflowWithLinks(id);
+        } else {
+          await _deps.deleteDoc(_deps.doc(_deps.db, 'cashflows', id));
+          _deps.showToast && _deps.showToast('Transaction deleted', 'success');
+          try { window.__recomputeFund && window.__recomputeFund(); } catch {}
+          renderLedgerTable();
+        }
+      } catch (err) {
+        console.error('Ledger delete failed', err);
+        _deps.showToast && _deps.showToast('Failed to delete transaction', 'error');
+      }
+    });
+    document.__ledgerDeleteWired = true;
+  }
 }
 
 function populateAccountFilter() {
@@ -122,37 +148,25 @@ export function renderLedgerTable() {
   }
   empty.classList.add('hidden');
 
-  // Compute opening balance = opening + all prior months' net for this account
+  // Simplified: no running balance / opening; just raw debits & credits
   const account = _accounts.find(a => a.id === accId);
-  const openingBase = Number(account?.opening || 0);
-  let opening = openingBase;
-  if (dayVal) {
-    // Opening before selected day (compare by date-only)
-    const prior = _txns.filter(t => t.accountId === accId && dateOnly(t.date) < dayVal);
-    for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
-  } else if (ym) {
-    const firstOfMonth = `${ym}-01`;
-    const prior = _txns.filter(t => t.accountId === accId && dateOnly(t.date) < firstOfMonth);
-    for (const t of prior) opening += (t.type === 'in' ? Number(t.amount||0) : -Number(t.amount||0));
-  }
-
-  let running = opening;
+  const accSelEl = document.getElementById('ledgerAccountFilter');
+  const optText = accSelEl && accSelEl.selectedIndex >= 0 ? (accSelEl.options[accSelEl.selectedIndex]?.text || '') : '';
+  const inferredAsset = /(\(|\s)Asset(\)|\s|$)/i.test(optText);
+  const byType = account && String(account.type||'').toLowerCase() === 'asset';
+  const byName = account && /cash/i.test(String(account.name||''));
+  const isCashAccount = Boolean(byType || byName || (!account && inferredAsset));
   let debitSum = 0, creditSum = 0;
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const __CUR_PREFIX = (typeof CURRENCY_PREFIX !== 'undefined') ? CURRENCY_PREFIX : 'QAR ';
+  const fmt = (n) => `${__CUR_PREFIX}${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
 
-  // Prepend opening line
   const lines = [];
-  lines.push(`
-    <tr class="bg-gray-50/60">
-      <td class="px-4 py-2" colspan="4"><span class="text-gray-500">Amount</span></td>
-      <td class="px-4 py-2 text-right font-semibold">${fmt(running)}</td>
-    </tr>
-  `);
+  // Header spacer row (optional) now removed
 
   for (const t of rows) {
     const isIn = t.type === 'in';
     const amt = Number(t.amount || 0);
-    if (isIn) { debitSum += amt; running += amt; } else { creditSum += amt; running -= amt; }
+  if (isIn) { debitSum += amt; } else { creditSum += amt; }
     const desc = t.category ? `${t.category}${t.notes ? ' — ' + t.notes : ''}` : (t.notes || '');
     lines.push(`
       <tr class="hover:bg-gray-50">
@@ -160,7 +174,7 @@ export function renderLedgerTable() {
         <td class="px-4 py-2">${escapeHtml(desc)}</td>
         <td class="px-4 py-2 text-right">${isIn ? fmt(amt) : ''}</td>
         <td class="px-4 py-2 text-right">${!isIn ? fmt(amt) : ''}</td>
-        <td class="px-4 py-2 text-right">${fmt(running)}</td>
+          <td class="px-4 py-2 text-right">${isCashAccount ? `<button class="btn btn-danger btn-sm ledger-del-btn" data-delete-ledger-cf="${t.id}" title="Delete transaction" aria-label="Delete transaction" style="min-width:34px;height:28px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;"><i class=\"fas fa-trash\"></i></button>` : ''}</td>
       </tr>
     `);
   }
@@ -171,16 +185,12 @@ export function renderLedgerTable() {
       <td class="px-4 py-2" colspan="2"><span class="text-gray-700 font-semibold">Totals</span></td>
       <td class="px-4 py-2 text-right font-semibold">${fmt(debitSum)}</td>
       <td class="px-4 py-2 text-right font-semibold">${fmt(creditSum)}</td>
-      <td class="px-4 py-2 text-right font-semibold">${fmt(running)}</td>
+      <td class="px-4 py-2 text-right"></td>
     </tr>
   `);
 
   tbody.innerHTML = lines.join('');
-  if (sumEl) {
-    const net = debitSum - creditSum;
-    const accName = account?.name || '';
-    sumEl.textContent = `${accName}: Opening ${fmt(opening)} • Debits ${fmt(debitSum)} • Credits ${fmt(creditSum)} • Closing ${fmt(running)} (${net>=0?'+':''}${fmt(net).replace('$','$')})`;
-  }
+  if (sumEl) { sumEl.textContent = ''; }
 
   // Expose structured data for external consumers (e.g., printing daily summaries)
   try {
@@ -188,8 +198,8 @@ export function renderLedgerTable() {
       accountId: accId,
       month: ym,
       day: dayVal || '',
-      opening,
-      closing: running,
+  opening: 0,
+  closing: 0,
       debitSum,
       creditSum,
       transactions: rows.map(t => {
@@ -217,109 +227,4 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-// =============================
-// Printing Support
-// =============================
-export function printLedger() {
-  try {
-    const view = window.__ledgerCurrentView;
-    if (!view || !view.accountId) {
-      alert('Select an account and month/day before printing.');
-      return;
-    }
-    const account = _accounts.find(a => a.id === view.accountId);
-    const accountName = account?.name || 'Account';
-    const monthTitle = view.month || 'All Time';
-    const html = buildLedgerPrintHtml({
-      accountName,
-      monthTitle,
-      day: view.day,
-      opening: view.opening,
-      closing: view.closing,
-      debitSum: view.debitSum,
-      creditSum: view.creditSum,
-      transactions: view.transactions || []
-    });
-    const w = window.open('', '_blank', 'noopener,noreferrer,width=980,height=900');
-    if (!w) { alert('Popup blocked. Please allow popups to print.'); return; }
-    w.document.write(html);
-    w.document.close();
-    w.addEventListener('load', () => {
-      setTimeout(() => {
-        try { w.print(); } catch {}
-        setTimeout(() => { try { w.close(); } catch {} }, 500);
-      }, 200);
-    });
-  } catch (e) {
-    console.error('printLedger failed', e);
-    alert('Failed to prepare ledger print.');
-  }
-}
-
-function buildLedgerPrintHtml(data) {
-  const { accountName, monthTitle, day, opening, closing, debitSum, creditSum, transactions } = data;
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
-  // Recompute running for print to show balance progression
-  let running = opening;
-  const rows = transactions.map(t => {
-    const isIn = String(t.type).toLowerCase()==='in';
-    const amt = Number(t.amount||0);
-    if (isIn) running += amt; else running -= amt;
-    const desc = t.category ? `${t.category}${t.notes ? ' — ' + t.notes : ''}` : (t.notes || '');
-    return `
-      <tr>
-        <td>${escapeHtml(t.date)}</td>
-        <td>${escapeHtml(desc)}</td>
-        <td style="text-align:right">${isIn ? fmt(amt) : ''}</td>
-        <td style="text-align:right">${!isIn ? fmt(amt) : ''}</td>
-        <td style="text-align:right">${fmt(running)}</td>
-      </tr>`;
-  }).join('');
-
-  return `<!DOCTYPE html><html><head>
-  <meta charset="utf-8" />
-  <title>Ledger - ${escapeHtml(accountName)} - ${escapeHtml(day || monthTitle)}</title>
-  <style>
-    @page { size: A4 portrait; margin: 15mm; }
-    body { font-family: Inter, Arial, sans-serif; font-size: 12px; color: #1f2937; margin:0; }
-    h1 { font-size: 20px; margin:0 0 4px; }
-    h2 { font-size: 14px; margin:0 0 12px; color:#475569; font-weight:600; }
-    .header { text-align:center; margin-bottom: 10px; }
-    .meta { display:flex; flex-wrap:wrap; gap:12px; font-size:11px; margin-bottom:12px; }
-    .meta div { background:#F1F5F9; padding:6px 10px; border-radius:4px; border:1px solid #E2E8F0; }
-    table { width:100%; border-collapse:collapse; font-size:11px; }
-    th, td { border:1px solid #E2E8F0; padding:6px 6px; }
-    th { background:#EEF2FF; font-weight:600; text-align:left; }
-    tbody tr:nth-child(even) { background:#F8FAFC; }
-    tfoot td { font-weight:600; background:#F1F5F9; }
-    .footer { margin-top:24px; text-align:center; font-size:10px; color:#64748B; }
-    .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); font-size:70px; font-weight:800; color:rgba(99,102,241,0.06); pointer-events:none; }
-    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-  </style>
-  </head><body>
-    <div class="header">
-      <h1>Ledger Report</h1>
-      <h2>${escapeHtml(accountName)}</h2>
-      <div style="font-size:11px; color:#64748B;">Period: ${escapeHtml(day || monthTitle)}</div>
-    </div>
-    <div class="meta">
-      <div><strong>Opening:</strong> ${fmt(opening)}</div>
-      <div><strong>Total Debits:</strong> ${fmt(debitSum)}</div>
-      <div><strong>Total Credits:</strong> ${fmt(creditSum)}</div>
-      <div><strong>Closing:</strong> ${fmt(closing)}</div>
-      <div><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</div>
-    </div>
-    <table>
-      <thead><tr><th style="width:14%">Date</th><th style="width:40%">Description</th><th style="width:14%;text-align:right">Debit</th><th style="width:14%;text-align:right">Credit</th><th style="width:18%;text-align:right">Balance</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="5" style="text-align:center;padding:12px;">No entries</td></tr>`}</tbody>
-      <tfoot>
-        <tr><td colspan="2">Totals</td><td style="text-align:right">${fmt(debitSum)}</td><td style="text-align:right">${fmt(creditSum)}</td><td style="text-align:right">${fmt(closing)}</td></tr>
-      </tfoot>
-    </table>
-    <div class="footer">Printed by CRM System</div>
-    <div class="watermark">CONFIDENTIAL</div>
-    <script>window.addEventListener('load', () => { setTimeout(()=> { try { window.print(); } catch(e){} }, 150); });</script>
-  </body></html>`;
 }

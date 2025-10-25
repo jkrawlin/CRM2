@@ -369,10 +369,56 @@ body {
     border: 1px solid var(--gray-100);
 }
 
+/* Ensure all main section table containers look identical (rounded, bordered, subtle shadow) */
+#employeesSection > .card,
+#temporarySection > .card,
+#clientsSection > .card,
+#clientsBillingSection > .card,
+#contractorsSection > .card,
+#accountsSection > .card {
+    border-radius: 12px !important; /* match the softer Temporary look */
+    border: 1px solid #E5E7EB !important; /* subtle gray border */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important; /* faint depth */
+    background: #FFFFFF !important;
+    overflow: hidden;
+}
+
+/* Subtle top accent line for section cards */
+#employeesSection > .card::before,
+#temporarySection > .card::before,
+#clientsSection > .card::before,
+#clientsBillingSection > .card::before,
+#contractorsSection > .card::before,
+#accountsSection > .card::before {
+    content: '';
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light));
+}
+
 .table-header {
     padding: var(--spacing-lg) var(--spacing-xl);
     border-bottom: 2px solid var(--gray-100);
     background: var(--gray-50);
+}
+
+/* Explicit top accent element (fallback to ensure visibility in all tabs) */
+.section-accent {
+    display: block;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light));
+}
+
+/* Header-specific accent that cannot be clipped or missed */
+.section-header { position: relative; }
+.section-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--primary-light));
 }
 
 .table-title {
@@ -387,16 +433,7 @@ body {
     table-layout: fixed;
 }
 
-/* Explicit column widths when a colgroup is present */
-.data-table colgroup col:nth-child(1) { width: 18%; }
-.data-table colgroup col:nth-child(2) { width: 22%; }
-.data-table colgroup col:nth-child(3) { width: 15%; }
-.data-table colgroup col:nth-child(4) { width: 12%; }
-.data-table colgroup col:nth-child(5) { width: 10%; }
-.data-table colgroup col:nth-child(6) { width: 11%; }
-.data-table colgroup col:nth-child(7) { width: 12%; }
-/* Ensure Actions column has minimum width to prevent wrapping */
-.data-table colgroup col:nth-child(7) { width: 12%; min-width: 120px; }
+/* Remove generic colgroup widths; rely on per-table colgroup in index.html for exact column distribution. */
 
 .data-table th {
     background: var(--gray-50);
@@ -536,6 +573,13 @@ tr.terminated-row .expiry-dot.green { background-color: var(--accent) !important
 .delete-btn { background: var(--danger); color: white; }
 .delete-btn:hover { background: #DC2626; transform: scale(1.05); }
 
+/* Ledger Actions column visibility */
+table .ledger-del-btn { background-color:#EF4444; color:#fff; border:none; border-radius:6px; }
+table .ledger-del-btn:hover { background-color:#DC2626; }
+/* Ensure actions column has room */
+#accountsTabLedger table thead th:last-child,
+#accountsTabLedger table tbody td:last-child { min-width: 64px; text-align: right; }
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -608,6 +652,40 @@ tr.terminated-row .expiry-dot.green { background-color: var(--accent) !important
 #viewModal .modal-content {
     max-width: 1400px;
     width: 98vw;
+}
+
+/* Vehicle modal: wider for 3-column layout with scroll (match employee modal) */
+#vehicleModal .modal-content {
+    max-height: 80vh;
+    width: 100%;
+    max-width: 64rem;
+    overflow-y: auto;
+}
+
+#vehicleModal .modal-body {
+    padding: 1rem 1.5rem;
+}
+
+#vehicleModal .form-section > *:not([hidden]) ~ *:not([hidden]) {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(1rem * (1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(1rem * var(--tw-space-y-reverse));
+}
+
+#vehicleModal .form-group {
+    padding: 0.5rem;
+}
+
+#vehicleModal .form-row {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (min-width: 768px) {
+    #vehicleModal .form-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @keyframes slideUp {
@@ -1025,36 +1103,103 @@ tr.terminated-row .status-dot.expiring { background-color: #EF4444 !important; }
 /* ================================================ */
 /* Employee Directory Redesign                      */
 /* ================================================ */
-.employee-table { table-layout: fixed; border-collapse: separate; border-spacing: 0 8px; width: 100%; }
-.employee-table thead th { background: #F8FAFC; font-weight: 700; font-size: 16px; line-height: 1.2; color:#334155; }
+.employee-table { table-layout: fixed; border-collapse: separate; border-spacing: 0 4px; width: 100%; }
+.employee-table thead th { background: #F8FAFC; font-weight: 700; font-size: 11px; line-height: 1.15; color:#334155; }
+/* Stronger specificity to ensure our header styling wins over utility classes */
+#employeesSection table.employee-table thead th,
+#temporarySection table.employee-table thead th,
+#contractorsSection table.employee-table thead th,
+#clientsSection table.employee-table thead th,
+#clientsBillingSection table.employee-table thead th,
+#accountsSection table.employee-table thead th,
+#payrollSection table.employee-table thead th {
+    background: #F8FAFC !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+    color: #334155 !important;
+}
+
+/* Belt-and-suspenders override: ensure payroll headers match employees even if table class changes */
+#payrollSection table thead th {
+    background: #F8FAFC !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+    color: #334155 !important;
+    padding: 6px 8px !important;
+}
+
+/* Make sort icons compact like employees */
+#payrollSection table thead th i {
+    font-size: 10px !important;
+    color: #94A3B8 !important; /* slate-400 */
+}
 .employee-table tbody tr.employee-row { background: #FFFFFF; transition: background .25s, box-shadow .25s; border-radius: 14px; }
 .employee-table tbody tr.employee-row:hover { background: #F1F5F9; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+/* Stronger specificity so hover/row bg wins over generic table hover */
+#employeesSection table.employee-table tbody tr.employee-row { background: #FFFFFF !important; }
+#temporarySection table.employee-table tbody tr.employee-row { background: #FFFFFF !important; }
+#contractorsSection table.employee-table tbody tr.employee-row { background: #FFFFFF !important; }
+#clientsSection table.employee-table tbody tr { background: #FFFFFF !important; }
+#clientsBillingSection table.employee-table tbody tr { background: #FFFFFF !important; }
+#accountsSection table.employee-table tbody tr { background: #FFFFFF !important; }
+#employeesSection table.employee-table tbody tr.employee-row:hover,
+#temporarySection table.employee-table tbody tr.employee-row:hover,
+#contractorsSection table.employee-table tbody tr.employee-row:hover,
+#clientsSection table.employee-table tbody tr:hover,
+#clientsBillingSection table.employee-table tbody tr:hover,
+#accountsSection table.employee-table tbody tr:hover,
+#payrollSection table.employee-table tbody tr:hover { background: #F1F5F9 !important; box-shadow: 0 2px 8px rgba(0,0,0,0.05) !important; }
 .employee-table tbody tr.employee-row td:first-child { border-top-left-radius: 14px; border-bottom-left-radius: 14px; }
 .employee-table tbody tr.employee-row td:last-child { border-top-right-radius: 14px; border-bottom-right-radius: 14px; }
-.employee-table td { font-size: 14px; line-height: 1.3; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.employee-table td, .employee-table th { min-height: 66px; }
+/* Removed global nowrap/overflow/ellipsis from all td - let columns wrap naturally */
+.employee-table td { font-size: 12px; line-height: 1.2; vertical-align: middle; }
+.employee-table td, .employee-table th { min-height: 40px; }
+/* Compact paddings override generic data-table paddings */
+.employee-table thead th { padding: 6px 8px !important; }
+.employee-table tbody td { padding: 5px 8px !important; }
 .employee-table .cell-name { font-weight: 600; }
 .employee-table tbody tr.employee-row:nth-child(even) { background: #FBFDFF; }
 
-/* Column width guidance (desktop) */
-.employee-table .col-name { width: 23%; }
-.employee-table .col-email { width: 22%; }
-.employee-table .col-phone { width: 9%; }
-.employee-table .col-qid { width: 9%; }
-.employee-table .col-status { width: 7%; }
+/* Make compact department/company badges inside these tables */
+.employee-table .department-badge { font-size: 10px; padding: 2px 6px; border-radius: 9999px; }
+
+/* Smaller action buttons specifically within employee tables - centered icons */
+.employee-table .action-btn { 
+    padding: 0 !important; 
+    font-size: 9px !important; 
+    min-width: 20px !important; 
+    width: 20px !important;
+    height: 20px !important; 
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+.employee-table .action-btn i { 
+    font-size: 9px !important; 
+    line-height: 1 !important;
+    margin: 0 !important;
+}
+
+/* Remove hardcoded column widths so colgroup controls layout identically for both tables */
 /* Let the status dot ring show fully */
 .employee-table td.col-status { overflow: visible !important; }
-.employee-table .col-position { width: 12%; }
-.employee-table .col-company { width: 7%; }
-.employee-table .col-salary { width: 6%; }
-.employee-table .col-join { width: 10%; }
-.employee-table .col-actions { width: 7%; }
 
 /* Alignment refinements */
-.employee-table th.col-phone, .employee-table td.col-phone,
-.employee-table th.col-qid, .employee-table td.col-qid,
-.employee-table th.col-salary, .employee-table td.col-salary { text-align: center; }
+.employee-table th.col-phone, .employee-table td.col-phone { text-align: center; }
+.employee-table th.col-qid, .employee-table td.col-qid { text-align: center; }
+.employee-table th.col-salary, .employee-table td.col-salary { text-align: right; }
 .employee-table th.col-join, .employee-table td.col-join { text-align: right; }
+/* Keep specific columns single-line */
+.employee-table td.col-email { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.employee-table td.col-phone { white-space: nowrap; }
+.employee-table td.col-qid { white-space: nowrap; }
+.employee-table td.col-nationality { white-space: nowrap; }
+.employee-table td.col-join { white-space: nowrap; }
+/* Allow wrapping for Name, Position, Company - remove nowrap to match Temporary */
+.employee-table td.col-company .department-badge { display: inline-block; vertical-align: middle; }
+.employee-table td.col-salary { white-space: nowrap !important; }
 
 /* Status pill */
 .status-pill { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; border-radius:9999px; line-height:1; }
@@ -1063,7 +1208,12 @@ tr.terminated-row .status-dot.expiring { background-color: #EF4444 !important; }
 @keyframes pulse-soft { 0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0.45);} 50% { box-shadow:0 0 0 6px rgba(239,68,68,0);} }
 
 /* Actions */
-.employee-table .action-buttons { gap:6px; }
+.employee-table .action-buttons { 
+    gap: 3px !important; 
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
 
 /* Responsive transformation to cards */
 @media (max-width: 900px) {

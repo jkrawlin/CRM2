@@ -95,7 +95,8 @@ export function renderClientsTable() {
     return;
   }
   empty.classList.add('hidden');
-  const fmtCurrency = (n) => `$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const __CUR_PREFIX = (typeof CURRENCY_PREFIX !== 'undefined') ? CURRENCY_PREFIX : 'QAR ';
+  const fmtCurrency = (n) => `${__CUR_PREFIX}${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   const today = new Date();
   const currentYm = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
   const isActiveInMonth = (start, end, ym) => {
@@ -155,6 +156,7 @@ export function renderClientsTable() {
             <button class="btn btn-secondary btn-sm" data-view-client="${c.id}"><i class="fas fa-eye"></i></button>
             <button class="btn btn-secondary btn-sm" data-assign-client="${c.id}"><i class="fas fa-people-arrows"></i></button>
             <button class="btn btn-primary btn-sm" data-edit-client="${c.id}"><i class="fas fa-pen"></i></button>
+            <button class="btn btn-danger btn-sm" data-delete-client="${c.id}"><i class="fas fa-trash"></i></button>
           </div>
         </td>
       </tr>
@@ -188,6 +190,12 @@ export function renderClientsTable() {
         e.preventDefault();
         const id = btnEdit.getAttribute('data-edit-client');
         openClientEditFlow(id);
+      }
+      const btnDelete = e.target.closest?.('[data-delete-client]');
+      if (btnDelete) {
+        e.preventDefault();
+        const id = btnDelete.getAttribute('data-delete-client');
+        deleteClient(id);
       }
     });
     document.__clientsActionsWired = true;
@@ -234,7 +242,8 @@ function openClientView(id) {
     if (c.monthly!=null && c.monthly!==undefined && Number(c.monthly) > 0) {
       monthly = Number(c.monthly);
     }
-    const fmt = (n)=>`$${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const __CUR_PREFIX = (typeof CURRENCY_PREFIX !== 'undefined') ? CURRENCY_PREFIX : 'QAR ';
+  const fmt = (n)=>`${__CUR_PREFIX}${Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
     setText('cvMonthly', fmt(monthly));
     setText('cvAssigned', String(assigned));
     // Assignments table
@@ -288,7 +297,7 @@ function openClientView(id) {
         <td class="px-4 py-2">${empLink}</td>
         <td class="px-4 py-2">${a.startDate ? new Date(a.startDate).toLocaleDateString() : '-'}</td>
         <td class="px-4 py-2">${a.endDate ? new Date(a.endDate).toLocaleDateString() : '-'}</td>
-        <td class="px-4 py-2">${a.rate ? `$${Number(a.rate).toLocaleString(undefined,{maximumFractionDigits:2})}/${a.rateType||'monthly'}` : '-'}</td>
+  <td class="px-4 py-2">${a.rate ? `${__CUR_PREFIX}${Number(a.rate).toLocaleString(undefined,{maximumFractionDigits:2})}/${a.rateType||'monthly'}` : '-'}</td>
         <td class="px-4 py-2">${escapeHtml(a.notes||'')}</td>
       </tr>`;
       }).join('');
@@ -555,4 +564,29 @@ function openClientEditFlow(id) {
     const modal = document.getElementById('clientModal');
     if (modal) modal.classList.add('show');
   } catch { openClientModal(); }
+}
+
+async function deleteClient(id) {
+  const { db, doc, deleteDoc, showToast } = _deps || {};
+  if (!db || !deleteDoc) {
+    showToast && showToast('Delete functionality not available', 'error');
+    return;
+  }
+  const c = _clients.find(x => x.id === id);
+  if (!c) {
+    showToast && showToast('Client not found', 'error');
+    return;
+  }
+  const confirmed = window.confirm(`Are you sure you want to delete client "${getClientLabel(c)}"? This action cannot be undone.`);
+  if (!confirmed) return;
+  try {
+    await deleteDoc(doc(db, 'customers', id));
+    showToast && showToast('Client deleted', 'success');
+    // Remove from local array and re-render
+    _clients = _clients.filter(x => x.id !== id);
+    renderClientsTable();
+  } catch (err) {
+    console.error('Delete client failed', err);
+    showToast && showToast('Failed to delete client', 'error');
+  }
 }

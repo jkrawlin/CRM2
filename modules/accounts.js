@@ -39,7 +39,7 @@ export function renderAccountsTable() {
     return;
   }
   empty.classList.add('hidden');
-  const fmt = (n) => `$${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
+  const fmt = (n) => `QAR ${Number(n || 0).toLocaleString(undefined,{maximumFractionDigits:2})}`;
   tbody.innerHTML = _accounts
     .slice()
     .sort((a,b)=> (a.name||'').localeCompare(b.name||''))

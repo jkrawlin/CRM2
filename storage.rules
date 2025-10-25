@@ -45,6 +45,15 @@ service firebase.storage {
       allow delete: if isAuthenticated();
     }
     
+    // Vehicle Istimara documents - authenticated users only
+    match /vehicles/istimara/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+        && isValidPdf() 
+        && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
     // User-specific documents (future enhancement)
     match /users/{userId}/documents/{document} {
       allow read: if isOwner(userId);
